@@ -31,7 +31,12 @@ DEBIAN_SCRIPT="$REPO_DIR/statusline-debian-bash.sh"
 source "$TESTS_DIR/lib/find-debian-bash.sh"
 # shellcheck source=lib/config-file.sh
 source "$TESTS_DIR/lib/config-file.sh"
+# shellcheck source=lib/is-macos-host.sh
+source "$TESTS_DIR/lib/is-macos-host.sh"
 DEBIAN_BASH="$(find_debian_bash)"
+# macOS 版は BSD 系コマンド前提。macOS ホストでなければ macOS 分のケースを skip する。
+RUN_MACOS=0
+is_macos_host && RUN_MACOS=1
 
 # 遅い fetch の待ち時間 (秒)。非ブロッキング検証で「描画がこれを待たない」ことを見る。
 SLOW_FETCH_SEC=5
@@ -322,8 +327,13 @@ require_command() {
 
 main() {
   require_command jq
+  require_debian_bash_if_requested "$(basename "$0")" "$DEBIAN_BASH"
 
   printf 'statusline background git fetch behavior tests\n'
+  if [ "$RUN_MACOS" -eq 0 ]; then
+    printf 'macOS host: %s (macOS script tests will be skipped)\n' \
+      "$(red "not detected ($(uname -s))")"
+  fi
   if [ -n "$DEBIAN_BASH" ]; then
     printf 'Debian bash: %s\n' "$DEBIAN_BASH"
   else
@@ -332,7 +342,9 @@ main() {
   fi
   printf '\n'
 
-  run_all_cases /bin/bash "$MACOS_SCRIPT" macOS mkdir
+  if [ "$RUN_MACOS" -eq 1 ]; then
+    run_all_cases /bin/bash "$MACOS_SCRIPT" macOS mkdir
+  fi
 
   if [ -n "$DEBIAN_BASH" ]; then
     run_all_cases "$DEBIAN_BASH" "$DEBIAN_SCRIPT" Debian flock
@@ -340,12 +352,14 @@ main() {
 
   printf '\n'
   if [ "$failed" -eq 0 ]; then
-    if [ -z "$DEBIAN_BASH" ]; then
-      printf '%s: %d/%d passed (Debian cases skipped: need bash 4.1+ and flock)\n' \
-        "$(green PASS)" "$total" "$total"
-    else
-      printf '%s: %d/%d passed\n' "$(green PASS)" "$total" "$total"
+    printf '%s: %d/%d passed' "$(green PASS)" "$total" "$total"
+    if [ "$RUN_MACOS" -eq 0 ]; then
+      printf ' (macOS cases skipped: need macOS host)'
     fi
+    if [ -z "$DEBIAN_BASH" ]; then
+      printf ' (Debian cases skipped: need bash 4.1+ and flock)'
+    fi
+    printf '\n'
     exit 0
   else
     printf '%s: %d/%d failed\n' "$(red FAIL)" "$failed" "$total" >&2

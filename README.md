@@ -467,4 +467,9 @@ statusline を編集する前に必ず以下を参照する。
   - `tests/git-fetch-behavior.sh` — バックグラウンド `git fetch` の挙動検証 (非ブロッキング･間引き･ロック解放。出力に現れないため別建て)
 - E2E プレビュー: `npm run preview` — ANSI 色を含む実出力を端末で目視確認
 
+macOS 版は手元 (macOS) の `npm test`、Debian 版は CI (ubuntu runner) で検証する。
+
+- 両版はそれぞれ BSD 系 / GNU coreutils のコマンドを前提とし、他方の OS では動かない。テストハーネスは実行できない側のケースを skip する
+- macOS 版は開発環境の `npm test` で全件走るため、CI では macOS runner (Linux の約 10 倍の分数を消費する) を使わず、手元で検証できない Debian 版だけを回す
+
 回帰テストと E2E プレビューは、本番履歴 dir (`/tmp/claude-statusline-<実uid>/`) の汚染を防ぐ仕組みを備える。具体的には `CLAUDE_STATUSLINE_HISTORY_DIR` 環境変数で `HISTORY_DIR` を上書きし、`mktemp -d` で作った一時 dir に履歴を隔離する。実行終了後は一時 dir を削除する。
