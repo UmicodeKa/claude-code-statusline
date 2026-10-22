@@ -1,15 +1,5 @@
 #!/bin/bash
 
-# 本スクリプトは `exec {fd}>...` (named file descriptor) を使うため bash 4.1+ が必須。
-# Debian/Ubuntu の `/bin/bash` は十分新しいが、何らかの理由で古い bash で実行された
-# 場合に黙ってパースエラーで死なないよう、冒頭で明示的にバージョンチェックする。
-if [ -z "${BASH_VERSINFO+x}" ] \
-   || [ "${BASH_VERSINFO[0]}" -lt 4 ] \
-   || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -lt 1 ]; }; then
-  printf '✻ -- (bash 4.1+ required)\n'
-  exit 0
-fi
-
 # ロケールを C.UTF-8 で固定する。理由は 2 つ:
 #   - UTF-8 のスパークライン (▁..█) と ✻ アイコンを確実に表示する
 #   - ブランチ名/セッション名のトリムを文字数で行う (`${#var}` はロケール依存で、
@@ -94,9 +84,6 @@ HISTORY_LEN=6                               # チャートに表示する履歴�
 # 未追跡の行数取得 (diff --no-index) を行う上限件数。超過分はファイル数のみ数える。
 UNTRACKED_DIFF_LIMIT=50
 
-# ロック待機上限 (秒)。history_push / maybe_git_fetch の排他制御に使う実装値。
-LOCK_TIMEOUT_SEC=2
-
 # --- 間引き定数の推奨レンジ ---
 # POLL_INTERVAL_SEC / GIT_FETCH_INTERVAL_SEC は env 上書き口を持たず、conf (または上の定数の直接編集) で変える運用。
 # 秒数比較は算術式なので 0 / 負値 / 非数値を入れても構文エラーにならず、間引きが静かに無効化される
@@ -131,10 +118,10 @@ case "$GIT_FETCH_INTERVAL_SEC" in ''|*[!0-9]*) GIT_FETCH_INTERVAL_SEC=900 ;; ???
 [ "$GIT_FETCH_INTERVAL_SEC" -gt "$GIT_FETCH_INTERVAL_MAX_SEC" ] && GIT_FETCH_INTERVAL_SEC=$GIT_FETCH_INTERVAL_MAX_SEC
 
 # --- カラースキーム ---
-# 以下の COLOR_* は Claude Code 公式テーマ (getTheme) のハードコピー。値を変更しない。
+# 以下の COLOR_* は Claude Code の light/dark テーマの配色に合わせた RGB 値。値を変更しない。
 # セマンティック名 (success/error/warning/claude/permission ...) は公式キーをそのまま維持し、
 # 未使用キーも将来用に保持する。各使用箇所はこの定数を参照する。
-# COLOR_subagent_* は公式キー <color>_FOR_SUBAGENTS_ONLY のハードコピー (名前のみ短縮)。
+# COLOR_subagent_* は公式キー <color>_FOR_SUBAGENTS_ONLY に対応する (名前のみ短縮)。
 
 # R;G;B を truecolor 前景 ESC (\033[38;2;R;G;Bm) に変換する。定義時のみ使う。
 _fg() { printf '\033[38;2;%sm' "$1"; }
@@ -189,18 +176,64 @@ case "$COLOR_SCHEME" in
     ;;
 esac
 
+# `jq` は macOS には標準搭載されない。欠如時はシェルエラーで真っ赤になるより
+# 1 行のヒントだけ出して exit したほうが Claude Code 上で読みやすい。
+if ! command -v jq >/dev/null 2>&1; then
+  printf '✻ -- (jq required: brew install jq)\n'
+  exit 0
+fi
+
 # --- 履歴ディレクトリ ---
 # 履歴は /tmp に置く。再起動で自動消滅するので肥大化しない。
 # /tmp は他ユーザーからも読めるため uid を混ぜたサブディレクトリを 700 で作る。
-# 別ユーザーが事前に作ったディレクトリや symlink を掴まないよう次を確認する:
+# 回帰テストが本番履歴を汚さずに済むよう CLAUDE_STATUSLINE_HISTORY_DIR で上書き可能にする。
+HISTORY_DIR="${CLAUDE_STATUSLINE_HISTORY_DIR:-/tmp/claude-statusline-$(id -u)}"
+
+# レートリミットのリセット時刻を HH:MM 形式に変換する
+# macOS (BSD date) を先に試し、失敗したら GNU date を使う。
+# Linux で stderr に毎回エラーを出さないよう順序を OS で切り替える。
+case "$(uname -s)" in
+  Darwin|*BSD)
+    format_reset_time() {
+      date -r "$1" '+%H:%M' 2>/dev/null
+    }
+    file_mtime() {
+      stat -f %m "$1" 2>/dev/null
+    }
+    file_owner_uid() {
+      stat -f %u "$1" 2>/dev/null
+    }
+    file_mode() {
+      stat -f %Lp "$1" 2>/dev/null
+    }
+    ;;
+  *)
+    format_reset_time() {
+      date -d "@$1" '+%H:%M' 2>/dev/null
+    }
+    file_mtime() {
+      stat -c %Y "$1" 2>/dev/null
+    }
+    file_owner_uid() {
+      stat -c %u "$1" 2>/dev/null
+    }
+    file_mode() {
+      stat -c %a "$1" 2>/dev/null
+    }
+    ;;
+esac
+
+# HISTORY_DIR を安全に用意する。
+# /tmp は他ユーザーから書ける場所なので、別ユーザーが事前に作った
+# ディレクトリや symlink を掴まないよう次を確認する:
 #   - symlink でないこと
 #   - 自分の uid 所有であること
 #   - mode 700 であること
 # 不適合なら HISTORY_DIR を空にして履歴機能を無効化する (statusline 自体は表示継続)。
-# 回帰テストが本番履歴を汚さずに済むよう CLAUDE_STATUSLINE_HISTORY_DIR で上書き可能にする。
-# override 先が既存の symlink だったときに chmod 700 がリンク先を書き換えるのを
-# 避けるため、mkdir/chmod 前に symlink チェックを済ませて弾く。
-HISTORY_DIR="${CLAUDE_STATUSLINE_HISTORY_DIR:-/tmp/claude-statusline-$(id -u)}"
+#
+# CLAUDE_STATUSLINE_HISTORY_DIR で override が来ている場合、override 先が既存の
+# symlink だったときに chmod 700 がリンク先を変えてしまうのを避けるため、
+# mkdir/chmod 前に **既存ディレクトリの symlink チェック** を済ませて弾く。
 if [ -L "$HISTORY_DIR" ]; then
   HISTORY_DIR=""
 else
@@ -208,32 +241,11 @@ else
   chmod 700 "$HISTORY_DIR" 2>/dev/null
   if [ -L "$HISTORY_DIR" ] \
      || [ ! -d "$HISTORY_DIR" ] \
-     || [ "$(stat -c %u "$HISTORY_DIR" 2>/dev/null)" != "$(id -u)" ] \
-     || [ "$(stat -c %a "$HISTORY_DIR" 2>/dev/null)" != "700" ]; then
+     || [ "$(file_owner_uid "$HISTORY_DIR")" != "$(id -u)" ] \
+     || [ "$(file_mode "$HISTORY_DIR")" != "700" ]; then
     HISTORY_DIR=""
   fi
 fi
-
-# 必須コマンドの存在確認。jq か flock が無い環境では statusline 自体を諦め、
-# 1 行のヒントだけ出して exit する。Claude Code 側はこの 1 行をそのまま表示する。
-if ! command -v jq >/dev/null 2>&1; then
-  printf '✻ -- (jq required: sudo apt install jq)\n'
-  exit 0
-fi
-if ! command -v flock >/dev/null 2>&1; then
-  printf '✻ -- (flock required: sudo apt install util-linux)\n'
-  exit 0
-fi
-
-# レートリミットのリセット時刻を HH:MM 形式に変換する
-format_reset_time() {
-  date -d "@$1" '+%H:%M' 2>/dev/null
-}
-
-# ファイルの mtime を epoch 秒で取得する
-file_mtime() {
-  stat -c %Y "$1" 2>/dev/null
-}
 
 # 0-100 の使用率を 1文字の縦棒 (▁..█ の8階調) に変換する
 spark_single() {
@@ -255,20 +267,53 @@ spark_single() {
 # 「ずっとその値だった」という見た目になり、初回表示でドットが並ぶのを避ける。
 #
 # 並行性: rate 用ファイルは全セッション共通のため、複数の statusline が同時に
-# このパスへ突入しうる。ロック取得失敗時はその回をスキップ — statusline は
-# 高頻度に呼ばれるので 1 回飛ばしても次の呼び出しで反映される。
+# このパスへ突入しうる。`flock(1)` は macOS に標準で無く、無いと黙って
+# 失敗するため使えない。代わりに `mkdir` の原子性 (POSIX で UNIX 上原子的と
+# 保証されているのは mkdir と symlink のみ) で排他を実装する。
+# ロック取得失敗時はその回をスキップ — statusline は高頻度に呼ばれるので
+# 1 回飛ばしても次の呼び出しで反映される。
+# [内部定数] ロック待機上限 (秒)。排他制御に使う実装値。変更しない。
+LOCK_TIMEOUT_SEC=2
+
+# acquire_lock <lockdir> : 取得できれば 0、タイムアウトなら 1。
+# 古い stale ロック (LOCK_TIMEOUT_SEC×5 経過) は強制解除する。
+# sleep 0.2 を 1 試行とするので、LOCK_TIMEOUT_SEC 秒待つには
+# LOCK_TIMEOUT_SEC × 5 回試す必要がある。
+acquire_lock() {
+  local lockdir=$1
+  local attempts=0
+  local max_attempts=$((LOCK_TIMEOUT_SEC * 5))
+  while ! mkdir "$lockdir" 2>/dev/null; do
+    local age
+    age=$(file_mtime "$lockdir")
+    if [ -n "$age" ]; then
+      local now
+      now=$(date +%s)
+      if [ $((now - age)) -gt $((LOCK_TIMEOUT_SEC * 5)) ]; then
+        rmdir "$lockdir" 2>/dev/null
+        continue
+      fi
+    fi
+    if [ "$attempts" -ge "$max_attempts" ]; then
+      return 1
+    fi
+    sleep 0.2
+    attempts=$((attempts + 1))
+  done
+  return 0
+}
+
+release_lock() {
+  rmdir "$1" 2>/dev/null
+}
+
 history_push() {
   local file=$1
   local value=$2
   [ -z "$value" ] && return
 
-  local lockfile="${file}.lock"
-  local fd
-  exec {fd}>"$lockfile" || return
-  if ! flock -w "$LOCK_TIMEOUT_SEC" -x "$fd"; then
-    exec {fd}>&-
-    return
-  fi
+  local lockdir="${file}.lockd"
+  acquire_lock "$lockdir" || return
 
   if [ ! -s "$file" ]; then
     local i
@@ -284,19 +329,19 @@ history_push() {
     mtime=$(file_mtime "$file")
     [ -z "$mtime" ] && mtime=0
     if [ $((now - mtime)) -lt "$POLL_INTERVAL_SEC" ]; then
-      exec {fd}>&-
+      release_lock "$lockdir"
       return
     fi
     printf '%s\n' "$value" >> "$file"
     local tmp
-    tmp=$(mktemp "${file}.XXXXXX") || { exec {fd}>&-; return; }
+    tmp=$(mktemp "${file}.XXXXXX") || { release_lock "$lockdir"; return; }
     if tail -n "$HISTORY_LEN" "$file" > "$tmp"; then
       mv "$tmp" "$file"
     else
-      rm -- "$tmp"
+      rm -f "$tmp"
     fi
   fi
-  exec {fd}>&-
+  release_lock "$lockdir"
 }
 
 # 履歴ファイルから各値を spark 文字に変換して連結する。
@@ -596,21 +641,16 @@ maybe_git_fetch() {
     [ $((now - mtime)) -lt "$GIT_FETCH_INTERVAL_SEC" ] && return
   fi
 
-  # flock で排他する (history_push と同じ named fd パターン)。
-  local lockfile="${marker}.lock"
-  local fd
-  exec {fd}>"$lockfile" || return
-  if ! flock -w "$LOCK_TIMEOUT_SEC" -x "$fd"; then
-    exec {fd}>&-
-    return
-  fi
+  # 並行する複数 statusline が同時に fetch を投げないようロックする。
+  local lockdir="${marker}.lockd"
+  acquire_lock "$lockdir" || return
 
   # ロック取得までの待機中に他プロセスが fetch 済みかもしれないので mtime を再確認する。
   if [ -f "$marker" ]; then
     mtime=$(file_mtime "$marker")
     [ -z "$mtime" ] && mtime=0
     if [ $((now - mtime)) -lt "$GIT_FETCH_INTERVAL_SEC" ]; then
-      exec {fd}>&-
+      release_lock "$lockdir"
       return
     fi
   fi
@@ -618,27 +658,25 @@ maybe_git_fetch() {
   # upstream が設定されていない (rev-list が非ゼロ終了) リポジトリでは fetch しても
   # 追跡ブランチが更新されず無意味なので投げない。detached はこの関数の入口で弾き済み。
   if ! git -C "$repo" rev-list --left-right --count '@{upstream}...HEAD' >/dev/null 2>&1; then
-    exec {fd}>&-
+    release_lock "$lockdir"
     return
   fi
 
   # マーカーの mtime を「今」に更新する (次回間引きの基点)。
   # 書けなければ間引きの基点が残らず、以降の描画すべてで fetch が多重起動するため、
-  # fetch を投げずに fd を閉じて諦める。`:` は POSIX special built-in で、sh 互換モードでは
+  # fetch を投げずにロックを解放して諦める。`:` は POSIX special built-in で、sh 互換モードでは
   # リダイレクト失敗時にシェルごと終了してしまうので非 special の `true` を使う。リダイレクトは
   # 左から右に処理されるため、エラーメッセージを捨てるには後置の `2>/dev/null` ではなく
   # ブロックごと囲む必要がある (後置だと fd 2 の差し替え前に失敗し端末へ漏れる)。
   if ! { true > "$marker"; } 2>/dev/null; then
-    exec {fd}>&-
+    release_lock "$lockdir"
     return
   fi
 
   # マーカーを書いた時点で他プロセスは mtime 判定で弾かれるので、ロックはここで役目を終える。
-  # fetch を投げる「前」に fd を閉じて解放する。named fd は close-on-exec されず ( ... & ) の
-  # 子に複製が渡るため、ロックを保持したまま fetch を起動すると fetch 完走まで flock が
-  # 居座ってしまう。先に閉じれば子は fd をそもそも受け取らない。
-  # marker 更新 → unlock → fetch 起動 の順を入れ替えない (macOS 版と共通の鉄則)。
-  exec {fd}>&-
+  # fetch を投げる「前」に解放する: 子プロセスにロックを持ち越さないための順序であり、
+  # marker 更新 → unlock → fetch 起動 の順を入れ替えない (Linux 版と共通の鉄則)。
+  release_lock "$lockdir"
 
   # 投げっぱなしの子プロセスで fetch する。stdout/stderr/stdin を /dev/null に付け替えて
   # 親をブロックさせない。認証プロンプトは環境変数で封じる (/dev/tty を含む)。
@@ -784,7 +822,8 @@ input=$(cat)
 
 # jq は起動コストが高い (1 回 ~20-50ms) ため、必要なフィールドを 1 回で取り出す。
 # 1 フィールド 1 行で出力し、`read` を 7 回呼んで空フィールドも保持する。
-# 値に改行が混入しないよう、文字列フィールドは sub で改行/タブを潰してから渡す。
+# (bash 3.2 の `read -d` は IFS が非空白だと連続デリミタを圧縮するため @tsv 経路は使えない。
+#  値に改行が混入しないよう、文字列フィールドは sub で改行/タブを潰してから渡す。)
 # effort は必ず末尾に追加する (read 個数 = jq 出力行数。途中挿入すると既存変数の対応がズレる)。
 {
   IFS= read -r model
@@ -816,7 +855,7 @@ fi
 
 # rate は 5 時間ウィンドウのアカウント単位の値で全セッション共通なので、
 # グローバルな 1 ファイルに集約し、セッションを跨いで観測を継続する。
-# ctx は現在値の 1 文字 spark のみで描画するため履歴は持たない (Issue #172)。
+# ctx は現在値の 1 文字 spark のみで描画するため履歴は持たない。
 # 右端 = 現在値の不変条件を HISTORY_DIR の状態と独立に保つため、まず履歴なしの
 # パディング (······) を土台に置く。HISTORY_DIR が安全性チェックで無効化された
 # ケースでもこの土台が残り、右端 1 文字を現在値に差し替えられる。
@@ -840,7 +879,7 @@ fi
 
 # cwd から git ブランチ名を取得する。空文字 / git 外 / git 未インストール時は空のまま。
 # 重要: $cwd 空チェックは必須。空のまま `git -C ""` を呼ぶとカレントディレクトリ扱いになり、
-# 統合元リポジトリのブランチが意図せず漏れる事故を起こすため。
+# 無関係なリポジトリのブランチが表示されてしまうため。
 branch=""
 branch_detached=0
 if [ -n "$cwd" ] && command -v git >/dev/null 2>&1; then

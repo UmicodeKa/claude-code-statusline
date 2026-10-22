@@ -1,13 +1,16 @@
-# statusline
+# claude-code-statusline
 
-Claude Code のステータスラインをカスタマイズするスクリプト集。macOS と Debian/Ubuntu の両環境に対応し、同一の表示内容を提供する。
+Claude Code のステータスラインをカスタマイズするスクリプト集。macOS と Linux の両環境に対応し、同一の表示内容を提供する。
+
+> [!NOTE]
+> 本リポジトリは Anthropic とは無関係の非公式プロジェクトです。
 
 ## 概要
 
 ステータスラインを次のような 2 行で表示する。
 
 ```text
-agent-skills | main ↑2↓3 3+13-5 | my-session
+my-project | main ↑2↓3 3+13-5 | my-session
 ✻ Opus 4.7∙high ▆ 72% | ▇▆▅▄▃▃ 35% - 18:30
 ```
 
@@ -19,24 +22,28 @@ agent-skills | main ↑2↓3 3+13-5 | my-session
 
 #### 共通要件
 
-**依存コマンド** (両環境共通):
+**追加でインストールが必要なもの**:
 
-`bash`, `jq`, `awk`, `date`, `stat`, `mktemp`, `find`, `tail`, `mv`, `rm`, `git` (ブランチ名･変更行数表示用、無い場合はブランチ列が省略されるだけで他は動く)
+- `jq` (両環境)
+- `flock` (Linux のみ。util-linux に含まれる)
+- `git` (任意。ブランチ名･変更行数の表示に使う。無い場合はブランチ列が省略されるだけで他は動く)
+
+上記以外 (`awk`, `date`, `stat`, `mktemp`, `mkdir` など) は各 OS の標準環境に含まれるコマンドだけを使う。
 
 #### macOS 固有の要件
 
 - macOS (Darwin) であること
-- bash 3.2 以上 (macOS デフォルトシェルが zsh でも bash として実行される)
+- `/bin/bash` (3.2 以上) で実行される。ログインシェル (zsh など) は問わない
 - BSD 版 `stat` (`-f %m` オプション対応) / BSD 版 `date` (`-r <epoch>` オプション対応)
 - `jq` がインストール済みであること (`brew install jq`)
 - `C.UTF-8` ロケールが利用可能であること (現行 macOS は標準搭載)
 
-#### Debian 固有の要件
+#### Linux 固有の要件
 
-- Debian/Ubuntu 系 Linux であること
-- bash 5 系以上
-- `jq` がインストール済みであること (`sudo apt install jq`)
-- `flock` がインストール済みであること (`sudo apt install util-linux`)
+- GNU coreutils を使う Linux であること (動作確認は Debian/Ubuntu。CI は ubuntu で実行している)
+- bash 4.1 以上
+- `jq` がインストール済みであること (Debian/Ubuntu では `sudo apt install jq`)
+- `flock` がインストール済みであること (Debian/Ubuntu では `sudo apt install util-linux`)
 - GNU 版 `stat` (`-c %Y` オプション対応) / GNU 版 `date` (`-d "@<epoch>"` オプション対応)
 - `C.UTF-8` ロケールが利用可能であること (Debian 11 以降は標準搭載)
 
@@ -44,9 +51,9 @@ agent-skills | main ↑2↓3 3+13-5 | my-session
 
 表示内容･動作仕様は共通。プラットフォーム依存の実装のみが異なる。
 
-| 項目 | statusline-macos-zsh.sh | statusline-debian-bash.sh |
+| 項目 | statusline-macos.sh | statusline-linux.sh |
 | --- | --- | --- |
-| 対応環境 | macOS + zsh (bash 3.2+) | Debian/Ubuntu 系 Linux + bash 5 系 |
+| 対応環境 | macOS (`/bin/bash` 3.2+) | GNU coreutils の Linux (bash 4.1+) |
 | 排他制御 | `mkdir` の原子性 + stale ロック検出 | `flock(1)` (プロセス終了時に自動解放) |
 | date/stat | BSD 版 (`date -r`, `stat -f %m`) | GNU 版 (`date -d "@.."`, `stat -c %Y`) |
 | ロケール固定 | `LC_ALL=C.UTF-8` をスクリプト冒頭で固定 | `LC_ALL=C.UTF-8` をスクリプト冒頭で固定 |
@@ -54,7 +61,15 @@ agent-skills | main ↑2↓3 3+13-5 | my-session
 
 ### セットアップ
 
-#### macOS / zsh
+リポジトリを取得し、そのディレクトリで以下を行う。
+
+```bash
+git clone https://github.com/UmicodeKa/claude-code-statusline.git
+cd claude-code-statusline
+mkdir -p ~/.claude
+```
+
+#### macOS
 
 1. 依存パッケージをインストールする (未導入の場合)。
 
@@ -65,7 +80,7 @@ agent-skills | main ↑2↓3 3+13-5 | my-session
 2. スクリプトを配置する。
 
    ```bash
-   cp statusline-macos-zsh.sh ~/.claude/statusline.sh
+   cp statusline-macos.sh ~/.claude/statusline.sh
    chmod +x ~/.claude/statusline.sh
    ```
 
@@ -82,7 +97,7 @@ agent-skills | main ↑2↓3 3+13-5 | my-session
 
 4. Claude Code を再起動するとステータスラインに反映される。
 
-#### Debian 系 Linux / bash
+#### Linux
 
 1. 依存パッケージをインストールする (未導入の場合)。
 
@@ -93,7 +108,7 @@ agent-skills | main ↑2↓3 3+13-5 | my-session
 2. スクリプトを配置する。
 
    ```bash
-   cp statusline-debian-bash.sh ~/.claude/statusline.sh
+   cp statusline-linux.sh ~/.claude/statusline.sh
    chmod +x ~/.claude/statusline.sh
    ```
 
@@ -247,52 +262,52 @@ stdin 経由で Claude Code から渡される JSON のうち、次のフィー�
 通常 (閾値未満、クリーン):
 
 ```text
-agent-skills | main | my-session
+my-project | main | my-session
 ✻ Opus 4.7∙high ▄ | ▇▆▅▄▃▂ 18:30
 ```
 
 ブランチに変更あり (ファイル数 / +追加 緑 / -削除 赤 を詰めて表示):
 
 ```text
-agent-skills | main ↑2↓3 3+13-5 | my-session
+my-project | main ↑2↓3 3+13-5 | my-session
 ✻ Opus 4.7∙high ▄ | ▇▆▅▄▃▂ 18:30
 ```
 
 トリム後も変更行数を併記 / 削除 0 は省略:
 
 ```text
-agent-skills | feature/improve-awesome-… 1+8 | agent-skills-refactoring-and-cleanup-pr…
+my-project | feature/improve-awesome-… 1+8 | my-project-refactoring-and-cleanup-work…
 ✻ Opus 4.7∙high ▆ 72% | ▇▆▅▄▃▃ 35% - 18:30
 ```
 
 ctx 危険域 + 削除のみ (セッション名なし):
 
 ```text
-agent-skills | hotfix/bug-1234 2-5
+my-project | hotfix/bug-1234 2-5
 ✻ Opus 4.7∙high ▇ 92% | ▇▆▅▄▃▂ 18:30
 ```
 
 effort をモデル名の右に `∙` 区切り (前後スペースなし) で別色併記 (`max` はレインボー)。`SHOW_MODEL_NAME=0` ではモデル名を出さず `✻` (モデル色) + effort のみ (`∙` なし):
 
 ```text
-agent-skills | main | my-session
+my-project | main | my-session
 ✻ Opus 4.7∙xhigh ▄ | ▇▆▅▄▃▂ 18:30
 
-agent-skills | main | my-session
+my-project | main | my-session
 ✻ xhigh ▄ | ▇▆▅▄▃▂ 18:30
 ```
 
 Fable は `✻` とモデル名が紫 (公式テーマの `autoAccept`)。テキストでは色を表現できないため、見た目は端末で確認する:
 
 ```text
-agent-skills | main | my-session
+my-project | main | my-session
 ✻ Fable 5∙high ▄ | ▇▆▅▄▃▂ 18:30
 ```
 
 ブランチが取れない場合 (git 外) は 1 行目からブランチ列だけが落ちる:
 
 ```text
-agent-skills | my-session
+my-project | my-session
 ✻ Opus 4.7∙high ▄ | ▇▆▅▄▃▂ 18:30
 ```
 
@@ -304,7 +319,7 @@ agent-skills | my-session
 
 ### カラーパレット
 
-statusline で使えるのは、Claude Code 公式テーマ (`getTheme`) からハードコピーした**事前定義のセマンティックカラー**と、effort `max` 専用の**レインボーパレット**の 2 つ。`COLOR_SCHEME` (既定 `dark`) で light / dark を切替える。
+statusline で使えるのは、Claude Code の light/dark テーマの配色に合わせた**事前定義のセマンティックカラー**と、effort `max` 専用の**レインボーパレット**の 2 つ。`COLOR_SCHEME` (既定 `dark`) で light / dark を切替える。
 
 #### 事前定義セマンティックカラー
 
@@ -455,21 +470,25 @@ ultracode は入力 JSON 上 `xhigh` と区別できないため専用色を持�
 - 文字数カウントはスクリプト冒頭で固定する `LC_ALL=C.UTF-8` に依存する。`${#var}` はロケール依存で `C` ロケール下ではバイト数換算になるため、両スクリプトとも UTF-8 ロケールを明示固定して文字数換算へ揃えている
 - ASCII 文字は 1 文字 = 1 バイトなので、ロケールに関係なく上限文字数でトリムされる
 - 日本語など CJK 文字も 1 文字としてカウントされ、上限文字数までは `…` トリムされない。ただし CJK の表示幅は端末上およそ 2 倍のため、トリムされなくても表示が崩れて見えることがある (運用上 CJK は想定外)
-- 表示幅ベースの厳密なトリムが必要な場合は別 Issue で検討する
+- 表示幅ベースの厳密なトリムは未対応 (必要であれば Issue で提案してほしい)
 
 ## 開発者向け
 
 statusline を編集する前に必ず以下を参照する。
 
-- [CLAUDE.md](./CLAUDE.md) — 編集時の必須チェックリストと触ってはいけない仕様の一覧 (過去の事故防止)
+- [CLAUDE.md](./CLAUDE.md) — 出力フォーマットの不変条件と、編集時のチェックリスト
 - 回帰テスト: `npm test` — 次の 2 本を続けて実行する
   - `tests/regression.sh` — 出力フォーマットの自動検証
   - `tests/git-fetch-behavior.sh` — バックグラウンド `git fetch` の挙動検証 (非ブロッキング･間引き･ロック解放。出力に現れないため別建て)
 - E2E プレビュー: `npm run preview` — ANSI 色を含む実出力を端末で目視確認
 
-macOS 版は手元 (macOS) の `npm test`、Debian 版は CI (ubuntu runner) で検証する。
+macOS 版は手元 (macOS) の `npm test`、Linux 版は CI (ubuntu runner) で検証する。
 
 - 両版はそれぞれ BSD 系 / GNU coreutils のコマンドを前提とし、他方の OS では動かない。テストハーネスは実行できない側のケースを skip する
-- macOS 版は開発環境の `npm test` で全件走るため、CI では macOS runner (Linux の約 10 倍の分数を消費する) を使わず、手元で検証できない Debian 版だけを回す
+- CI では Linux 版だけを回している。macOS 版は CI で検証していないため、macOS 版に関わる変更は手元の macOS で `npm test` を実行して確認する
 
 回帰テストと E2E プレビューは、本番履歴 dir (`/tmp/claude-statusline-<実uid>/`) の汚染を防ぐ仕組みを備える。具体的には `CLAUDE_STATUSLINE_HISTORY_DIR` 環境変数で `HISTORY_DIR` を上書きし、`mktemp -d` で作った一時 dir に履歴を隔離する。実行終了後は一時 dir を削除する。
+
+## ライセンス
+
+[0BSD](LICENSE)。著作権表示も不要で、自由にコピー･改変･再配布してよい。

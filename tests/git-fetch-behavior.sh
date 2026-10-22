@@ -24,8 +24,8 @@ GIT_SHIM_DIR="$TESTS_DIR/lib/git-shim"
 # upstream あり (ab=2,0) の fixture。maybe_git_fetch が fetch を投げる正常系。
 FIXTURE="$TESTS_DIR/fixtures/67-git-fetch-ahead.json"
 
-MACOS_SCRIPT="$REPO_DIR/statusline-macos-zsh.sh"
-DEBIAN_SCRIPT="$REPO_DIR/statusline-debian-bash.sh"
+MACOS_SCRIPT="$REPO_DIR/statusline-macos.sh"
+DEBIAN_SCRIPT="$REPO_DIR/statusline-linux.sh"
 
 # shellcheck source=lib/find-debian-bash.sh
 source "$TESTS_DIR/lib/find-debian-bash.sh"
@@ -187,7 +187,7 @@ case_throttle() {
 
 # --- 4. ロックが fetch 完走まで保持されない ---
 # 遅い fetch を走らせたまま、直後にロックが空いていることを確認する。
-#   Debian (flock): marker 更新 -> unlock -> fetch 起動 の順序の回帰ガード。順序を戻すと
+#   Linux (flock): marker 更新 -> unlock -> fetch 起動 の順序の回帰ガード。順序を戻すと
 #     named fd が ( ... & ) の子に継承され、fetch が終わるまで flock が居座る。
 #     この不変条件を実際に検証できるのはこちらだけ (macOS 版は fd を使わない)。
 #   macOS (mkdir): lockdir が残っていないこと = release_lock の呼び忘れ検出。
@@ -204,7 +204,7 @@ case_lock_released() {
   run_statusline "$bash_bin" "$script" "$hist" "$sentinel" "$SLOW_FETCH_SEC"
 
   if [ "$lock_kind" = "flock" ]; then
-    # Debian 版: lockfile は残るが flock は解放済みのはず。
+    # Linux 版: lockfile は残るが flock は解放済みのはず。
     # 子が fd を握ったままなら -n (非ブロッキング) の取得が失敗する。
     local lockfile
     lockfile="$(find_lock "$hist" ".lock")"
@@ -316,7 +316,7 @@ run_all_cases() {
 }
 
 # 環境チェック (両版共通の必須コマンドが揃っているか)。
-# jq は macOS 版・Debian 版のどちらも冒頭で要求するので、ここで揃っていなければテスト自体が無意味。
+# jq は macOS 版・Linux 版のどちらも冒頭で要求するので、ここで揃っていなければテスト自体が無意味。
 require_command() {
   local cmd=$1
   if ! command -v "$cmd" >/dev/null 2>&1; then
@@ -335,9 +335,9 @@ main() {
       "$(red "not detected ($(uname -s))")"
   fi
   if [ -n "$DEBIAN_BASH" ]; then
-    printf 'Debian bash: %s\n' "$DEBIAN_BASH"
+    printf 'Linux bash: %s\n' "$DEBIAN_BASH"
   else
-    printf 'Debian bash: %s (Debian script tests will be skipped)\n' \
+    printf 'Linux bash: %s (Linux script tests will be skipped)\n' \
       "$(red 'not found (need bash 4.1+ and flock)')"
   fi
   printf '\n'
@@ -347,7 +347,7 @@ main() {
   fi
 
   if [ -n "$DEBIAN_BASH" ]; then
-    run_all_cases "$DEBIAN_BASH" "$DEBIAN_SCRIPT" Debian flock
+    run_all_cases "$DEBIAN_BASH" "$DEBIAN_SCRIPT" Linux flock
   fi
 
   printf '\n'
@@ -357,7 +357,7 @@ main() {
       printf ' (macOS cases skipped: need macOS host)'
     fi
     if [ -z "$DEBIAN_BASH" ]; then
-      printf ' (Debian cases skipped: need bash 4.1+ and flock)'
+      printf ' (Linux cases skipped: need bash 4.1+ and flock)'
     fi
     printf '\n'
     exit 0

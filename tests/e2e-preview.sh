@@ -8,7 +8,7 @@
 #
 # rate チャートは「均一に並ぶ」初回起動の見た目ではなく、右肩下がり (古い値ほど
 # 残量多) の遷移として表示するためダミー履歴を仕込む。最右端は fixture の現在値に
-# 揃える。ctx は履歴を持たないため (UmicodeKa/agent-skills#172) 現在値の 1 文字 spark だけが描かれる。
+# 揃える。ctx は履歴を持たず、現在値の 1 文字 spark だけが描かれる。
 # statusline 内の history_push は POLL_INTERVAL_SEC=480 のサンプリング間引きで
 # 直後の追記を skip するため、仕込んだダミーがそのまま history_chart に読まれる。
 #
@@ -18,7 +18,7 @@
 # Usage:
 #   bash tests/e2e-preview.sh           # 環境を自動判定
 #   bash tests/e2e-preview.sh --macos   # macOS 版のみ
-#   bash tests/e2e-preview.sh --debian  # Debian 版のみ
+#   bash tests/e2e-preview.sh --linux   # Linux 版のみ
 
 set -euo pipefail
 
@@ -40,14 +40,14 @@ source "$TESTS_DIR/lib/layout.sh"
 # statusline 実行時に PATH 先頭へ差し込み、本物の git を覆い隠す。
 GIT_SHIM_DIR="$TESTS_DIR/lib/git-shim"
 
-MACOS_SCRIPT="$REPO_DIR/statusline-macos-zsh.sh"
-DEBIAN_SCRIPT="$REPO_DIR/statusline-debian-bash.sh"
+MACOS_SCRIPT="$REPO_DIR/statusline-macos.sh"
+DEBIAN_SCRIPT="$REPO_DIR/statusline-linux.sh"
 
 MODE=auto
 for arg in "$@"; do
   case "$arg" in
     --macos)  MODE=macos ;;
-    --debian) MODE=debian ;;
+    --linux|--debian) MODE=debian ;;
     --help|-h)
       # Usage ブロック (18-21 行目) も含めるためファイル冒頭の説明全体を出す。
       sed -n '2,21p' "$0"
@@ -60,7 +60,7 @@ for arg in "$@"; do
   esac
 done
 
-# bash 4.1+ 検出 (Debian 版が動くかの判定)
+# bash 4.1+ 検出 (Linux 版が動くかの判定)
 find_debian_bash() {
   local candidate full_path
   for candidate in bash /opt/homebrew/bin/bash /usr/local/bin/bash; do
@@ -92,7 +92,7 @@ case "$MODE" in
     RUN_MACOS=0
     RUN_DEBIAN=1
     if [ -z "$DEBIAN_BASH" ]; then
-      printf 'error: bash 4.1+ not found, cannot run Debian script\n' >&2
+      printf 'error: bash 4.1+ not found, cannot run Linux script\n' >&2
       exit 2
     fi
     ;;
@@ -131,7 +131,7 @@ build_history_lines() {
 # fixture からダミー rate 履歴ファイルを hist_dir に書き込む。
 # 仕込んだ後に statusline が呼ばれると POLL_INTERVAL_SEC=480 内のため
 # history_push は skip され、history_chart はこの 6 件をそのまま読む。
-# ctx は履歴を持たないため (UmicodeKa/agent-skills#172)、seeding は rate だけで十分。
+# ctx は履歴を持たないため、seeding は rate だけで十分。
 seed_history() {
   local fixture=$1 hist_dir=$2
   local rate_pct rate_remaining
@@ -192,9 +192,9 @@ if [ "$RUN_MACOS" -eq 1 ]; then
 fi
 
 if [ "$RUN_DEBIAN" -eq 1 ]; then
-  print_header "Debian script ($DEBIAN_SCRIPT, bash=$DEBIAN_BASH)"
+  print_header "Linux script ($DEBIAN_SCRIPT, bash=$DEBIAN_BASH)"
   for fixture in "$FIXTURES_DIR"/*.json; do
-    print_case "$fixture" "$DEBIAN_SCRIPT" "$DEBIAN_BASH" Debian
+    print_case "$fixture" "$DEBIAN_SCRIPT" "$DEBIAN_BASH" Linux
   done
 fi
 

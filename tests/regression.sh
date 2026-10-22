@@ -56,10 +56,10 @@ source "$TESTS_DIR/lib/is-macos-host.sh"
 # 埋めた #branch=<name> / #detached の規約を fake git が読んでブランチ名を返す。
 GIT_SHIM_DIR="$TESTS_DIR/lib/git-shim"
 
-MACOS_SCRIPT="$REPO_DIR/statusline-macos-zsh.sh"
-DEBIAN_SCRIPT="$REPO_DIR/statusline-debian-bash.sh"
+MACOS_SCRIPT="$REPO_DIR/statusline-macos.sh"
+DEBIAN_SCRIPT="$REPO_DIR/statusline-linux.sh"
 
-# Debian 版は bash 4.1+ 必須。見つからなければ Debian 分のケースを skip する。
+# Linux 版は bash 4.1+ 必須。見つからなければ Linux 版のケースを skip する。
 DEBIAN_BASH="$(find_debian_bash)"
 # macOS 版は BSD 系コマンド前提。macOS ホストでなければ macOS 分のケースを skip する。
 RUN_MACOS=0
@@ -210,8 +210,8 @@ check_assertions() {
         # ${HISTORY_DIR}/fetch-<key> を **同期的に** 作る。fetch 自体は投げっぱなしの
         # 非同期処理だが、マーカーの有無なら競合なく判定できるので「fetch を投げたか
         # skip したか」の検証にこれを使う。
-        # ロックファイル (Debian の .lock / macOS の .lockd) も fetch-* に一致するため
-        # 除外する。Debian 版は upstream 未設定ケースでも lockfile を作るので、
+        # ロックファイル (Linux 版の .lock / macOS の .lockd) も fetch-* に一致するため
+        # 除外する。Linux 版は upstream 未設定ケースでも lockfile を作るので、
         # 除外しないと absent を present と誤判定する。
         local marker found=absent
         for marker in "${hist_dir:-/nonexistent}"/fetch-*; do
@@ -369,7 +369,7 @@ run_case() {
   fi
 }
 
-# Debian 版冒頭の bash 4.1+ ゲートが残っていることを静的に確認する。
+# Linux 版冒頭の bash 4.1+ ゲートが残っていることを静的に確認する。
 # 実際に旧 bash で起動させて確認するのは難しいため、ガードブロックの **実コード片**
 # が冒頭近傍に **完全一致** で存在することを比較する。コメント中のキーワード一致では
 # 弾けないドリフト (例: コメントだけ残してコードを消す) もここで検出できる。
@@ -389,10 +389,10 @@ EXPECTED
   # 行単位 OR マッチ問題 (1 行でも合えば match) を回避できる。
   actual="$(sed -n '1,20p' "$DEBIAN_SCRIPT")"
   if [[ "$actual" == *"$expected"* ]]; then
-    printf '%s bash-4.1-gate (Debian script)\n' "$(green ok)"
+    printf '%s bash-4.1-gate (Linux script)\n' "$(green ok)"
     return 0
   else
-    printf '%s bash-4.1-gate (Debian script): guard block not found at top of %s\n' \
+    printf '%s bash-4.1-gate (Linux script): guard block not found at top of %s\n' \
       "$(red FAIL)" "$DEBIAN_SCRIPT" >&2
     return 1
   fi
@@ -414,15 +414,15 @@ main() {
   require_command bash
 
   printf 'statusline regression tests\n'
-  printf 'scripts:\n  macOS:  %s\n  Debian: %s\n' "$MACOS_SCRIPT" "$DEBIAN_SCRIPT"
+  printf 'scripts:\n  macOS:  %s\n  Linux:  %s\n' "$MACOS_SCRIPT" "$DEBIAN_SCRIPT"
   if [ "$RUN_MACOS" -eq 0 ]; then
     printf 'macOS host: %s (macOS script tests will be skipped)\n' \
       "$(red "not detected ($(uname -s))")"
   fi
   if [ -n "$DEBIAN_BASH" ]; then
-    printf 'Debian bash: %s\n' "$DEBIAN_BASH"
+    printf 'Linux bash: %s\n' "$DEBIAN_BASH"
   else
-    printf 'Debian bash: %s (Debian script tests will be skipped)\n' \
+    printf 'Linux bash: %s (Linux script tests will be skipped)\n' \
       "$(red 'not found (need bash 4.1+ and flock)')"
   fi
   printf '\n'
@@ -451,7 +451,7 @@ main() {
 
     if [ -n "$DEBIAN_BASH" ]; then
       total=$((total + 1))
-      run_case "$fixture" "$assertion" "$DEBIAN_SCRIPT" Debian "$DEBIAN_BASH" \
+      run_case "$fixture" "$assertion" "$DEBIAN_SCRIPT" Linux "$DEBIAN_BASH" \
         || failed=$((failed + 1))
     else
       skipped_debian=$((skipped_debian + 1))
@@ -468,7 +468,7 @@ main() {
       printf ' (%d macOS cases skipped: need macOS host)' "$skipped_macos"
     fi
     if [ "$skipped_debian" -gt 0 ]; then
-      printf ' (%d Debian cases skipped: need bash 4.1+ and flock)' "$skipped_debian"
+      printf ' (%d Linux cases skipped: need bash 4.1+ and flock)' "$skipped_debian"
     fi
     printf '\n'
     exit 0
