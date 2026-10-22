@@ -21,15 +21,18 @@ jobs:
       - run: npm run lint
 
   test:
-    # macOS 版は BSD 系コマンド前提のため macOS runner で回す。
-    # Debian 版は GNU coreutils 前提で macOS runner では動かないため、bash 4.1+ / flock を入れずに skip させる。
-    runs-on: macos-latest
+    # Debian 版は GNU coreutils 前提で手元の macOS では検証できないため、ubuntu runner で回す。
+    # macOS 版は BSD 系コマンド前提で Linux では動かず (ハーネスが skip する)、手元の npm test で担保する。
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: 'lts/*'
           cache: 'npm'
-      - run: brew install jq
+      - run: sudo apt-get update && sudo apt-get install -y jq
       - run: npm ci
+      # Debian 版を実行できない環境なら skip せずに落とす (全件 skip のまま green になるのを防ぐ)。
       - run: npm test
+        env:
+          STATUSLINE_TEST_REQUIRE_DEBIAN: '1'

@@ -48,6 +48,8 @@ source "$TESTS_DIR/lib/layout.sh"
 source "$TESTS_DIR/lib/escape-ansi.sh"
 # shellcheck source=lib/find-debian-bash.sh
 source "$TESTS_DIR/lib/find-debian-bash.sh"
+# shellcheck source=lib/is-macos-host.sh
+source "$TESTS_DIR/lib/is-macos-host.sh"
 
 # branch 取得経路は lib/git-shim/git (fake git) で検証する。statusline 実行時に
 # PATH 先頭へこの dir を差し込み、本物の git を覆い隠す。fixture の current_dir に
@@ -59,6 +61,9 @@ DEBIAN_SCRIPT="$REPO_DIR/statusline-debian-bash.sh"
 
 # Debian 版は bash 4.1+ 必須。見つからなければ Debian 分のケースを skip する。
 DEBIAN_BASH="$(find_debian_bash)"
+# macOS 版は BSD 系コマンド前提。macOS ホストでなければ macOS 分のケースを skip する。
+RUN_MACOS=0
+is_macos_host && RUN_MACOS=1
 
 red()   { printf '\033[31m%s\033[0m' "$*"; }
 green() { printf '\033[32m%s\033[0m' "$*"; }
@@ -404,11 +409,16 @@ require_command() {
 
 main() {
   require_command jq
+  require_debian_bash_if_requested "$(basename "$0")" "$DEBIAN_BASH"
   require_command perl
   require_command bash
 
   printf 'statusline regression tests\n'
   printf 'scripts:\n  macOS:  %s\n  Debian: %s\n' "$MACOS_SCRIPT" "$DEBIAN_SCRIPT"
+  if [ "$RUN_MACOS" -eq 0 ]; then
+    printf 'macOS host: %s (macOS script tests will be skipped)\n' \
+      "$(red "not detected ($(uname -s))")"
+  fi
   if [ -n "$DEBIAN_BASH" ]; then
     printf 'Debian bash: %s\n' "$DEBIAN_BASH"
   else
@@ -417,7 +427,7 @@ main() {
   fi
   printf '\n'
 
-  local total=0 failed=0 skipped=0
+  local total=0 failed=0 skipped_macos=0 skipped_debian=0
   local fixture assertion case_name
 
   for fixture in "$FIXTURES_DIR"/*.json; do
@@ -431,16 +441,20 @@ main() {
       continue
     fi
 
-    total=$((total + 1))
-    run_case "$fixture" "$assertion" "$MACOS_SCRIPT" macOS /bin/bash \
-      || failed=$((failed + 1))
+    if [ "$RUN_MACOS" -eq 1 ]; then
+      total=$((total + 1))
+      run_case "$fixture" "$assertion" "$MACOS_SCRIPT" macOS /bin/bash \
+        || failed=$((failed + 1))
+    else
+      skipped_macos=$((skipped_macos + 1))
+    fi
 
     if [ -n "$DEBIAN_BASH" ]; then
       total=$((total + 1))
       run_case "$fixture" "$assertion" "$DEBIAN_SCRIPT" Debian "$DEBIAN_BASH" \
         || failed=$((failed + 1))
     else
-      skipped=$((skipped + 1))
+      skipped_debian=$((skipped_debian + 1))
     fi
   done
 
@@ -449,12 +463,14 @@ main() {
 
   printf '\n'
   if [ "$failed" -eq 0 ]; then
-    if [ "$skipped" -gt 0 ]; then
-      printf '%s: %d/%d passed (%d Debian cases skipped: need bash 4.1+ and flock)\n' \
-        "$(green PASS)" "$total" "$total" "$skipped"
-    else
-      printf '%s: %d/%d passed\n' "$(green PASS)" "$total" "$total"
+    printf '%s: %d/%d passed' "$(green PASS)" "$total" "$total"
+    if [ "$skipped_macos" -gt 0 ]; then
+      printf ' (%d macOS cases skipped: need macOS host)' "$skipped_macos"
     fi
+    if [ "$skipped_debian" -gt 0 ]; then
+      printf ' (%d Debian cases skipped: need bash 4.1+ and flock)' "$skipped_debian"
+    fi
+    printf '\n'
     exit 0
   else
     printf '%s: %d/%d failed\n' "$(red FAIL)" "$failed" "$total" >&2

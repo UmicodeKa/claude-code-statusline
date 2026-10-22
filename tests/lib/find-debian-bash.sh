@@ -29,3 +29,16 @@ find_debian_bash() {
   done
   printf ''
 }
+
+# CI 用: STATUSLINE_TEST_REQUIRE_DEBIAN=1 のとき、Debian 版を実行できなければ
+# skip せずエラー終了する。Debian 版は CI でしか検証しないため、環境の不備で
+# 全件 skip されたまま green になるのを防ぐ。
+# 引数: $1 呼び出し元スクリプト名 (エラーメッセージ用) / $2 find_debian_bash の結果
+require_debian_bash_if_requested() {
+  local caller=$1 debian_bash=$2
+  [ "${STATUSLINE_TEST_REQUIRE_DEBIAN:-0}" = "1" ] || return 0
+  [ -n "$debian_bash" ] && return 0
+  printf '%s: STATUSLINE_TEST_REQUIRE_DEBIAN=1 but Debian script cannot run (need bash 4.1+ and flock)\n' \
+    "$caller" >&2
+  exit 2
+}
