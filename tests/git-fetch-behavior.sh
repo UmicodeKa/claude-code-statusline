@@ -7,7 +7,7 @@
 # 出力では観測できない次の不変条件を検証する:
 #
 #   1. fetch-invoked : fetch が実際に exec される (リダイレクトが fetch 自体を壊していない)
-#   2. non-blocking  : 遅い fetch でも描画は待たない (削除厳禁の 3 点セットの回帰ガード)
+#   2. non-blocking  : 遅い fetch でも描画は待たない (fd 付け替え (stdin/stdout/stderr) 3 点セットの回帰ガード)
 #   3. throttle      : GIT_FETCH_INTERVAL_SEC 未満の連続呼び出しでは fetch を投げない
 #   4. lock-released : fetch 完走までロックが保持されない (marker -> unlock -> spawn の順序)
 #   5. marker-unwritable : マーカーを書けないときは fetch を投げない (間引き無効化の防止)
@@ -115,7 +115,7 @@ case_fetch_invoked() {
   fi
 }
 
-# --- 2. 非ブロッキング (削除厳禁の 3 点セットの回帰ガード) ---
+# --- 2. 非ブロッキング (fd 付け替え (stdin/stdout/stderr) 3 点セットの回帰ガード) ---
 # fetch が SLOW_FETCH_SEC 秒かかっても、描画はそれを待たずに返ること。
 # `>/dev/null 2>&1 </dev/null` を外すと親が子の EOF を待ってブロックし、ここで落ちる。
 case_non_blocking() {

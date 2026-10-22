@@ -563,7 +563,7 @@ git_diff_stat() {
 #   出力: <↑ahead>(青)<↓behind>(黄) を区切りなしで詰めて連結する (例 "↑2↓3")。
 #   git rev-list --left-right --count '@{upstream}...HEAD' で取得する:
 #     左 = @{upstream} 側 = behind (pull 待ち)、右 = HEAD 側 = ahead (push 待ち)。
-#   git fetch は絶対に呼ばない (数秒ブロックし得るため)。最後に fetch/pull した時点で
+#   git fetch は呼ばない (数秒ブロックし得るため)。最後に fetch/pull した時点で
 #   ローカルが把握しているリモート追跡ブランチとの差を出す (git status の ahead/behind と同義)。
 #   ahead=professionalBlue (青)、behind=warning (黄)。ahead に success (緑) は使わない
 #   (隣接する diff の +add が緑を使っており混ざるため)。ahead/behind は別 paint で塗る。
@@ -602,17 +602,17 @@ git_ahead_behind() {
 # 目的は ↓behind の自動最新化。描画 (git_ahead_behind) はローカル完結のままで、
 # ここで投げた fetch の結果は「次回以降の」呼び出しの rev-list に反映される (今回の描画は待たない)。
 #
-# ネットワーク I/O を描画経路に持ち込まないための鉄則:
+# ネットワーク I/O を描画経路に持ち込まないための約束事:
 #   - fetch は ( ... & ) の投げっぱなし子プロセスに分離する。
 #   - 子プロセスの stdout/stderr/stdin を /dev/null に付け替える。これをしないと親の
 #     command substitution / statusline 呼び出し元が子の EOF (= fetch 完了) を待って
-#     ブロックする (数秒〜数分ハングし得る)。この 3 点セットは削除厳禁。
+#     ブロックする (数秒〜数分ハングし得る)。この 3 点セットは外さない。
 #   - fd 0/1/2 を塞いでも制御端末 (/dev/tty) は子に残る。OpenSSH は端末があるとき
 #     SSH_ASKPASS を無視して /dev/tty を直接開くため、SSH_ASKPASS_REQUIRE=force が無いと
 #     パスフレーズ/ホスト鍵のプロンプトが Claude Code の TUI に漏れ、キー入力を奪う。
 #     GIT_TERMINAL_PROMPT=0 が封じるのは git 自身の HTTPS プロンプトだけ。
 #     force + GIT_ASKPASS/SSH_ASKPASS=/bin/true (空を返す) で、資格情報が無い remote では
-#     端末に触れず即座に諦めさせる。この 4 変数も削除厳禁。
+#     端末に触れず即座に諦めさせる。この 4 変数も外さない (4 つで 1 セット)。
 #   - ロックは fetch を投げる「前」に解放する (下記)。
 #
 # 間引き: マーカー ${HISTORY_DIR}/fetch-<cwdキー> の mtime を見て GIT_FETCH_INTERVAL_SEC
@@ -675,7 +675,7 @@ maybe_git_fetch() {
 
   # マーカーを書いた時点で他プロセスは mtime 判定で弾かれるので、ロックはここで役目を終える。
   # fetch を投げる「前」に解放する: 子プロセスにロックを持ち越さないための順序であり、
-  # marker 更新 → unlock → fetch 起動 の順を入れ替えない (Linux 版と共通の鉄則)。
+  # marker 更新 → unlock → fetch 起動 の順を入れ替えない (Linux 版と共通)。
   release_lock "$lockdir"
 
   # 投げっぱなしの子プロセスで fetch する。stdout/stderr/stdin を /dev/null に付け替えて
@@ -948,7 +948,7 @@ fi
 # SHOW_CWD=0 のときは directory 列だけを出さず、2 行構成そのものは維持する
 # (branch 列と session_name は 1 行目に残る)。
 #
-# 末尾スラッシュの剥がしは必須 (削除厳禁): cwd="/tmp/project/" のような値でも
+# 末尾スラッシュの剥がしは必要: cwd="/tmp/project/" のような値でも
 # ${cwd##*/} は空文字になるため、剥がさないと **実在する名前付きディレクトリなのに
 # directory 列が丸ごと消える**。cwd は入力 JSON 由来で末尾スラッシュ付きも渡り得る。
 # "/" だけは剥がすと空文字になり、本来の「ルートは列ごと省略」と同じ結果へ収束する。
