@@ -22,7 +22,7 @@ jobs:
 
   test:
     # macOS 版は BSD 系コマンド前提のため macOS runner で回す。
-    # Homebrew の bash 4.1+ と flock を入れて Debian 版のケースも同じ runner で実行する。
+    # Debian 版は GNU coreutils 前提で macOS runner では動かないため、bash 4.1+ / flock を入れずに skip させる。
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
@@ -30,6 +30,6 @@ jobs:
         with:
           node-version: 'lts/*'
           cache: 'npm'
-      - run: brew install bash flock jq
+      - run: brew install jq
       - run: npm ci
       - run: npm test
