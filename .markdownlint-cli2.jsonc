@@ -1,4 +1,8 @@
 // .markdownlint-cli2.jsonc
 {
-  "ignores": ["node_modules"]
+  "ignores": [
+    "node_modules",
+    ".github/pull_request_template.md",
+    ".claude/handovers.local/**"
+  ]
 }
