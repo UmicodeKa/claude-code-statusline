@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+# テスト用の fake `git`。statusline 本体が呼ぶ git サブコマンドだけを最小実装する。
+# 実 git リポジトリを作らずブランチ取得・変更行数集計経路を検証するため、PATH 先頭に
+# このディレクトリを差し込んで本物の git を覆い隠す。
+#
+# 対応するのは statusline-*.sh が使う呼び出しのみ:
+#   git -C <dir> branch --show-current
+#   git -C <dir> rev-parse --short HEAD
+#   git -C <dir> diff HEAD --numstat
+#   git -C <dir> status -z
+#   git -C <dir> diff --no-index --numstat -- /dev/null <dir>/<path>
+#   git -C <dir> rev-list --left-right --count '@{upstream}...HEAD'
+#   git -C <dir> fetch --quiet   (maybe_git_fetch の投げっぱなし fetch。no-op)
+#
+# <dir> 末尾の規約 (#以降) でリポジトリ状態を表す。複数指定は ; で区切る:
+#   branch=<name>  -> branch --show-current が <name> を返す
+#   detached       -> branch --show-current は空、rev-parse が短縮 sha を返す。
+#                     rev-list は @{upstream} 解決不能で非ゼロ終了 (ab 規約より優先)
+#   diff=<add>,<del> -> numstat に "<add>\t<del>\tsrc/main.sh" を1行出す
+#   diff=bin         -> numstat にバイナリ行 "-\t-\tassets/logo.png" を出す
+#   diff=<add>,<del>+bin -> 数値行 + バイナリ行の両方を出す
+#   diff 規約なし      -> numstat 出力なし (クリーン)
+#   untracked=<f1>:<n1>,<f2>:<n2>,... -> 未追跡ファイル群を表す:
+#       status -z が各 "?? <f>" を NUL 終端で出力する。
+#       diff --no-index --numstat -- /dev/null <dir>/<f> が "<n>\t0\t<f>" を返す。
+#       <n> が "bin" のときバイナリ行 "-\t-\t<f>" を返す。
+#   ab=<ahead>,<behind> -> リモート追跡ブランチとの差を表す:
+#       rev-list --left-right --count '@{upstream}...HEAD' が "<behind>\t<ahead>" を返す
+#       (左 = @{upstream} 側 = behind、右 = HEAD 側 = ahead)。
+#   ab 規約なし        -> upstream 未設定扱い (本物の git と同じく非ゼロ終了・無出力)
+#   規約なしのパス      -> git 外扱い (本物の git と同じく非ゼロ終了・無出力)
+#
+# 例: .../repo#branch=main;diff=12,3;untracked=new.txt:5;ab=2,3
+set -u
+
+# git 本体オプション (-C <dir> / -c key=val) を任意個読み飛ばす。
+# 本体は status 取得時に -C のみだが、将来の -c 付与にも備えて吸収する。
+dir=""
+while [ "${1:-}" = "-C" ] || [ "${1:-}" = "-c" ]; do
+  if [ "${1:-}" = "-C" ]; then
+    dir=$2
+    shift 2
+  else
+    shift 2
+  fi
+done
+
+subcommand=${1:-}
+
+# <dir> から # 以降の規約文字列を取り出し、; 区切りの各トークンを評価する。
+spec=""
+case "$dir" in
+  *'#'*) spec=${dir##*'#'} ;;
+esac
+
+# spec を ; で分解し、branch_spec / diff_spec / untracked_spec を抽出する。
+# bash 3.2 互換のため配列を使わず、; 前後をパラメータ展開で繰り返し切り出す。
+branch_spec=""
+diff_spec=""
+untracked_spec=""
+ab_spec=""
+rest=$spec
+while [ -n "$rest" ]; do
+  token=${rest%%;*}
+  case "$rest" in
+    *';'*) rest=${rest#*;} ;;
+    *)     rest="" ;;
+  esac
+  case "$token" in
+    branch=*)    branch_spec=$token ;;
+    detached)    branch_spec=detached ;;
+    diff=*)      diff_spec=${token#diff=} ;;
+    untracked=*) untracked_spec=${token#untracked=} ;;
+    ab=*)        ab_spec=${token#ab=} ;;
+  esac
+done
+
+case "$subcommand" in
+  branch)
+    # branch --show-current: 規約 branch=<name> のときだけ <name> を出す。
+    case "$branch_spec" in
+      branch=*) printf '%s\n' "${branch_spec#branch=}"; exit 0 ;;
+      detached) exit 0 ;;        # detached HEAD は show-current が空・終了 0
+      *) exit 128 ;;             # git 外: 本物の git に合わせ非ゼロ終了
+    esac
+    ;;
+  rev-parse)
+    # rev-parse --short HEAD: detached HEAD のフォールバック用。7 桁 hex を返す。
+    case "$branch_spec" in
+      detached|branch=*) printf 'a1b2c3d\n'; exit 0 ;;
+      *) exit 128 ;;
+    esac
+    ;;
+  diff)
+    # 第2引数が --no-index なら未追跡ファイルの行数取得、それ以外は diff HEAD --numstat。
+    if [ "${2:-}" = "--no-index" ]; then
+      # diff --no-index --numstat -- /dev/null <repo>/<path> を模す。
+      # 最後の引数は <dir>/<path>。先頭の <dir>/ を剥がしてリポジトリ相対パスを得る
+      # (basename に落とすと dir/file.txt のようなサブディレクトリ付きで照合できない)。
+      # 本物の git 同様、差分ありなので exit 1 で出力する。
+      last_arg=""
+      for arg in "$@"; do last_arg=$arg; done
+      target=${last_arg#"$dir"/}
+      lines=""
+      rest2=$untracked_spec
+      while [ -n "$rest2" ]; do
+        entry=${rest2%%,*}
+        case "$rest2" in
+          *,*) rest2=${rest2#*,} ;;
+          *)   rest2="" ;;
+        esac
+        case "$entry" in
+          "${target}:"*) lines=${entry#*:}; break ;;
+        esac
+      done
+      case "$lines" in
+        '')  exit 0 ;;                                  # 規約に無い: 差分なし扱い
+        bin) printf -- '-\t-\t%s\n' "$target"; exit 1 ;; # バイナリ未追跡
+        *)   printf '%s\t0\t%s\n' "$lines" "$target"; exit 1 ;;
+      esac
+    fi
+    # diff HEAD --numstat を模す。git 外 (branch_spec 空) は本物の git に合わせ失敗する。
+    case "$branch_spec" in
+      '') exit 128 ;;
+    esac
+    case "$diff_spec" in
+      '')    exit 0 ;;                                       # 規約なし: 出力なし (クリーン)
+      bin)   printf -- '-\t-\tassets/logo.png\n'; exit 0 ;;  # バイナリのみ
+      *+bin)
+        nums=${diff_spec%+bin}
+        printf '%s\t%s\tsrc/main.sh\n' "${nums%,*}" "${nums#*,}"
+        printf -- '-\t-\tassets/logo.png\n'
+        exit 0 ;;
+      *)
+        printf '%s\t%s\tsrc/main.sh\n' "${diff_spec%,*}" "${diff_spec#*,}"
+        exit 0 ;;
+    esac
+    ;;
+  status)
+    # status -z を模す。git 外 (branch_spec 空) は失敗する。
+    # untracked_spec の各 "<file>:<lines>" を "?? <file>" として NUL 終端で 1 件ずつ出す
+    # (本体は git status -z を呼ぶ。-z はパスをクォートせず NUL 区切りで列挙する)。
+    case "$branch_spec" in
+      '') exit 128 ;;
+    esac
+    rest2=$untracked_spec
+    while [ -n "$rest2" ]; do
+      entry=${rest2%%,*}
+      case "$rest2" in
+        *,*) rest2=${rest2#*,} ;;
+        *)   rest2="" ;;
+      esac
+      [ -n "$entry" ] && printf '?? %s\0' "${entry%%:*}"
+    done
+    exit 0
+    ;;
+  rev-list)
+    # rev-list --left-right --count '@{upstream}...HEAD' を模す。
+    # ab=<ahead>,<behind> 規約ありなら "<behind>\t<ahead>" を返す
+    # (左 = @{upstream} 側 = behind、右 = HEAD 側 = ahead)。
+    # 規約なしは upstream 未設定として本物の git 同様に非ゼロ終了・無出力にする。
+    # detached HEAD は @{upstream} を解決できないため、ab 規約の有無に関わらず
+    # 本物の git 同様に非ゼロ終了する (ab 規約が誤って矢印を出さないよう先に落とす)。
+    [ "$branch_spec" = "detached" ] && exit 128
+    case "$ab_spec" in
+      '') exit 128 ;;
+      *)
+        printf '%s\t%s\n' "${ab_spec#*,}" "${ab_spec%,*}"
+        exit 0 ;;
+    esac
+    ;;
+  fetch)
+    # 本体の maybe_git_fetch が投げる fetch を no-op で受ける (実ネットワークに出さない)。
+    # 即終了することで投げっぱなし子プロセスが親の command substitution をブロックしない。
+    #
+    # git-fetch-behavior.sh から下記 env を渡すと、fetch の実挙動を観測できる:
+    #   STATUSLINE_TEST_FETCH_SLEEP=<秒>  -> fetch を <秒> 遅らせる (非ブロッキング検証用)
+    #   STATUSLINE_TEST_FETCH_SENTINEL=<path> -> fetch 1 回につき 1 行 append
+    #                                            (fetch が実際に exec されたかの観測用)
+    # env は statusline 経由で投げっぱなし子プロセスまで継承される。
+    [ "${STATUSLINE_TEST_FETCH_SLEEP:-0}" -gt 0 ] 2>/dev/null \
+      && sleep "$STATUSLINE_TEST_FETCH_SLEEP"
+    [ -n "${STATUSLINE_TEST_FETCH_SENTINEL:-}" ] \
+      && printf 'fetch\n' >> "$STATUSLINE_TEST_FETCH_SENTINEL"
+    exit 0
+    ;;
+  *)
+    exit 128
+    ;;
+esac

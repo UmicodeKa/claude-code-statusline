@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint
+
+  test:
+    # macOS 版は BSD 系コマンド前提のため macOS runner で回す。
+    # Homebrew の bash 4.1+ と flock を入れて Debian 版のケースも同じ runner で実行する。
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+      - run: brew install bash flock jq
+      - run: npm ci
+      - run: npm test

@@ -1,0 +1,6 @@
+# diff=bin: numstat がバイナリ行 "-\t-\tpath" のみ -> 行数は不明だがファイル数 1 にカウント -> "main 1"
+# 数値行が無く add=del=0 なので +/- は出ない
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
+matches_line1: ^\\e\[38;2;153;153;153msl-repo#branch=main;diff…\\e\[0m \| main \\e\[38;2;255;255;255m1\\e\[0m$
+not_contains: +
+not_contains_line2: -

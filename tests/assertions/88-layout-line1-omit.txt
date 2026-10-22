@@ -1,0 +1,4 @@
+# LAYOUT_LINE1=branch|session -> 省いた directory 列とその区切りが出ない
+matches_line1: ^main \| my-session$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
+not_contains_line1: sl-repo

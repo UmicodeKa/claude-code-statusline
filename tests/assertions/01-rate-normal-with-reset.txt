@@ -1,0 +1,9 @@
+# rate=30% (残量70), reset=1700000000 (UTC 22:13) -> 色なし + 時刻のみ
+# ctx=40% -> 色なし + 1 文字 spark のみ
+# 列順: model | ctx | rate | (branch=空) | (session=空)
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
+matches_line1: ^\\e\[38;2;153;153;153mstatusline-demo\\e\[0m$
+not_contains_line2: \e[
+not_contains: 70%
+not_contains_line2: -
+exit_code: 0

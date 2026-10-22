@@ -1,0 +1,5 @@
+# rate=90% (残量10), reset=1700000000 -> 橙(claude) + chart 10% - 22:13
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| \\e\[38;2;215;119;87m[▁▂▃▄▅▆▇█]{6} 10% - 22:13\\e\[0m$
+matches_line1: ^\\e\[38;2;153;153;153mstatusline-demo\\e\[0m$
+contains: \e[38;2;215;119;87m
+contains: 10% - 22:13

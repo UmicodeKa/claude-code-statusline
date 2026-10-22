@@ -1,0 +1,7 @@
+# branch トリムテスト: cwd=branch=feature/improve-awesome-statusline の git repo (git-shim で再現)
+# branch=feature/improve-awesome-statusline は 34 文字 > 25 文字 -> 先頭 24 文字 + … でトリム
+# 期待: 1 行目が "<directory> | feature/improve-awesome-…"
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
+matches_line1: ^\\e\[38;2;153;153;153mimprove-awesome-statusli…\\e\[0m \| feature/improve-awesome-…$
+contains: feature/improve-awesome-…
+not_contains: feature/improve-awesome-statusline

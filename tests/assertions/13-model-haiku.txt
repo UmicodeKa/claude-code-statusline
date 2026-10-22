@@ -1,0 +1,5 @@
+# model=Haiku -> ✻ とモデル名がシアン (subagent_cyan 8;145;178)
+matches_line2: ^\\e\[38;2;8;145;178m✻ Haiku 4\.5\\e\[0m [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
+matches_line1: ^\\e\[38;2;153;153;153mstatusline-demo\\e\[0m$
+contains: \e[38;2;8;145;178m
+contains: Haiku 4.5

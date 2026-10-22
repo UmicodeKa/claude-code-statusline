@@ -1,0 +1,15 @@
+{
+  "private": true,
+  "scripts": {
+    "test": "run-s test:regression test:fetch",
+    "test:regression": "bash tests/regression.sh",
+    "test:fetch": "bash tests/git-fetch-behavior.sh",
+    "preview": "bash tests/e2e-preview.sh",
+    "lint": "markdownlint-cli2 \"**/*.md\"",
+    "lint:fix": "markdownlint-cli2 --fix \"**/*.md\""
+  },
+  "devDependencies": {
+    "markdownlint-cli2": "^0.23.3",
+    "npm-run-all2": "^8.0.4"
+  }
+}

@@ -1,0 +1,5 @@
+# 配布テンプレートの LAYOUT_LINE1 / LAYOUT_LINE2 が既定レイアウトと一致する
+# (86 は branch/session の無い fixture のため、並びの一致はこちらで検証する)
+matches_line1: ^\\e\[38;2;153;153;153msl-repo#branch=main;ab=0…\\e\[0m \| main \| my-session$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
+exit_code: 0

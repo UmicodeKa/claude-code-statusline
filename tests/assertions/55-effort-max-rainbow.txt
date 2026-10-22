@@ -1,0 +1,10 @@
+# effort=max -> rainbow (RAINBOW_PALETTE で 1 文字ずつ着色)。effort_color が "rainbow" を返し
+# paint 経由で rainbow が live 呼び出しされる初の本番経路。
+# モデル名表示 ON なので `∙` 区切りで連結 (前後スペースなし)。∙ は無色 (rainbow 循環の外) で、
+# rainbow は effort 語句 "max" の 3 文字のみに掛かる。
+# "max" の m / a / x が palette[0..2] = 235;95;87 / 245;139;87 / 250;195;95 の別色になる
+# (= 単色化していない rainbow であることを 1 文字ごとの色シーケンスで担保)。末尾は \e[0m 1 回。
+matches_line2: ^✻ Sonnet 4\.6∙\\e\[38;2;235;95;87mm\\e\[38;2;245;139;87ma\\e\[38;2;250;195;95mx\\e\[0m [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
+matches_line1: ^\\e\[38;2;153;153;153mstatusline-demo\\e\[0m$
+contains: ∙\e[38;2;235;95;87mm
+contains: \e[38;2;250;195;95mx\e[0m

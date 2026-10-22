@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+._*
+
+# Editors
+.idea/
+.vscode/
+*.code-workspace
+*.swp
+*~
+
+# Claude Code
+.claude/**/*.local
+.claude/**/*.local.*
+.claude/**/*.local/
+
+# npm
+node_modules/
+npm-debug.log*

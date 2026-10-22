@@ -1,0 +1,8 @@
+# model=Opus 4.7 (1M context) (21 文字) > 13 文字 -> 先頭 12 文字 + … でトリム
+# Opus 判定の色 (オレンジ) は丸める前の全長で行うので、トリム後も維持される
+# 期待: "✻ Opus 4.7 (1M…" (Opus 4.7 (1M + …)
+contains: \e[38;2;215;119;87m
+contains: Opus 4.7 (1M…
+not_contains: 1M context
+# git 外なので 1 行目は directory のみ (branch 列は出ない)
+matches_line1: ^\\e\[38;2;153;153;153mstatusline-demo\\e\[0m$

@@ -1,0 +1,7 @@
+# rate=85% (残量 15 ジャスト) -> 橙(claude) + chart 15% - 22:13
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| \\e\[38;2;215;119;87m[▁▂▃▄▅▆▇█]{6} 15% - 22:13\\e\[0m$
+matches_line1: ^\\e\[38;2;153;153;153mstatusline-demo\\e\[0m$
+contains: \e[38;2;215;119;87m
+contains: 15% - 22:13
+not_contains: \e[38;2;255;193;7m
+not_contains: \e[5m\e[38;2;255;107;128m

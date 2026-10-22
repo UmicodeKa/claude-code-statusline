@@ -1,0 +1,6 @@
+# cwd 末尾スラッシュ ("/tmp/my-workspace/") -> ${cwd##*/} は空になるため、
+# 剥がさないと実在ディレクトリなのに directory 列が丸ごと消える。
+# 末尾スラッシュを剥がして basename を取り、71-line2-dir-only と同じ表示になること。
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
+matches_line1: ^\\e\[38;2;153;153;153mmy-workspace\\e\[0m$
+exit_code: 0

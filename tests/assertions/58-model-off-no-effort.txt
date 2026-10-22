@@ -1,0 +1,7 @@
+# SHOW_MODEL_NAME=0 + effort 欠落 -> ✻ のみ (Opus=オレンジ 38;2;215;119;87 単色)。
+# モデル名も effort も出さない。
+matches_line2: ^\\e\[38;2;215;119;87m✻\\e\[0m [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
+matches_line1: ^\\e\[38;2;153;153;153mstatusline-demo\\e\[0m$
+contains: \e[38;2;215;119;87m✻\e[0m
+not_contains: Opus
+not_contains: high

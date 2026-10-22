@@ -1,0 +1,6 @@
+# SHOW_CWD=0: cwd は実在する名前付きディレクトリだが directory 列は出ない。
+# branch も session_name も無いため 1 行目ごと省略される (74 は cwd="" 由来の省略で、
+# 本ケースは SHOW_CWD フラグ由来であることを not_contains で区別する)
+matches_line1: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
+no_line2: true
+not_contains: my-workspace

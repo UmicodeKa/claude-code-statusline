@@ -1,0 +1,7 @@
+# upstream 未設定 (ab 規約なし) + 別ブランチ名: branch は取れる (detached ではない) ため、
+# branch 名の右に青 * (professionalBlue) を併記する。64 と別に青 * の regex を厳密検証する。
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
+matches_line1: ^\\e\[38;2;153;153;153mnew\\e\[0m \| feature/new \\e\[38;2;106;155;204m\*\\e\[0m$
+contains: feature/new \e[38;2;106;155;204m*\e[0m
+not_contains: ↑
+not_contains: ↓

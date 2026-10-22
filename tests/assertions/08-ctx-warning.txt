@@ -1,0 +1,6 @@
+# ctx=75% -> 黄(warning) + 1 文字 spark + 75%
+# rate=30% (残量70), reset=1700000000 -> 色なし + chart + 22:13
+matches_line2: ^✻ Sonnet 4\.6 \\e\[38;2;255;193;7m[▁▂▃▄▅▆▇█] 75%\\e\[0m \| [▁▂▃▄▅▆▇█]{6} 22:13$
+matches_line1: ^\\e\[38;2;153;153;153mstatusline-demo\\e\[0m$
+contains: \e[38;2;255;193;7m
+contains: 75%
