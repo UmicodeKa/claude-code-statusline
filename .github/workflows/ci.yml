@@ -21,7 +21,7 @@ jobs:
       - run: npm run check:ci
 
   test:
-    # Debian 版は GNU coreutils 前提で手元の macOS では検証できないため、ubuntu runner で回す。
+    # Linux 版は GNU coreutils 前提で手元の macOS では検証できないため、ubuntu runner で回す。
     # macOS 版は BSD 系コマンド前提で Linux では動かず (ハーネスが skip する)、手元の npm test で担保する。
     runs-on: ubuntu-latest
     steps:
@@ -32,7 +32,7 @@ jobs:
           cache: 'npm'
       - run: sudo apt-get update && sudo apt-get install -y jq
       - run: npm ci
-      # Debian 版を実行できない環境なら skip せずに落とす (全件 skip のまま green になるのを防ぐ)。
+      # Linux 版を実行できない環境なら skip せずに落とす (全件 skip のまま green になるのを防ぐ)。
       - run: npm test
         env:
           STATUSLINE_TEST_REQUIRE_DEBIAN: '1'

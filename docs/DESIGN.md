@@ -1,0 +1,430 @@
+# 設計メモ
+
+このドキュメントは、statusline スクリプトの実装上の仕組み、壊れやすい箇所、採らなかった案をまとめたものです。表示される内容 (何が、どの順で、どの色で出るか) の定義は [SPEC.md](SPEC.md) にあり、ここでは｢なぜその実装になっているか｣と｢変えると何が起きるか｣を扱います。テストの書き方は [tests/README.md](../tests/README.md)、開発の進め方は [CONTRIBUTING.md](../CONTRIBUTING.md) を参照してください。
+
+## 目次
+
+- [全体の構成](#全体の構成)
+- [macOS 版と Linux 版の差分](#macos-版と-linux-版の差分)
+- [実装上の仕組み](#実装上の仕組み)
+- [壊れやすい箇所と守っているテスト](#壊れやすい箇所と守っているテスト)
+- [採らなかった案と経緯](#採らなかった案と経緯)
+- [テストで守れていない箇所](#テストで守れていない箇所)
+
+## 全体の構成
+
+macOS 版 (`statusline-macos.sh`) と Linux 版 (`statusline-linux.sh`) は同じ順序で処理を進めます。
+
+1. `export LC_ALL=C.UTF-8` でロケールを固定する
+2. 設定ファイル (`~/.claude/statusline.conf`) を読み込む
+3. カスタマイズ設定を env > conf > 既定値 の順で決める
+4. 内部定数 (`SPARKS` / `HISTORY_LEN` / `UNTRACKED_DIFF_LIMIT`) を定義し、間引き間隔を clamp する
+5. カラースキーム (`COLOR_*`) を定義する
+6. 依存コマンドを確認し、履歴ディレクトリを安全に用意する
+7. 入力 JSON を `jq` 1 回で読み取る
+8. rate 履歴を更新してチャートを作る
+9. git のブランチ、変更行数、ahead/behind を取得する (`GIT_FETCH=1` のときはここでバックグラウンド fetch を投げる)
+10. 各フィールドを着色し、レイアウトに従って 1 行目と 2 行目を組み立てて出力する
+
+Linux 版はステップ 1 の前に bash 4.1+ ゲートを置き、ステップ 6 では履歴ディレクトリの準備を先に行ってから `jq` / `flock` を確認します (macOS 版は `jq` の確認が先です)。また `LOCK_TIMEOUT_SEC` は、Linux 版では内部定数のブロックに、macOS 版ではロック取得関数 (`acquire_lock`) の直前にあります。
+
+描画は statusline が更新されるたびに走るため、全体を通して｢fork (外部コマンド起動) を増やさない｣｢ネットワーク I/O を描画経路に入れない｣｢異常があっても表示は続ける｣の 3 点を優先しています。
+
+## macOS 版と Linux 版の差分
+
+両版の違いはプラットフォーム依存の部分に限られます。
+
+| 項目 | macOS 版 | Linux 版 |
+| --- | --- | --- |
+| 想定 bash | `/bin/bash` 3.2 以上 | bash 4.1 以上 (冒頭でバージョン確認) |
+| 排他制御 | `mkdir` の原子性 + stale ロック解除 | `flock(1)` + named fd (`exec {fd}>...`) |
+| ロックの実体 | `<対象>.lockd` ディレクトリ | `<対象>.lock` ファイル |
+| `date` / `stat` | `uname -s` で BSD 版と GNU 版を切り替える | GNU 版 (`date -d "@.."`、`stat -c`) |
+| 依存コマンドの確認 | `jq` | `jq` と `flock` |
+
+macOS 版で `flock` を使わないのは、macOS に標準で入っておらず、無い環境では黙って失敗するためです。代わりに POSIX で原子性が保証されている `mkdir` でロックを取り、`LOCK_TIMEOUT_SEC` × 5 秒 (既定 10 秒) より古いロックディレクトリは stale とみなして削除します。Linux 版の `flock` はプロセス終了時に自動で解放されるため、stale 処理は持ちません。
+
+これ以外のブロック (設定の読み込み、カスタマイズ設定、clamp、カラースキーム) は両版で一字一句同じに保ちます。`tests/script-parity.sh` がこれらのブロックを抜き出して比較します。
+
+## 実装上の仕組み
+
+### 色付けの 3 段構成
+
+すべての着色 (model / effort / ctx / rate / diff / ahead-behind / directory) は `paint <text> <effect> [arg]` を経由します。
+
+- `paint` は effect 名を見て `static` か `rainbow` に振り分けるだけのディスパッチャです
+- `static <text> <color>` は単色で囲んで末尾に `\033[0m` を付けます。color が空のときは文字列を末尾改行付きで素通しします
+- 色を決める関数 (`model_color` / `effort_color` / `ctx_color` / `rate_color`) は `"static <ansi>"` / `"static"` / `"rainbow"` という effect 指定の文字列を返し、呼び出し側はそれをクォートせずに展開して `paint` に渡します
+
+新しいエフェクトを足すときは `paint` に分岐を 1 つ追加すれば済みます。個別の経路から `static` を直接呼ぶ形に戻すと、エフェクトの追加箇所が分散します。
+
+無色の `static` は末尾改行を付けるため、`$(...)` で受けて改行を落としてから連結します (無色の `*` や無色のモデル名がこの経路を通ります)。色付きの `static` は末尾改行を付けないので、そのまま連結しても出力は崩れません。
+
+### rainbow
+
+effort が `max` のとき、`effort_color` が `rainbow` を返し、語句を 1 文字ずつ別の色で塗ります。
+
+- 色は `RAINBOW_PALETTE` (7 色の truecolor `R;G;B`) を i 番目の文字に `palette[i % 7]` で割り当てます。補間はしません
+- 末尾の `\033[0m` は最後に 1 回だけ付けます
+- 1 文字の切り出しは `${text:i:1}` で行い、外部コマンドに文字を渡しません。マルチバイト文字を壊さないためで、`LC_ALL=C.UTF-8` で文字数換算になることが前提です
+
+### effort の連結と区切り
+
+effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の色シーケンスと混ぜません。
+
+- `SHOW_MODEL_NAME=1` のとき: `model_field` と effort の間に無色の `∙` を前後スペースなしで挟みます。`∙` は `paint` を通さないので、`max` の rainbow 循環にも入りません
+- `SHOW_MODEL_NAME=0` のとき: `∙` を使わず、スペース 1 個で連結します
+- effort が空 (非対応モデル) のときは `[ -n "$effort" ]` で分岐ごと飛ばし、区切りも effort も出しません。effort 導入前と同じ出力になります
+
+### `✻` の常時表示
+
+`SHOW_MODEL_NAME=0` でもモデル名だけを消し、`✻` は `model_color` の色で残します。記号の色でモデルを見分けられるようにするためです。色の判定はトリム前のモデル名全体で行うので、13 文字で切られたあとも色は変わりません。
+
+### カラースキーム定数ブロック
+
+`COLOR_*` は Claude Code の light/dark テーマに合わせた配色で、`COLOR_SCHEME` の `case` で 2 セットを切り替えます。
+
+- `_fg` は `R;G;B` を `\033[38;2;R;G;Bm` に展開するヘルパで、定義時にだけ使います。各 `COLOR_*` は実際の ESC を含む文字列になっているので、使う側は `printf` で包まずに `static` へ渡します
+- セマンティック名 (`success` / `error` など) は用途を表す名前で、今は使っていないキーも残しています
+- `COLOR_subagent_*` は Claude Code のサブエージェント表示に使われる色に対応します
+
+色の値を各関数に直接書く形に戻すと、light/dark の切り替えと両版の一致確認が難しくなります。
+
+### rate / ctx の 3 階調と点滅
+
+テーマの配色には警告系の色が `warning` (黄) と `error` (赤) の 2 段しかありません。rate と ctx では中間に `claude` (橙) を挟み、警戒 → 危険 → 致命 の 3 段にしています。致命段は `error` に点滅属性 `\033[5m` を重ねます。点滅は色ではなく属性なので、色の数を増やさずに危険段と区別できます。点滅を外して `error` 単色にすると、致命段と危険段の見た目の差が色だけになり、隣接する段と紛れやすくなります。
+
+### 1 行目の組み立て
+
+1 行目は 2 行目の `parts` とは別の配列 `line1_parts` で組み立てます。
+
+- 要素が 1 つ以上あるときだけ `join_by` の結果に改行を付けて出力します
+- 改行は 1 行目の末尾に置きます。2 行目の先頭に置く (`printf '\n%s'`) と、1 行目が省略されたときに先頭へ空行が出ます
+- directory･branch･session がすべて空のときは改行も出しません。空行でも statusline の高さを 1 行分占有するためです
+
+### レイアウトのトークン設計
+
+`LAYOUT_LINE1` / `LAYOUT_LINE2` は `build_layout` で走査し、各トークンの値を `layout_token` で引きます。
+
+- トークン間の区切りは常に ` | ` です。トークンの内側で別の区切りを使う要素は 1 トークンにまとめています
+  - `model_ctx` は `✻ <model>∙<effort> <ctx>` (`∙` とスペース 1 個を内包)
+  - `branch` は `<branch>${ab_str:+ $ab_str}${diff_str:+ $diff_str}` (ab と diff が空のときに末尾スペースを残さないよう `:+` で条件付き連結)
+- `model` と `ctx` を別トークンに分けないのは、トークン間の区切りが組み合わせごとに変わり、実装とテストの両方が複雑になるためです
+- `build_layout` の第 3 引数で｢空の値を積むか｣を切り替えます。1 行目は `0` (空なら列ごと省略)、2 行目は `1` (空でも積む)
+- 2 行目は走査対象の末尾に既定の全トークン (`|model_ctx|rate`) を足し、書かれなかったトークンを既定順で補います。これにより `✻` を含む `model_ctx` は消せません
+- 未知のトークンは黙って無視し、重複は最初の 1 回だけ採ります。前後の空白 (タブを含む) はパラメータ展開で除去し、`tr` や `awk` は使いません
+- トークンから値への対応は連想配列ではなく `case` で引き、値はグローバル変数 `token_value` で返します。macOS の `/bin/bash` 3.2 には連想配列が無く、`$(...)` で受けると fork が増えるためです (branch / session のトリムだけは `truncate_label` の command substitution を伴います)
+- `SHOW_CWD=0` は `directory` トークンが空を返すことで実現しています。フラグとレイアウトで二重に判定する箇所を作らないためです
+
+### rate チャートの土台と右端の現在値
+
+rate チャートは `HISTORY_LEN` (6) 文字で、左 5 文字が履歴、右端 1 文字が現在値です。
+
+- `rate_chart` はまず `history_chart /dev/null` (履歴なしのパディング `······`) で初期化し、`HISTORY_DIR` が有効なときだけ実際の履歴で上書きします
+- そのうえで、残量 (`rate_remaining`) があれば右端 1 文字を `spark_single` の現在値に差し替えます。`rate_chart` は土台のおかげで常に空でないため、分岐条件は `rate_remaining` の有無だけです
+- 履歴の追記は `POLL_INTERVAL_SEC` (既定 480 秒) で間引かれるので、差し替えが無いとリセット直後でも右端が古い値のまま残ります
+- `${rate_chart:0:5}` の切り出しは、`LC_ALL=C.UTF-8` で文字数換算になることが前提です (スパーク文字は 3 バイト)
+
+### 履歴ファイルと排他制御
+
+- 履歴は rate だけが持ちます。rate は 5 時間ウィンドウのアカウント単位の値で全セッション共通なので、`${HISTORY_DIR}/rate` の 1 ファイルに集約します。ctx は現在値の 1 文字だけを描くため履歴を持ちません
+- 空の履歴ファイルへの初回追記では、現在値を `HISTORY_LEN` 件書き込みます。初回表示で `·` が並ぶのを避けるためです
+- 追記後は `tail -n HISTORY_LEN` を一時ファイルへ書いて `mv` で置き換えます。読み出し側も `tail -n HISTORY_LEN` で末尾だけを読むので、切り詰めに失敗してファイルが伸びても表示幅は崩れません
+- 複数の statusline が同時に書き込むことがあるため、追記はロックの中で行います。ロック待ちは `LOCK_TIMEOUT_SEC` (2 秒) までで、取れなければその回の追記を飛ばします。statusline は頻繁に呼ばれるので、次の呼び出しで反映されます
+
+### 入力 JSON の読み取り
+
+`jq` は 1 回の起動に数十 ms かかるため、必要な 7 フィールドを 1 回の呼び出しで 1 行ずつ出力し、`read` を 7 回呼んで受け取ります。
+
+- 文字列フィールドは `jq` の中で改行･タブ･CR を空白に置き換えます。値に改行が混ざると行の対応がずれるためです
+- `@tsv` で 1 行にまとめる方法は使いません。bash 3.2 では IFS が非空白のとき `read` が連続する区切りを 1 つにまとめてしまい、空フィールドが失われます
+- 新しいフィールドは末尾に追加します。途中に挿入すると、既存の変数と行の対応がずれます (`effort` が最後にあるのはこのためです)
+
+### 変更行数の集計
+
+- 追跡ファイルは `git diff HEAD --numstat` の 1 回で、ステージ済みと未ステージをまとめて集計します
+- 未追跡ファイルは `git status -z` で NUL 区切りに列挙します。パスがクォートされないため、空白や改行を含むパスも扱えます
+- 未追跡ファイルごとに `git diff --no-index --numstat -- /dev/null <path>` を呼ぶため、件数に比例して fork が増えます。`UNTRACKED_DIFF_LIMIT` (50) 件を超えた分は行数を取らず、ファイル数だけを数えます
+
+### ahead/behind と `*` の判定
+
+- ahead/behind は `git rev-list --left-right --count '@{upstream}...HEAD'` の 1 回で取ります。ローカルにあるリモート追跡ブランチとの比較なので、ネットワークには出ません
+- rev-list が失敗したときは `*` を出します。detached HEAD かどうかは main 側でブランチ取得時に判定済みの値 (`is_detached`) を引数で受け取り、関数内で git を呼び直しません
+- ｢upstream 未設定｣と｢ブランチは取れるのに rev-list だけ失敗するリポジトリ内の異常｣は終了コードで区別できません。区別のために git 呼び出しを足すことはせず、どちらも青の `*` として扱います
+- ahead の色に `success` (緑) を使わないのは、すぐ右に並ぶ変更行数の `+N` が緑で、境目が分かりにくくなるためです。upstream 未設定の `*` も、ローカルが先行している状態の一種として ahead と同じ青にしています
+
+### directory 列
+
+- 複数のセッションを並行しているときに、どのプロジェクトを操作しているかを見分けるための列です
+- `workspace.current_dir` の basename をパラメータ展開 (`${path##*/}`) だけで取り出し、`basename` や git の呼び出しを足しません
+- 末尾のスラッシュは先に取り除きます。`/tmp/project/` のような値では `${cwd##*/}` が空になり、実在するディレクトリなのに列が消えるためです。`/` だけは除去すると空になり、｢ルートは列ごと省略｣と同じ結果になります
+
+## 壊れやすい箇所と守っているテスト
+
+各項目は｢箇所 / 何をしているか / 外すと何が起きるか / 守っているテスト｣の順に書いています。テスト名は `tests/assertions/` のケース名、`tests/git-fetch-behavior.sh` のケース名、`tests/script-parity.sh` のチェック名、`tests/regression.sh` の静的チェック名です。
+
+`tests/script-parity.sh` は `npm test` に含まれ、OS に依存しないため CI (ubuntu) でも実行されます。
+
+### ロケール固定
+
+- 箇所: 両版冒頭の `export LC_ALL=C.UTF-8`
+- 何をしているか: UTF-8 の記号 (`✻` `▁..█` `…` `↑` `↓` `∙`) を表示し、`${#var}` / `${var:0:N}` を文字数換算にする
+- 外すと何が起きるか: 実行環境のロケールが C などのとき、トリムと切り出しがバイト数換算になる。rate チャートの右端差し替えや rainbow の 1 文字切り出しがマルチバイト文字の途中で切れ、表示が崩れる。両版の出力も環境によって食い違う
+- 守っているテスト: `tests/script-parity.sh` の `static:locale` (冒頭 20 行に記述があることの静的確認)。出力比較のケースは実行環境のロケールに左右されるため、記述を消しても開発環境が UTF-8 なら落ちないことがある
+
+### Linux 版の bash 4.1+ ゲート
+
+- 箇所: Linux 版冒頭の `BASH_VERSINFO` 判定
+- 何をしているか: bash 4.1 未満なら `✻ -- (bash 4.1+ required)` を出して終了する
+- 外すと何が起きるか: Linux 版は named fd (`exec {fd}>...`) を使うため、古い bash ではパースエラーになり、statusline にエラー文が出るか何も出なくなる
+- 守っているテスト: `tests/regression.sh` の `bash-4.1-gate` (冒頭 20 行にガードのコード片が完全一致で残っていることの静的確認)
+
+### 依存コマンドの確認
+
+- 箇所: macOS 版の `jq` 確認、Linux 版の `jq` と `flock` の確認
+- 何をしているか: 足りないときは 1 行のメッセージを出して終了する (文言は [SPEC.md](SPEC.md#起動時チェックとフォールバック出力))
+- 外すと何が起きるか: コマンドが見つからないエラーが statusline に流れ、原因が分かりにくくなる
+- 守っているテスト: テストなし
+
+### `printf '%s'` の統一
+
+- 箇所: 両版の出力すべて
+- 何をしているか: 値の出力に `echo` を使わず `printf '%s'` を使う
+- 外すと何が起きるか: セッション名などの値が `-n` / `-e` で始まる場合やバックスラッシュを含む場合に、`echo` がオプションやエスケープとして解釈して値が欠ける
+- 守っているテスト: `14-session-name-dash-n`、`tests/script-parity.sh` の `static:no-echo`
+
+### 設定ファイルの読み込みブロック
+
+- 箇所: 冒頭の｢ユーザー設定ファイルの読み込み｣ブロック
+- 何をしているか:
+  - 内部定数と clamp より前、カスタマイズ設定の直前で conf を読む
+  - 読み込み前に短縮名の 8 変数 (`SHOW_MODEL_NAME` / `COLOR_SCHEME` / `GIT_FETCH` / `SHOW_CWD` / `POLL_INTERVAL_SEC` / `GIT_FETCH_INTERVAL_SEC` / `LAYOUT_LINE1` / `LAYOUT_LINE2`) を `unset` する
+  - `[ -f ] && [ -r ]` を満たすときだけ `.` で読み、読めなければ黙って既定値で続ける
+  - `/` を含まないパスには `./` を前置する
+  - 読み込み直後に 8 変数の末尾の `\r` を取り除く
+  - 各設定は `${CLAUDE_STATUSLINE_X:-${X:-既定値}}` で読み、env > conf > 既定値 の順にする。env 口の無い間引き間隔は `${X:-既定値}` で読む
+- 外すと何が起きるか:
+  - 読み込みを clamp より後へ移すと、conf の不正な間引き間隔が丸められず間引きが無効になる
+  - 内部定数より後へ移すと、conf で `HISTORY_LEN` などを変えられ、出力の形が変わる
+  - `unset` を外すと、外の環境にある同名の変数が conf の代わりに効いてしまう
+  - `-r` だけで判定すると、ディレクトリを `.` してエラーが出る
+  - `./` を付けないと、`.` が `$PATH` からファイルを探し、`[ -f ]` で確認したものとは別のファイルを読むことがある
+  - `\r` を取り除かないと、CRLF で保存した conf の値が `light\r` のようになり、黙って既定値扱いになる
+  - 設定を `X=480` のような無条件代入に戻すと、conf の値が上書きされる
+- 守っているテスト:
+  - `79-config-show-model-off`〜`86-config-template`、`94-config-layout`〜`96-config-layout-crlf`
+  - `tests/script-parity.sh` の `block:config-load` / `block:settings`
+  - `unset` は、回帰ハーネスが全ケースで短縮名を既定値と異なる値で渡しているため、外すと全ケースが落ちる
+  - `./` の前置はテストなし
+
+conf はシェルスクリプトとして読み込みます。JSON や YAML にしないのは、描画のたびに `jq` などのパーサを起動する fork が増えるためです。パーミッションや所有者の確認はしません (`~/.claude/` はユーザー自身の領域のため)。
+
+### 間引き間隔の clamp
+
+- 箇所: `POLL_INTERVAL_MIN/MAX_SEC` / `GIT_FETCH_INTERVAL_MIN/MAX_SEC` と直後の `case` と `[ -lt ]` / `[ -gt ]`
+- 何をしているか:
+  - `POLL_INTERVAL_SEC` を 60〜3000、`GIT_FETCH_INTERVAL_SEC` を 60〜1800 に丸める
+  - 非数値･空･負値は既定値 (480 / 900) に戻す
+  - 9 桁以上は比較せずに上限へ丸める
+  - command substitution を使わずに変数へ直接代入する
+- 外すと何が起きるか:
+  - 間引きの比較は算術式なので、`0` や負値でも構文エラーにならず、間引きが無効になる。`GIT_FETCH=1` では描画のたびに `git fetch` が起動し、rate 履歴は毎回更新されてチャートが傾向を示さなくなる
+  - 9 桁以上の判定を外すと、整数範囲を超える値で `[ -lt ]` がエラー終了 (status 2) し、丸めを素通りする
+- 守っているテスト: `clamp-zero-interval` (git-fetch-behavior)、`82-config-invalid-values`、`85-config-huge-interval`、`tests/script-parity.sh` の `block:interval-clamp`
+
+既定値はレンジ内にあるため、clamp は既定の出力を変えません。丸めは警告を出さずに行い、描画を続けます (履歴ディレクトリの安全性チェックと同じ｢無効値ならフォールバックして表示は続ける｣方針です)。
+
+### 履歴ディレクトリの安全性チェック
+
+- 箇所: ｢履歴ディレクトリ｣セクション (`HISTORY_DIR`)
+- 何をしているか:
+  - 既定の `/tmp/claude-statusline-<uid>/` を作り、mode 700 にする
+  - mkdir / chmod の前に、既存のパスが symlink なら履歴を無効にする
+  - 作成後に｢symlink でない｣｢ディレクトリである｣｢自分の uid が所有している｣｢mode が 700｣を確認し、満たさなければ `HISTORY_DIR` を空にする
+  - 無効になっても statusline の描画は続ける (rate チャートは履歴なしで表示する)
+- 外すと何が起きるか: `/tmp` は他のユーザーも書けるため、他人が事前に用意したディレクトリや symlink を掴み、履歴やマーカーの読み書きを横取りされる。`CLAUDE_STATUSLINE_HISTORY_DIR` で symlink が渡された場合に、chmod がリンク先の権限を変えてしまう
+- 守っているテスト: `48-rate-rightmost-no-history` (symlink を渡して無効化経路を通す)。uid と mode の確認はテストなし
+
+### ブランチ取得の空 `cwd` ガード
+
+- 箇所: main のブランチ取得 (`[ -n "$cwd" ]`)
+- 何をしているか: `cwd` が空のとき、および git が無いときは git を呼ばない
+- 外すと何が起きるか: `git -C ""` はカレントディレクトリを対象にするため、statusline を起動したディレクトリの無関係なブランチが表示される
+- 守っているテスト: テストなし。`73-cwd-empty-no-dir` は空の `cwd` を扱うが、テスト用の fake git は規約の無いパスを git 外として扱うので、ガードを外しても検出できない
+
+### 描画経路にネットワーク I/O と余分な git 呼び出しを入れない
+
+- 箇所: `git_ahead_behind` と main の git 呼び出し
+- 何をしているか: ahead/behind は `rev-list` だけで求め、同期の `git fetch` は呼ばない。detached 判定や directory 名の取得のために git を追加で呼ばない
+- 外すと何が起きるか: 同期の fetch は数秒から数分かかることがあり、その間 statusline が更新されない。git の呼び出しを 1 つ足すごとに、描画のたびの fork が 1 つ増える
+- 守っているテスト: テストなし (fake git は fetch を即座に返すため、同期 fetch を足しても出力は変わらない)。`GIT_FETCH=1` で描画結果が変わらないことは `67-git-fetch-ahead` / `68-git-fetch-detached` / `69-git-fetch-no-upstream` で確認している
+
+### `git_ahead_behind` の `*` 分岐
+
+- 箇所: `git_ahead_behind` の rev-list 失敗時の分岐と第 2 引数 `is_detached`
+- 何をしているか: rev-list が失敗したら、detached なら無色の `*`、それ以外なら青の `*` を返す。ahead･behind がともに 0 のときだけ空を返す
+- 外すと何が起きるか: 分岐を消すと、upstream の無いブランチと同期済みのブランチが同じ表示になる。無色の `*` を `$(...)` で受けずに出すと、`static` の末尾改行が混ざって 1 行目が崩れる
+- 守っているテスト: `32-branch-detached`、`38-diff-detached`、`60-ab-ahead`、`61-ab-behind`、`62-ab-diverged`、`63-ab-synced`、`64-ab-no-upstream`、`65-ab-with-diff`、`66-ab-no-upstream-blue-star`
+
+### `maybe_git_fetch` の入口ガード
+
+- 箇所: `maybe_git_fetch` 冒頭の `[ "$GIT_FETCH" = "1" ] || return` と、repo / branch / detached / `HISTORY_DIR` の確認
+- 何をしているか: 既定の `GIT_FETCH=0` では何もせずに戻る。detached、および upstream の無いブランチでは fetch を投げない
+- 外すと何が起きるか: オプトインしていない利用者の環境でネットワークアクセスが発生する
+- 描画コスト: `GIT_FETCH=1` のときは、間引きで fetch を投げない通常経路でも描画ごとに `cksum` / `date` / `stat` の 3 fork が増える。`GIT_FETCH=0` (既定) では入口で return するため増えない
+- 守っているテスト: `60-ab-ahead` (`fetch_marker: absent`)、`67-git-fetch-ahead` (`present`)、`68-git-fetch-detached` / `69-git-fetch-no-upstream` (`absent`)
+
+### fetch 子プロセスの fd 付け替え
+
+- 箇所: `maybe_git_fetch` の `( ... git fetch --quiet >/dev/null 2>&1 </dev/null & )`
+- 何をしているか: fetch を投げっぱなしのサブシェルで起動し、stdout･stderr･stdin の 3 つを `/dev/null` に付け替える
+- 外すと何が起きるか: 親の command substitution や statusline の呼び出し元が、子プロセスのパイプの EOF (つまり fetch の完了) を待つ。fetch が終わるまで描画が返らず、数秒から数分止まる
+- 守っているテスト: `non-blocking` / `fetch-invoked` (git-fetch-behavior)、`tests/script-parity.sh` の `static:fetch-fd-redirect`
+
+### 認証プロンプトを抑える 4 つの環境変数
+
+- 箇所: fetch 子プロセスに渡す `GIT_TERMINAL_PROMPT=0` / `GIT_ASKPASS=/bin/true` / `SSH_ASKPASS=/bin/true` / `SSH_ASKPASS_REQUIRE=force`
+- 何をしているか: fetch が認証を求めたとき、端末に触れずにすぐ諦めさせる
+- 外すと何が起きるか:
+  - fd 0/1/2 を付け替えても、制御端末 (`/dev/tty`) は子プロセスに残る
+  - OpenSSH は端末があると `SSH_ASKPASS` を使わずに `/dev/tty` を直接開くため、`SSH_ASKPASS_REQUIRE=force` が無いとパスフレーズやホスト鍵の確認が Claude Code の画面に割り込み、キー入力を奪う
+  - `GIT_TERMINAL_PROMPT=0` が抑えるのは git 自身の HTTPS プロンプトだけで、ssh には効かない
+  - どれか 1 つが欠けても、いずれかの経路でプロンプトが出る
+- 守っているテスト: `tests/script-parity.sh` の `static:fetch-no-prompt:GIT_TERMINAL_PROMPT` / `:GIT_ASKPASS` / `:SSH_ASKPASS` / `:SSH_ASKPASS_REQUIRE` (記述が残っていることの静的確認)。プロンプトが実際に出ないことの動作テストはなし
+
+ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` は更新されません。画面を保護することを優先した結果で、意図した挙動です。
+
+### マーカー書き込み失敗時に fetch しない
+
+- 箇所: `maybe_git_fetch` の `if ! { true > "$marker"; } 2>/dev/null; then`
+- 何をしているか: 間引き用マーカー `${HISTORY_DIR}/fetch-<cwd の cksum>` を書けなかったら、ロックを解放して fetch を投げずに戻る
+- 外すと何が起きるか: 書けないまま fetch を投げると間引きの基準時刻が残らず、次の描画も同じ経路に入る。statusline は数秒ごとに呼ばれるので、fetch が描画のたびに起動する。古い mtime のまま書き込み不可のマーカーが残っている場合や、同名のディレクトリがある場合に起こる (mtime 判定は通り、`HISTORY_DIR` 自体は書けるのでロックも取れてしまう)
+- 守っているテスト: `marker-unwritable` (git-fetch-behavior)
+
+書き込みには `:` ではなく `true` を使います。`:` は POSIX の special built-in で、sh 互換モードではリダイレクトに失敗するとシェルごと終了するためです。エラー出力の抑制は `{ ...; } 2>/dev/null` とブロックごと囲みます。リダイレクトは左から順に処理されるため、`true > "$marker" 2>/dev/null` と後ろに書くと fd 2 を差し替える前に失敗し、`Permission denied` が端末に出ます。
+
+テストでは書き込めない状態をマーカーと同名のディレクトリで作ります。`chmod 400` は root で動く CI では書けてしまうためです。
+
+### marker → unlock → spawn の順序
+
+- 箇所: `maybe_git_fetch` の後半
+- 何をしているか: マーカーを書き、ロックを解放してから fetch を起動する。マーカーを書いた時点で他のプロセスは mtime 判定で弾かれるので、ロックはそこで役目を終える
+- 外すと何が起きるか: Linux 版で `spawn → unlock` の順にすると、named fd は close-on-exec されないため `( ... & )` の子に複製が渡り、fetch が終わるまで flock が保持される。その間、他の statusline はロック待ちになる。先に閉じれば子は fd を受け取らない
+- 守っているテスト: `lock-released` (git-fetch-behavior)。fd の継承を実際に検証できるのは Linux 版だけで、macOS 版ではロックディレクトリの消し忘れを検出する
+
+両版で同じ順序にしておくと、実装の違いをロック機構 (flock / mkdir) だけに閉じ込められます。
+
+### rate のハイフン区切り
+
+- 箇所: `format_rate`
+- 何をしているか: 色が付く残量のとき `chart NN% - HH:MM` とスペース･ハイフン･スペースで区切る。括弧は使わない
+- 外すと何が起きるか: 表記が SPEC (` - ` 区切り、括弧なし) と食い違い、`02-rate-warning-with-reset` の `not_contains: (22:13)` などが失敗する
+- 守っているテスト: `02-rate-warning-with-reset` (`not_contains: (22:13)`)、`03-rate-warning-no-reset`、`05-rate-danger`、`06-rate-critical`、`24`〜`29` の境界ケース
+
+### 2 行目のトークンは空でも積む
+
+- 箇所: `build_layout "${LAYOUT_LINE2}|model_ctx|rate" "|model_ctx|rate|" 1`
+- 何をしているか: 2 行目は値が空でも列を落とさない。書かれなかったトークンは末尾に補う
+- 外すと何が起きるか: 第 3 引数を `0` にすると｢2 行目は常に出す｣が成り立たなくなる。ただし `format_rate` と `model_ctx` は常に空でない値を返すので、今のテストは通ったまま不変条件だけが失われる
+- 守っているテスト: 補完は `89-layout-line2-reorder`、`93-layout-line2-partial`、`91-layout-unknown-token`。空でも積むこと自体はテストなし
+
+### 1 行目の省略と改行の位置
+
+- 箇所: main 末尾の `if [ ${#line1_parts[@]} -gt 0 ]` と `printf '%s\n'`
+- 何をしているか: 1 行目に要素があるときだけ｢結合結果 + 改行｣を出す
+- 外すと何が起きるか: 要素が無いのに改行を出すと、空行が statusline の高さを 1 行分占める。改行を 2 行目の先頭に移すと、1 行目が無いときに先頭に空行が出る。`join_by` を無条件に 2 回呼ぶ形も同じ結果になる
+- 守っているテスト: `72-cwd-root-no-dir`、`73-cwd-empty-no-dir`、`74-show-cwd-off-git-outside`、`77-show-cwd-off-drops-line1`、`90-layout-line1-none` (いずれも `no_line2`)
+
+### rate チャートの土台と右端差し替え
+
+- 箇所: main の `rate_chart=$(history_chart /dev/null)` と `rate_chart="${rate_chart:0:$((HISTORY_LEN - 1))}$(spark_single "$rate_remaining")"`
+- 何をしているか: [rate チャートの土台と右端の現在値](#rate-チャートの土台と右端の現在値) を参照
+- 外すと何が起きるか: 差し替えを外すと、右端も間引かれた古い値になり、リセット直後の残量が反映されない。土台の初期化を `HISTORY_DIR` の分岐より後に移すか外すと、履歴が無効なときに `rate_chart` が空になり、右端が描かれない
+- 守っているテスト: `47-rate-rightmost-live` (seed で古い履歴を仕込む)、`48-rate-rightmost-no-history` (履歴を無効化する)
+
+### 色定義ブロックの両版一致
+
+- 箇所: 両版の｢カラースキーム｣ブロック (`_fg` と `case "$COLOR_SCHEME"`)
+- 何をしているか: 同じ RGB 値を両版で同じ書き方で定義する
+- 外すと何が起きるか: 片方だけ値を変えると、同じ入力で両版の色が食い違う。回帰テストは実行できる側の版しか動かさない (CI では Linux 版のみ、macOS では Linux 版が bash 4.1+ と `flock` の有無で skip される) ため、出力比較だけではドリフトに気づけない
+- 守っているテスト: `tests/script-parity.sh` の `block:color-scheme`。light の値は `81-config-light-scheme` / `84-config-crlf` で一部を確認している
+
+### 点滅属性
+
+- 箇所: `rate_color` / `ctx_color` の致命段 (`printf 'static \033[5m%s' "$COLOR_error"`)
+- 何をしているか: [rate / ctx の 3 階調と点滅](#rate--ctx-の-3-階調と点滅) を参照
+- 外すと何が起きるか: 致命段と危険段が色だけで区別されることになり、見た目の段差が小さくなる
+- 守っているテスト: `06-rate-critical`、`10-ctx-critical`、`23-ctx-boundary-90`、`29-rate-boundary-remaining-5`
+
+### effort の別 paint と `∙`
+
+- 箇所: main の effort 連結 (`effort_field=$(paint "$effort" $effort_effect)` と `SHOW_MODEL_NAME` の分岐)
+- 何をしているか: [effort の連結と区切り](#effort-の連結と区切り) を参照
+- 外すと何が起きるか: model と effort を 1 回の `paint` で塗ると色が混ざる。`∙` を `paint` に含めると、`max` のときに `∙` が rainbow 循環に入り、語句の色がずれる。`[ -n "$effort" ]` を外すと、effort 非対応モデルで余分な区切りが出る
+- 守っているテスト: `51-effort-low`〜`55-effort-max-rainbow`、`56-effort-absent`、`57-model-off-effort`、`58-model-off-no-effort`、`59-model-on-effort-opus`
+
+### directory の末尾スラッシュ除去
+
+- 箇所: main の `dir_path` の `while` ループ
+- 何をしているか: [directory 列](#directory-列) を参照
+- 外すと何が起きるか: 末尾にスラッシュの付いた `cwd` で、directory 列が丸ごと消える
+- 守っているテスト: `78-cwd-trailing-slash`、`72-cwd-root-no-dir`
+
+### 未追跡ファイルの行数取得の上限
+
+- 箇所: `git_diff_stat` の `UNTRACKED_DIFF_LIMIT`
+- 何をしているか: 未追跡ファイルの行数取得を 50 件までに抑え、それを超えた分はファイル数だけを数える
+- 外すと何が起きるか: 未追跡ファイルが大量にある作業ツリーで、ファイルごとの `git diff --no-index` が描画を遅くする
+- 守っているテスト: テストなし (未追跡ファイルの集計そのものは `42-diff-untracked-only`〜`45-diff-untracked-subdir`)
+
+## 採らなかった案と経緯
+
+### 1 行構成へ戻す設定
+
+2 行構成に移ったあと、1 行構成へ戻す設定は設けていません。戻せる設定を用意すると、両方の期待値をテストで維持し続ける必要があるためです。`LAYOUT_LINE1` で 1 行目の要素をすべて外すと 1 行目は出なくなりますが、これは git 外などで 1 行目が空になるのと同じ｢1 行目の省略｣で、1 行目の要素を 2 行目に戻すものではありません。Claude Code の statusline は、出力の各行をそのまま 1 行として描画します。
+
+### セッション名のトリム長 (20 → 40 文字)
+
+セッション名は以前 20 文字でトリムしていましたが、2 行構成にして 1 行目の末尾へ移したことで横幅に余裕ができたため、40 文字に広げました。
+
+### directory 列の取得元
+
+directory 列は `workspace.current_dir` の basename から取ります。次の案は採りませんでした。
+
+- `repo.name` を優先する: git 外では欠落するため、分岐が増える
+- `project_dir` を優先する: Claude Code の起動ディレクトリなので、セッション中に `cd` すると表示がずれる
+
+### SSH の `BatchMode=yes`
+
+バックグラウンド fetch の認証を抑えるのに、`GIT_SSH_COMMAND` で `BatchMode=yes` を指定する方法は使っていません。利用者が `core.sshCommand` で設定した独自の ssh 設定を上書きし、黙って壊してしまうためです。代わりに askpass 系の環境変数で抑えています。
+
+### 描画経路での同期 fetch
+
+`↓behind` を最新にするために描画のたびに fetch する方法は採りませんでした。ネットワーク待ちで描画が止まるためです。必要な場合は `GIT_FETCH=1` でオプトインし、別プロセスで投げっぱなしにした fetch の結果を次回以降の描画で反映します。
+
+### fetch の間引きの単位
+
+間引きのマーカーは `cwd` の `cksum` をキーにしています。repo のルート単位にするには `git rev-parse --show-toplevel` などの呼び出しが要るため、cwd 単位のままにしています。そのため、同じリポジトリの別のサブディレクトリや worktree は別々に数えられ、開いている数に比例して fetch の回数が増えます。`cksum` はバイト列の CRC なので、ロケールやマルチバイトのパスに影響されません。
+
+### その他
+
+次の案も採っていません。理由はそれぞれのリンク先に書いています。
+
+- upstream 未設定と異常系の区別、ahead の緑: [ahead/behind と `*` の判定](#aheadbehind-と--の判定)
+- conf の JSON / YAML 化: [設定ファイルの読み込みブロック](#設定ファイルの読み込みブロック)
+- macOS 版での `flock`: [macOS 版と Linux 版の差分](#macos-版と-linux-版の差分)
+- レイアウトでの連想配列: [レイアウトのトークン設計](#レイアウトのトークン設計)
+
+## テストで守れていない箇所
+
+次の項目は、外したり変えたりしても現在のテストでは検出されません。変更するときはレビューで確認してください。
+
+- 依存コマンド確認のメッセージ
+- 履歴ディレクトリの uid と mode の確認
+- ブランチ取得の空 `cwd` ガード
+- 描画経路に同期 fetch や git 呼び出しを足していないこと
+- 認証プロンプトが実際に出ないこと (記述の有無は `tests/script-parity.sh` で確認)
+- 2 行目のトークンを空でも積むこと
+- `UNTRACKED_DIFF_LIMIT` による上限
+- 設定ファイルのパスへの `./` の前置
+- ロケール固定 (記述の有無は `tests/script-parity.sh` で確認。出力比較は実行環境のロケールに左右される)
