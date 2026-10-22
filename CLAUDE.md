@@ -11,7 +11,7 @@ Claude Code の statusline を描画するシェルスクリプトです。macOS
 | [docs/SPEC.md](docs/SPEC.md) | 出力仕様 (構造、各フィールド、色の閾値、設定項目) |
 | [docs/DESIGN.md](docs/DESIGN.md) | 設計判断、変更時の注意点、採用しなかった案 |
 | [tests/README.md](tests/README.md) | テストハーネスの構成と規約 |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | 開発環境と変更の手順 |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 開発環境と変更の手順 |
 
 ## 変更の進め方
 

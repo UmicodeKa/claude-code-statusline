@@ -1,6 +1,6 @@
 # テスト
 
-macOS 版 (`statusline-macos.sh`) と Linux 版 (`statusline-linux.sh`) が同じ入力に対して同じ出力を返すことを確かめるテスト群です。出力の仕様は [docs/SPEC.md](../docs/SPEC.md)、各防御コードとそれを守るテストの対応は [docs/DESIGN.md](../docs/DESIGN.md)、開発環境の準備は [CONTRIBUTING.md](../CONTRIBUTING.md) を参照してください。
+macOS 版 (`statusline-macos.sh`) と Linux 版 (`statusline-linux.sh`) が同じ入力に対して同じ出力を返すことを確かめるテスト群です。出力の仕様は [docs/SPEC.md](../docs/SPEC.md)、各防御コードとそれを守るテストの対応は [docs/DESIGN.md](../docs/DESIGN.md)、開発環境の準備は [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md) を参照してください。
 
 ## ハーネスの役割
 
