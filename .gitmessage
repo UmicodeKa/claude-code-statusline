@@ -1,0 +1,49 @@
+# <種類>[(スコープ)]: <内容>
+
+# [本文]
+
+# [フッター]
+
+# ## <種類> コミットの種類
+# - 🐛fix: バグ修正 (Bug fix)
+# - ✨feat: 新機能 (New feature)
+# - 📝docs: ドキュメントのみの変更 (Documentation changes)
+# - 💄style: フォーマットなどコードスタイルのみの変更､リファクタリングも行わないコード変更 (Code style changes)
+# - ♻️refactor: 参照名の変更､バグの修正も機能の追加も行わないコード変更 (Code refactoring)
+# - 🚀perf: パフォーマンスを向上させるコード変更 (Performance improvements)
+# - 💚test: 不足しているテストの追加または既存のテストの修正 (Adding or modifying tests)
+# - 🔒security: セキュリティ関連の修正 (Security-related fixes)
+# - 🏗️build: ビルドシステムまたは外部依存関係に影響を与える変更 (Build system or external dependency changes)
+# - 🧹chore: 依存性のアップデートや他の雑用 (Chores and updates)
+# - 🔧ci: CI関連のファイルとスクリプトへの変更 (CI-related changes)
+# - ⏪revert: コミットを元に戻す (Revert changes)
+# - 🔀merge: ブランチのマージ (Merge branches)
+# - 🚧wip: 作業中のコード (Work in progress)
+# ※分かりやすいように先頭に絵文字を付ける｡
+#
+# ## <内容> コミットの内容
+# - 概要と同様に､現在形で｡
+# - コミットメッセージ変更した動機や理由を説明｡
+# - 変更の影響が把握しやすいよう､以前の動作と新しい動作の対比をここに示してもよい｡
+#
+# ## [(スコープ)] コミットの影響範囲 (任意項目)
+# - コミットの影響範囲を示す (例: ui, api, db, deps, etc.)
+#
+# ## [本文] コミットの詳細 (任意項目)
+# - より詳細な説明や背景情報を記述
+#
+# ## [フッター] (任意項目)
+# - 関連するIssue番号やBreaking Changesなどを記述｡
+# Issue: #Issue番号
+# Breaking Changes: 破壊的な変更内容｡
+
+# 例
+# ✨feat(ui): ホーム画面のボタンのデザインを変更
+# 
+# - ボタンのデザインが目立たない色だったため､目立つ色に変更する｡
+# - ボタンの種類をelevationに変更し立体感を出す｡
+# 
+# Issue: #1234
+# Breaking Changes: ボタンのクリックイベント`SELECTION_PLACEHOLDER`を変更｡
+
+# Git Message Version: 1.1.0

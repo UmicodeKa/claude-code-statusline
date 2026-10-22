@@ -1,0 +1,62 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm test)",
+      "Bash(npm run test:*)",
+      "Bash(npm run preview)",
+      "Bash(npm run lint*)",
+      "Bash(npm run format:check)",
+      "Bash(npm run format)",
+      "Bash(npm run check)",
+      "Bash(npm run fix)"
+    ],
+    "deny": [
+      "Bash(sudo *)",
+      "Bash(npm publish)",
+      "Bash(npm publish *)",
+      "Bash(yarn publish)",
+      "Bash(yarn publish *)",
+      "Bash(pnpm publish)",
+      "Bash(pnpm publish *)",
+      "Bash(npx markdownlint)",
+      "Bash(npx markdownlint *)",
+      "Bash(markdownlint)",
+      "Bash(markdownlint *)",
+      "Bash(npx markdownlint-cli2)",
+      "Bash(npx markdownlint-cli2 *)",
+      "Bash(markdownlint-cli2)",
+      "Bash(markdownlint-cli2 *)",
+      "Edit(.git/**/*)",
+      "Edit(node_modules/**)",
+      "Edit(package-lock.json)",
+      "Edit(.gitmessage)",
+      "Edit(.github/pull_request_template.md)",
+      "Read(.env*)",
+      "Read(**/*credentials*)",
+      "Read(.aws/**)",
+      "Read(*.key)",
+      "Read(*.pem)",
+      "Read(*.pfx)",
+      "Read(*.p12)",
+      "Read(.npmrc)",
+      "Read(.yarnrc)",
+      "Read(.pnpmrc)",
+      "Read(**/*secret*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/scripts/format-file.mjs",
+            "async": true,
+            "statusMessage": "🔧 Formatting edited file..."
+          }
+        ]
+      }
+    ]
+  }
+}

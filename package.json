@@ -1,12 +1,18 @@
 {
   "private": true,
   "scripts": {
+    "prepare": "node scripts/setup-hooks.mjs",
     "test": "run-s test:regression test:fetch",
     "test:regression": "bash tests/regression.sh",
     "test:fetch": "bash tests/git-fetch-behavior.sh",
     "preview": "bash tests/e2e-preview.sh",
     "lint": "markdownlint-cli2 \"**/*.md\"",
-    "lint:fix": "markdownlint-cli2 --fix \"**/*.md\""
+    "lint:fix": "markdownlint-cli2 --fix \"**/*.md\"",
+    "format:check": "node scripts/format-markdown.mjs --check",
+    "format": "node scripts/format-markdown.mjs",
+    "check": "run-p --continue-on-error --aggregate-output --print-label format:check lint",
+    "check:ci": "run-s format:check lint",
+    "fix": "run-s format lint:fix"
   },
   "devDependencies": {
     "markdownlint-cli2": "^0.23.3",

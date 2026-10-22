@@ -1,0 +1,73 @@
+#!/bin/sh
+#
+# Block creation of branches that don't match the allowed naming convention.
+# Runs at ref-transaction time so invalid branches are rejected *before* they exist.
+#
+# Allowed:
+#   - prefixes (slash-delimited): feature/, release/, hotfix/, dependabot/
+#   - exact protected branch:     main
+#
+# Intent: this is a *local early-warning* check, not a hard gate -- GitHub
+# rejects bad branches at the source. The goal is to catch a wrong name before
+# push so it never turns into a "created locally but unpushable" loop. So an
+# escape hatch is fine and intentional: only *new* branch creation is checked
+# (old-value all-zero), which means `git branch -m <new-name>` (rename) passes
+# freely. If an exceptional name is ever needed, create a valid branch first
+# then rename it.
+#
+# stdin: "<old-value> SP <new-value> SP <ref-name> LF" (one line per ref update)
+# $1: transaction state ("prepared" rejects safely before any ref is written)
+
+[ "$1" = "prepared" ] || exit 0
+
+# Collect every offending branch name instead of bailing on the first one,
+# so a transaction that creates several bad branches at once (bulk import,
+# multi-branch fetch) reports all of them in a single pass.
+bad_branches=""
+
+while read -r old new ref; do
+	# Local branch refs only (ignore refs/remotes, refs/tags, HEAD, stash...).
+	case "$ref" in
+		refs/heads/*) ;;
+		*) continue ;;
+	esac
+
+	# New branch creation only: old-value is all-zero (any length / hash algo).
+	# Normal commits / merges / fast-forwards have a non-zero old -> skip.
+	case "$old" in *[!0]*) continue ;; esac
+	# Skip deletions: new-value is all-zero.
+	case "$new" in *[!0]*) ;; *) continue ;; esac
+
+	branch=${ref#refs/heads/}
+
+	# Allow the protected branch (covers clone/init).
+	case "$branch" in
+		main) continue ;;
+	esac
+
+	# Allow approved slash-delimited prefixes.
+	case "$branch" in
+		feature/*|release/*|hotfix/*|dependabot/*) continue ;;
+	esac
+
+	# Anything else: record it and keep scanning the rest of the transaction.
+	bad_branches="${bad_branches}${branch}
+"
+done
+
+[ -n "$bad_branches" ] || exit 0
+
+{
+	echo "ERROR: the following branch name(s) are not allowed:"
+	echo ""
+	printf '%s' "$bad_branches" | while IFS= read -r branch; do
+		echo "  - $branch"
+	done
+	echo ""
+	echo "New branches must use one of these prefixes (slash-delimited):"
+	echo "  feature/   release/   hotfix/   dependabot/"
+	echo "or be the protected branch: main"
+	echo ""
+	echo "Example: git switch -c feature/your-topic"
+} >&2
+exit 1

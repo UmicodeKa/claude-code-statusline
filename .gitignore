@@ -17,3 +17,6 @@
 # npm
 node_modules/
 npm-debug.log*
+
+# Local Issue Drafts
+issues/

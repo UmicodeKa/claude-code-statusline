@@ -18,7 +18,7 @@ jobs:
           node-version: 'lts/*'
           cache: 'npm'
       - run: npm ci
-      - run: npm run lint
+      - run: npm run check:ci
 
   test:
     # Debian 版は GNU coreutils 前提で手元の macOS では検証できないため、ubuntu runner で回す。
