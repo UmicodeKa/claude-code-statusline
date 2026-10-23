@@ -5,6 +5,9 @@ Claude Code のステータスラインをカスタマイズするスクリプ�
 > [!NOTE]
 > 本リポジトリは Anthropic とは無関係の非公式プロジェクトです。
 
+> [!NOTE]
+> 本リポジトリは個人用で、Issue や Pull Request への対応は保証しません。フォークして自由に改変して使えます ([開発者向け](#開発者向け))。
+
 ## 概要
 
 ステータスラインを次のような 2 行で表示する。
@@ -299,8 +302,9 @@ Linux では `statusline-linux.sh` をコピーする。
 
 ## 開発者向け
 
-開発環境の準備やテストの実行方法は [CONTRIBUTING.md](CONTRIBUTING.md) を参照。
-出力の仕様は [docs/SPEC.md](docs/SPEC.md) にまとめている。
+このリポジトリは個人用で、Issue や Pull Request への対応は保証しない。受け付けても取り込むとは限らない。フォークして自由に改変して使ってよい ([0BSD](LICENSE))。
+
+開発環境の準備やテストの実行方法は [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)、出力の仕様は [docs/SPEC.md](docs/SPEC.md) にまとめている。
 
 ## ライセンス
 
