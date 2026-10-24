@@ -108,7 +108,7 @@ effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の�
 
 - トークン間の区切りは常に ` | ` です。トークンの内側で別の区切りを使う要素は 1 トークンにまとめています
   - `model_ctx` は `✻ <model>∙<effort> <ctx>` (`∙` とスペース 1 個を内包)
-  - `branch` は `<branch>${ab_str:+ $ab_str}${diff_str:+ $diff_str}${pr_str:+ ∙ $pr_str}` (ab / diff / PR が空のときに余分なスペースや `∙` を残さないよう `:+` で条件付き連結)
+  - `branch` は `<branch>${ab_str:+ $ab_str}${diff_str:+ $diff_str}${pr_str:+ $pr_str}` (ab / diff / PR が空のときに余分なスペースを残さないよう `:+` で条件付き連結)
 - `model` と `ctx` を別トークンに分けないのは、トークン間の区切りが組み合わせごとに変わり、実装とテストの両方が複雑になるためです
 - `build_layout` の第 3 引数で｢空の値を積むか｣を切り替えます。1 行目は `0` (空なら列ごと省略)、2 行目は `1` (空でも積む)
 - 2 行目は走査対象の末尾に既定の全トークン (`|model_ctx|rate`) を足し、書かれなかったトークンを既定順で補います。これにより `✻` を含む `model_ctx` は消せません
@@ -473,7 +473,7 @@ directory 列は `workspace.current_dir` の basename から取ります。次�
 
 ### PR の状態を独立したレイアウトのトークンにする
 
-PR の状態を `LAYOUT_LINE1` の独立したトークンにする案は採りませんでした。PR はブランチに紐付く情報なので、branch 列の中 (diff の右) に ` ∙ ` で区切って置き、有効化は `GIT_FETCH` と同じ形のフラグ `PR_STATUS` で行います。`gh` を起動するのは `PR_STATUS=1` で branch 列を組み立てるときだけなので、branch をレイアウトから外せば `gh` も起動しません。
+PR の状態を `LAYOUT_LINE1` の独立したトークンにする案は採りませんでした。PR はブランチに紐付く情報なので、branch 列の中 (diff の右) に半角スペースで区切って置き、有効化は `GIT_FETCH` と同じ形のフラグ `PR_STATUS` で行います。`gh` を起動するのは `PR_STATUS=1` で branch 列を組み立てるときだけなので、branch をレイアウトから外せば `gh` も起動しません。
 
 ### stdin の `pr` フィールド
 

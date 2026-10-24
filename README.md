@@ -13,12 +13,12 @@ Claude Code のステータスラインをカスタマイズするスクリプ�
 ステータスラインを次のような 2 行で表示する。
 
 ```text
-my-project | main ↑2↓3 3+13-5 ∙ #12✓ ✎ | my-session
+my-project | main ↑2↓3 3+13-5 #12✓✎ | my-session
 ✻ Opus 4.7∙high ▆ 72% | ▇▆▅▄▃▃ 35% - 18:30
 ```
 
 - 1 行目: ディレクトリ名 / git ブランチ (リモートとの差･変更行数･GitHub の PR の状態つき) / セッション名
-  - PR の状態 (`∙ #12✓ ✎`) は [`PR_STATUS=1`](#pr_status1-で-pr-の状態を表示する) で表示する
+  - PR の状態 (`#12✓✎`) は [`PR_STATUS=1`](#pr_status1-で-pr-の状態を表示する) で表示する
 - 2 行目: モデル名と推論強度 (effort) / コンテキスト使用率 / レートリミット残量の推移とリセット時刻
 
 コンテキスト使用率が高まる、またはレートリミット残量が減ると、色と数値で知らせる。
@@ -177,7 +177,7 @@ PR_STATUS=1
 ```
 
 ```text
-my-project | feature/login ↑1 3+10-2 ∙ #12✓ ✎ | my-session
+my-project | feature/login ↑1 3+10-2 #12✓✎ | my-session
 ```
 
 - `#12` には下線が付き、色は PR の状態を表す (approved 緑、レビュー待ち黄、changes requested 赤、draft 灰、merged と closed は取り消し線付き)
@@ -210,7 +210,7 @@ my-project | feature/login ↑1 3+10-2 ∙ #12✓ ✎ | my-session
 | `↑N↓M` | リモート追跡ブランチとの差。`↑` が push 待ち、`↓` が pull 待ち。同期済みなら出ない |
 | `*` | リモート追跡ブランチが無い (青) / detached HEAD (無色) |
 | `3+13-5` | 作業ツリーの変更 (ファイル数 / 追加行 / 削除行)。未追跡ファイルを含む。変更が無ければ出ない |
-| `∙ #12✓ ✎` | PR の番号･CI･コメントの有無 (`PR_STATUS=1` のときだけ) |
+| `#12✓✎` | PR の番号･CI･コメントの有無 (`PR_STATUS=1` のときだけ) |
 | セッション名 | 設定されているときだけ表示。40 文字を超えると `…` で省略 |
 | `✻ モデル名` | モデル別の色で表示。13 文字を超えると `…` で省略 |
 | effort | 推論強度 (`low` / `medium` / `high` / `xhigh` / `max`)。対応しないモデルでは出ない |
@@ -232,7 +232,7 @@ my-project | main | my-session
 ブランチに変更と PR あり、コンテキストとレートリミットが警告域:
 
 ```text
-my-project | main ↑2↓3 3+13-5 ∙ #12✓ ✎ | my-session
+my-project | main ↑2↓3 3+13-5 #12✓✎ | my-session
 ✻ Opus 4.7∙high ▆ 72% | ▇▆▅▄▃▃ 35% - 18:30
 ```
 

@@ -159,7 +159,7 @@ case_invoked() {
   local out
   out=$(run_sl "$bash_bin" "$script")
   case "$out" in
-    *'main ∙ \e[4m\e[38;2;78;186;101m#12\e[0m\e[38;2;78;186;101m✓\e[0m ✎'*)
+    *'main \e[4m\e[38;2;78;186;101m#12\e[0m\e[38;2;78;186;101m✓\e[0m✎'*)
       pass_case "invoked [$label]" ;;
     *) fail_case "invoked [$label]" "2 回目の描画に PR が出ない: $out" ;;
   esac

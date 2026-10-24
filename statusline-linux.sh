@@ -66,7 +66,7 @@ COLOR_SCHEME="${CLAUDE_STATUSLINE_COLOR_SCHEME:-${COLOR_SCHEME:-dark}}"
 GIT_FETCH="${CLAUDE_STATUSLINE_GIT_FETCH:-${GIT_FETCH:-0}}"
 
 # PR の状態表示のオプトイン設定。既定 0=無効。
-# 1 のとき、branch 列の末尾 (diff の右) に、現在のブランチに紐付く GitHub の PR の状態を ` ∙ ` 区切りで出す。
+# 1 のとき、branch 列の末尾 (diff の右) に、現在のブランチに紐付く GitHub の PR の状態を半角スペース区切りで出す。
 # 取得は gh で行い、描画経路とは分離した投げっぱなし子プロセスに任せる (gh のインストールと gh auth login が必要)。
 # env CLAUDE_STATUSLINE_PR_STATUS でも上書き可。
 PR_STATUS="${CLAUDE_STATUSLINE_PR_STATUS:-${PR_STATUS:-0}}"
@@ -675,7 +675,7 @@ maybe_git_fetch() {
 
 # --- PR の状態表示 ---
 # PR_STATUS=1 のときだけ、現在のブランチに紐付く GitHub の PR を
-# `#<番号>[<CI記号>][ ✎]` で表示する。情報はバックグラウンドの子プロセスが gh api graphql で
+# `#<番号>[<CI記号>][✎]` で表示する。情報はバックグラウンドの子プロセスが gh api graphql で
 # 取得してキャッシュに書き、描画はキャッシュを読むだけにする (gh も追加の git も描画経路に入れない)。
 # stdin の pr フィールドは、同じセッションで PR を切り替えても更新されないため使わない。
 #
@@ -803,8 +803,7 @@ pr_cache_load() {
 # 読み込んだキャッシュから PR の状態表示の値を組み立てて pr_str に入れる。PR がなければ空。
 #   #<番号>: 状態の色で塗り、下線 (SGR 4) を付ける。merged / closed は取り消し線 (SGR 9) も重ねる。
 #            url があり FORCE_HYPERLINK=0 でなければ、ここだけを OSC 8 で PR へのリンクにする
-#   CI 記号 / ✎: open / draft のときだけ付ける。CI 記号は #<番号> に詰めて続け、✎ の前には常に半角スペースを 1 個入れる
-#            (✓ などと詰めると、端末によっては表示幅の違いで記号が重なって見えるため)
+#   CI 記号 / ✎: open / draft のときだけ付ける。CI 記号と ✎ は #<番号> に詰めて続ける
 # OSC 8 のエスケープ列を含むので、truncate_label や ${#var} の幅計算には渡さない。
 format_pr() {
   pr_str=""
@@ -834,7 +833,7 @@ format_pr() {
         fail)    pr_str="${pr_str}${COLOR_error}✗"$'\033[0m' ;;
         pending) pr_str="${pr_str}${COLOR_warning}●"$'\033[0m' ;;
       esac
-      [ "$pr_commented" = "1" ] && pr_str="${pr_str} ✎"
+      [ "$pr_commented" = "1" ] && pr_str="${pr_str}✎"
       ;;
   esac
 }
@@ -1138,7 +1137,7 @@ layout_token() {
     branch)
       if [ -n "$branch" ]; then
         pr_token
-        token_value="$(truncate_label 25 "$branch")${ab_str:+ $ab_str}${diff_str:+ $diff_str}${pr_str:+ ∙ $pr_str}"
+        token_value="$(truncate_label 25 "$branch")${ab_str:+ $ab_str}${diff_str:+ $diff_str}${pr_str:+ $pr_str}"
       fi
       ;;
     session)

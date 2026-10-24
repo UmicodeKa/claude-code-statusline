@@ -130,7 +130,7 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 
 #### PR の状態 (`<pr>`)
 
-現在のブランチに紐付く GitHub の PR を `#<番号>[<CI記号>][ ✎]` で、`<diff>` (なければ `<ab>`、ブランチ名) の右に ` ∙ ` 区切りで出す (例 `main ↑1 3+10-2 ∙ #12✓ ✎`)。`PR_STATUS=1` のときだけ表示する。詳細は [PR の状態 (`PR_STATUS=1`)](#pr-の状態-pr_status1)。
+現在のブランチに紐付く GitHub の PR を `#<番号>[<CI記号>][✎]` で、`<diff>` (なければ `<ab>`、ブランチ名) の右に半角スペース区切りで出す (例 `main ↑1 3+10-2 #12✓✎`)。`PR_STATUS=1` のときだけ表示する。詳細は [PR の状態 (`PR_STATUS=1`)](#pr-の状態-pr_status1)。
 
 ### session_name
 
@@ -461,7 +461,7 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 ### 表示形式
 
 ```text
-#<番号>[<CI記号>][ ✎]
+#<番号>[<CI記号>][✎]
 ```
 
 | 状態 | `#<番号>` の色 | 装飾 | CI 記号 | `✎` |
@@ -504,7 +504,7 @@ CI 記号は、PR の head コミットの `statusCheckRollup.state` (GitHub が
   - `comments.totalCount` (会話タブのコメント)
   - `reviewThreads.totalCount` (コードの行に付いたコメントのスレッド)
   - `reviews(states: [COMMENTED, CHANGES_REQUESTED]).totalCount` (本文付きのレビュー)
-- 前には常に半角スペースを 1 個置く。CI 記号があればその後ろ (`#12✓ ✎`)、なければ番号の後ろ (`#12 ✎`)
+- 前にスペースを置かず詰める。CI 記号があればその後ろ (`#12✓✎`)、なければ番号の後ろ (`#12✎`)
 - 無色
 
 リンク:

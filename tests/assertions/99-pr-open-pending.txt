@@ -1,2 +1,2 @@
 # open + pending (レビュー待ち): #12 を warning で塗る。CI 実行中は ● (warning)、コメントなしは ✎ を付けない
-matches_line1: ^main ∙ \\e\]8;;https://github\.com/my-org/my-project/pull/12\\a\\e\[4m\\e\[38;2;255;193;7m#12\\e\[0m\\e\]8;;\\a\\e\[38;2;255;193;7m●\\e\[0m$
+matches_line1: ^main \\e\]8;;https://github\.com/my-org/my-project/pull/12\\a\\e\[4m\\e\[38;2;255;193;7m#12\\e\[0m\\e\]8;;\\a\\e\[38;2;255;193;7m●\\e\[0m$
