@@ -2,7 +2,7 @@
 # rev-list 判定で fetch を skip する。出力は青 * (professionalBlue) で不変。
 # 64-ab-no-upstream と同一出力になることを検証する。↑↓ は出さない。
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
-matches_line1: ^sl-repo#branch=main \| main \\e\[38;2;106;155;204m\*\\e\[0m$
+matches_line1: ^sl-repo#branch=main \| main \\e\[38;2;106;155;204m\*\\e\[0m ·$
 contains: main \e[38;2;106;155;204m*\e[0m
 not_contains: ↑
 not_contains: ↓

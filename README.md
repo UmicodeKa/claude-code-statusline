@@ -209,7 +209,7 @@ my-project | feature/login ↑1 3+10-2 #12✓✎ | my-session
 | ブランチ名 | git ブランチ名。25 文字を超えると `…` で省略。detached HEAD では短縮 sha |
 | `↑N↓M` | リモート追跡ブランチとの差。`↑` が push 待ち、`↓` が pull 待ち。同期済みなら出ない |
 | `*` | リモート追跡ブランチが無い (青) / detached HEAD (無色) |
-| `3+13-5` | 作業ツリーの変更 (ファイル数 / 追加行 / 削除行)。未追跡ファイルを含む。変更が無ければ出ない |
+| `3+13-5` | 作業ツリーの変更 (ファイル数 / 追加行 / 削除行)。未追跡ファイルを含む。変更が無ければ `·` |
 | `#12✓✎` | PR の番号･CI･コメントの有無 (`PR_STATUS=1` のときだけ) |
 | セッション名 | 設定されているときだけ表示。40 文字を超えると `…` で省略 |
 | `✻ モデル名` | モデル別の色で表示。13 文字を超えると `…` で省略 |
@@ -225,7 +225,7 @@ my-project | feature/login ↑1 3+10-2 #12✓✎ | my-session
 通常 (警告なし、変更なし):
 
 ```text
-my-project | main | my-session
+my-project | main · | my-session
 ✻ Opus 4.7∙high ▄ | ▇▆▅▄▃▂ 18:30
 ```
 
@@ -246,7 +246,7 @@ my-project | feature/improve-awesome-… 1+8 | my-project-refactoring-and-cleanu
 `SHOW_MODEL_NAME=0`:
 
 ```text
-my-project | main | my-session
+my-project | main · | my-session
 ✻ xhigh ▄ | ▇▆▅▄▃▂ 18:30
 ```
 

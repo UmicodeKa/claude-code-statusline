@@ -1,6 +1,6 @@
-# diff 規約なし: numstat 出力なし・未追跡なし -> files=0,add=0,del=0 = クリーンで変更行数を出さず branch 名のみ
+# diff 規約なし: numstat 出力なし・未追跡なし -> files=0,add=0,del=0 = クリーンで変更行数の代わりに無色の · を出す (main ·)
 # rate used 30 (残量70%・色なし) なので reset は "22:13" のみでハイフン無し -> "-" 非含有チェックが安全
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
-matches_line1: ^sl-repo#branch=main;ab=0… \| main$
+matches_line1: ^sl-repo#branch=main;ab=0… \| main ·$
 not_contains_line1: +
 not_contains_line2: -

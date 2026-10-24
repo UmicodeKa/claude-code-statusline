@@ -1,2 +1,2 @@
 # 最後の取得成功から PR_STALE_SEC (1800 秒) を超えて古い: 列ごと省略する
-matches_line1: ^main$
+matches_line1: ^main ·$

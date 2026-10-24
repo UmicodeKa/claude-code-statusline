@@ -539,7 +539,7 @@ truncate_label() {
 #       未追跡が UNTRACKED_DIFF_LIMIT 件を超えた分は diff を呼ばずファイル数のみ数える
 #       (大量未追跡時に describe ごとの fork で描画が遅延するのを防ぐ)。
 #   gitignore 対象は git status/git diff が元々除外する。
-#   ファイル数 0 かつ追加 0 かつ削除 0 (クリーン)、または HEAD 無し/git 失敗時は空文字列を返す。
+#   ファイル数 0 かつ追加 0 かつ削除 0 (クリーン)、または HEAD 無し/git 失敗時は無色の · (U+00B7) を返す。
 #   ファイル数は変更があれば常に表示する。+0/-0 はその側を省略する。
 #   ファイル数は意図的に text (dark 純白 / light 純黒) で塗る。デフォルトの前景色ではなく COLOR_SCHEME に応じた固定色。
 git_diff_stat() {
@@ -574,7 +574,7 @@ git_diff_stat() {
     [ -n "$n" ] && add=$((add + n))
   done < <(git -C "$repo" status -z 2>/dev/null)
 
-  [ "$files" = "0" ] && [ "$add" = "0" ] && [ "$del" = "0" ] && return
+  [ "$files" = "0" ] && [ "$add" = "0" ] && [ "$del" = "0" ] && { printf '%s' '·'; return; }
 
   # ファイル数 (text=dark 純白 / light 純黒) → +add (success=緑) → -del (error=赤) を区切りなしで詰める。
   # COLOR_* は既に実 ESC 化済みなので $(printf ...) でラップせずそのまま static へ渡す。
