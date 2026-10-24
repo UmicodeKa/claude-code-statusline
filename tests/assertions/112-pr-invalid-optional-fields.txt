@@ -1,0 +1,2 @@
+# review / ci / commented / url が想定外: それぞれ無いものとして扱う (pending の色、CI 記号なし、✎ なし、リンクなし)
+matches_line1: ^main ∙ \\e\[4m\\e\[38;2;255;193;7m#12\\e\[0m$

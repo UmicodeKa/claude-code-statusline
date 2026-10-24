@@ -1,0 +1,2 @@
+# draft: #12 を inactive で塗る。チェックが 1 つもない (ci 空) ときは CI 記号を出さず、✎ を番号の直後に半角スペース 1 個で付ける
+matches_line1: ^main ∙ \\e\]8;;https://github\.com/my-org/my-project/pull/12\\a\\e\[4m\\e\[38;2;102;102;102m#12\\e\[0m\\e\]8;;\\a ✎$
