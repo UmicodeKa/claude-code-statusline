@@ -1,4 +1,4 @@
 # session_name="-n weird" -> 1 行目の末尾に " | -n weird" がそのまま出る (printf 化の効果)
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
-matches_line1: ^\\e\[38;2;153;153;153mstatusline-demo\\e\[0m \| -n weird$
+matches_line1: ^statusline-demo \| -n weird$
 contains: | -n weird

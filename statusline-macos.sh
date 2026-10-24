@@ -501,7 +501,7 @@ truncate_label() {
 }
 
 # 作業ツリーの変更行数を色付きで返す。
-#   出力: <ファイル数>(無色)<+追加>(緑)<-削除>(赤) を区切りなしで詰めて連結する。
+#   出力: <ファイル数>(text)<+追加>(緑)<-削除>(赤) を区切りなしで詰めて連結する。
 #   例 "3+13-5" = 3 ファイル, +13 行, -5 行。追加のみ "3+8"、削除のみ "2-5"。
 #   集計範囲:
 #     - 追跡変更: git diff HEAD --numstat (ステージ済み + 未ステージの合算)。
@@ -515,7 +515,7 @@ truncate_label() {
 #   gitignore 対象は git status/git diff が元々除外する。
 #   ファイル数 0 かつ追加 0 かつ削除 0 (クリーン)、または HEAD 無し/git 失敗時は空文字列を返す。
 #   ファイル数は変更があれば常に表示する。+0/-0 はその側を省略する。
-#   static は無色時に末尾改行を付けるため、無色のファイル数は paint を通さず生で連結する。
+#   ファイル数は意図的に text (dark 純白 / light 純黒) で塗る。デフォルトの前景色ではなく COLOR_SCHEME に応じた固定色。
 git_diff_stat() {
   local repo=$1
 
@@ -550,7 +550,7 @@ git_diff_stat() {
 
   [ "$files" = "0" ] && [ "$add" = "0" ] && [ "$del" = "0" ] && return
 
-  # ファイル数 (text=前景色) → +add (success=緑) → -del (error=赤) を区切りなしで詰める。
+  # ファイル数 (text=dark 純白 / light 純黒) → +add (success=緑) → -del (error=赤) を区切りなしで詰める。
   # COLOR_* は既に実 ESC 化済みなので $(printf ...) でラップせずそのまま static へ渡す。
   local out
   out=$(paint "$files" static "$COLOR_text")
@@ -960,7 +960,7 @@ if [ "$SHOW_CWD" = "1" ]; then
     dir_path="${dir_path%/}"
   done
   dir_name="${dir_path##*/}"
-  [ -n "$dir_name" ] && dir_field=$(paint "$(truncate_label 25 "$dir_name")" static "$COLOR_secondaryText")
+  [ -n "$dir_name" ] && dir_field=$(truncate_label 25 "$dir_name")
 fi
 
 # 2 行目の列順: LAYOUT_LINE2 (既定 model_ctx → rate)

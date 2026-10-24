@@ -5,4 +5,4 @@ contains: \e[38;2;215;119;87m
 contains: Opus 4.7 (1M…
 not_contains: 1M context
 # git 外なので 1 行目は directory のみ (branch 列は出ない)
-matches_line1: ^\\e\[38;2;153;153;153mstatusline-demo\\e\[0m$
+matches_line1: ^statusline-demo$

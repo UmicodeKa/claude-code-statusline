@@ -1,6 +1,6 @@
 # untracked=img.png:bin: 未追跡バイナリ 1 ファイル -> numstat が "-\t-" で行数不明
 # -> ファイル数 1 にカウントするが追加 0/削除 0 なので "main 1" のみ (+/- なし)
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
-matches_line1: ^\\e\[38;2;153;153;153msl-repo#branch=main;untr…\\e\[0m \| main \\e\[38;2;255;255;255m1\\e\[0m$
+matches_line1: ^sl-repo#branch=main;untr… \| main \\e\[38;2;255;255;255m1\\e\[0m$
 not_contains: +
 not_contains_line2: -

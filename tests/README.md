@@ -146,7 +146,7 @@ glibc の正規表現は UTF-8 マルチバイト文字の範囲指定 (例 `[�
 ```text
 # branch=main の git リポジトリ。session_name は空なので 1 行目の session 列は省略
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
-matches_line1: ^\\e\[38;2;153;153;153msl-repo#branch=main;ab=0…\\e\[0m \| main$
+matches_line1: ^sl-repo#branch=main;ab=0… \| main$
 contains: | main
 ```
 

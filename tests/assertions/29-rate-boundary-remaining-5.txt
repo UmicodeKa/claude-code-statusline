@@ -1,6 +1,6 @@
 # rate=95% (残量 5 ジャスト) -> 赤(error)+点滅 + chart 5% - 22:13
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| \\e\[5m\\e\[38;2;255;107;128m[▁▂▃▄▅▆▇█]{6} 5% - 22:13\\e\[0m$
-matches_line1: ^\\e\[38;2;153;153;153mstatusline-demo\\e\[0m$
+matches_line1: ^statusline-demo$
 contains: \e[5m\e[38;2;255;107;128m
 contains: 5% - 22:13
 not_contains: \e[38;2;255;193;7m

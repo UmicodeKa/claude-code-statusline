@@ -50,7 +50,7 @@ macOS 版で `flock` を使わないのは、macOS に標準で入っておら�
 
 ### 色付けの 3 段構成
 
-すべての着色 (model / effort / ctx / rate / diff / ahead-behind / directory) は `paint <text> <effect> [arg]` を経由します。
+すべての着色 (model / effort / ctx / rate / diff / ahead-behind) は `paint <text> <effect> [arg]` を経由します。
 
 - `paint` は effect 名を見て `static` か `rainbow` に振り分けるだけのディスパッチャです
 - `static <text> <color>` は単色で囲んで末尾に `\033[0m` を付けます。color が空のときは文字列を末尾改行付きで素通しします
