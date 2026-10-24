@@ -796,7 +796,7 @@ input=$(cat)
   IFS= read -r effort
 } <<EOF
 $(printf '%s' "$input" | jq -r '
-  def safe: tostring | gsub("[\n\t\r]"; " ");
+  def safe: tostring | gsub("[[:cntrl:]]"; " ");
   (.model.display_name                       // "" | safe),
   (.context_window.used_percentage           // "" | tostring),
   (.rate_limits.five_hour.used_percentage    // "" | tostring),

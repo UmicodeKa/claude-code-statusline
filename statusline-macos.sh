@@ -823,7 +823,8 @@ input=$(cat)
 # jq は起動コストが高い (1 回 ~20-50ms) ため、必要なフィールドを 1 回で取り出す。
 # 1 フィールド 1 行で出力し、`read` を 7 回呼んで空フィールドも保持する。
 # (bash 3.2 の `read -d` は IFS が非空白だと連続デリミタを圧縮するため @tsv 経路は使えない。
-#  値に改行が混入しないよう、文字列フィールドは sub で改行/タブを潰してから渡す。)
+#  値に改行が混入せず、ESC などの制御文字で端末の表示が崩れないよう、文字列フィールドは
+#  gsub で制御文字をすべて半角スペースに潰してから渡す。)
 # effort は必ず末尾に追加する (read 個数 = jq 出力行数。途中挿入すると既存変数の対応がズレる)。
 {
   IFS= read -r model
@@ -835,7 +836,7 @@ input=$(cat)
   IFS= read -r effort
 } <<EOF
 $(printf '%s' "$input" | jq -r '
-  def safe: tostring | gsub("[\n\t\r]"; " ");
+  def safe: tostring | gsub("[[:cntrl:]]"; " ");
   (.model.display_name                       // "" | safe),
   (.context_window.used_percentage           // "" | tostring),
   (.rate_limits.five_hour.used_percentage    // "" | tostring),

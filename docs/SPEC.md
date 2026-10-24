@@ -32,7 +32,7 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 | `session_name` | セッション名 | セッション列を省略 |
 | `workspace.current_dir` | ディレクトリ名とブランチ取得 | ディレクトリ列とブランチ列を省略 |
 
-- 文字列フィールド (`model.display_name` / `session_name` / `workspace.current_dir` / `effort.level`) に含まれる改行･タブ･CR は半角スペースに置き換える
+- 文字列フィールド (`model.display_name` / `session_name` / `workspace.current_dir` / `effort.level`) に含まれる制御文字 (改行･タブ･CR･ESC など) は半角スペースに置き換える。値に紛れた ANSI エスケープで後続の列の色が変わるのを防ぐ
 - 値は加工せずそのまま出力する (`-n` で始まるセッション名なども文字どおり表示する)
 
 ## 出力構造
@@ -220,7 +220,7 @@ my-project | main ↑2↓3 3+13-5 | my-session
 
 色はすべて truecolor の前景色 (`\033[38;2;R;G;Bm`) で、色付きの区間の末尾には `\033[0m` が付く。
 
-色を付けるのは、意図して色を指定する箇所 (下の表に挙げたもの) だけで、それ以外の要素は無色にして端末と Claude Code の前景色に任せる。
+色を付けるのは、意図して色を指定する箇所 (下の表のうち色が｢無色｣でない行) だけで、それ以外の要素は無色にして端末と Claude Code の前景色に任せる。
 
 ### 色の閾値
 
