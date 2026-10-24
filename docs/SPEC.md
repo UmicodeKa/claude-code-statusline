@@ -1,15 +1,3 @@
-| | `pr` | PR の状態 ([詳細](#pr-の状態-pr-トークン))。既定の並びには含まれない |
-| pr `#<番号>` | open + approved | `success` (緑) | `\033[38;2;78;186;101m` |
-| | open + pending | `warning` (黄) | `\033[38;2;255;193;7m` |
-| | open + changes requested | `error` (赤) | `\033[38;2;255;107;128m` |
-| | draft | `inactive` (灰) | `\033[38;2;102;102;102m` |
-| | merged | `merged` (紫) + 取り消し線 | `\033[9m\033[38;2;135;0;255m` |
-| | closed | `inactive` (灰) + 取り消し線 | `\033[9m\033[38;2;102;102;102m` |
-| pr CI 記号 | `✓` | `success` (緑) | `\033[38;2;78;186;101m` |
-| | `✗` | `error` (赤) | `\033[38;2;255;107;128m` |
-| | `●` | `warning` (黄) | `\033[38;2;255;193;7m` |
-| pr `✎` | — | 無色 | — |
-
 # 出力仕様
 
 statusline-macos.sh (macOS 版) と statusline-linux.sh (Linux 版) が満たす、外から観測できる出力の仕様をまとめる。両版は同じ入力に対して**同一の出力**を返す。実装上の理由や過去に採らなかった案は [DESIGN.md](./DESIGN.md)、テストの書き方は [tests/README.md](../tests/README.md) を参照。
@@ -47,7 +35,7 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 
 - 文字列フィールド (`model.display_name` / `session_name` / `workspace.current_dir` / `effort.level`) に含まれる制御文字 (改行･タブ･CR･ESC など) は半角スペースに置き換える。値に紛れた ANSI エスケープで後続の列の色が変わるのを防ぐ
 - 値は加工せずそのまま出力する (`-n` で始まるセッション名なども文字どおり表示する)
-- `pr` フィールドは使わない。同じセッションで PR を切り替えても最初の PR のまま更新されず、merged / closed になると消え、CI の情報も無いため。PR の状態は [`pr` トークン](#pr-の状態-pr-トークン) が `gh` で自前に取得する
+- `pr` フィールドは使わない ([理由](DESIGN.md#stdin-の-pr-フィールド))。PR の状態は [`pr` トークン](#pr-の状態-pr-トークン) が `gh` で自前に取得する
 
 ## 出力構造
 
@@ -270,6 +258,16 @@ RGB は dark の値。light の値は [セマンティックカラー](#セマ�
 | diff ファイル数 | — | `text` | `\033[38;2;255;255;255m` |
 | diff `+N` | — | `success` (緑) | `\033[38;2;78;186;101m` |
 | diff `-N` | — | `error` (赤) | `\033[38;2;255;107;128m` |
+| pr `#<番号>` | open + approved | `success` (緑) | `\033[38;2;78;186;101m` |
+| | open + pending | `warning` (黄) | `\033[38;2;255;193;7m` |
+| | open + changes requested | `error` (赤) | `\033[38;2;255;107;128m` |
+| | draft | `inactive` (灰) | `\033[38;2;102;102;102m` |
+| | merged | `merged` (紫) + 取り消し線 | `\033[9m\033[38;2;135;0;255m` |
+| | closed | `inactive` (灰) + 取り消し線 | `\033[9m\033[38;2;102;102;102m` |
+| pr CI 記号 | `✓` | `success` (緑) | `\033[38;2;78;186;101m` |
+| | `✗` | `error` (赤) | `\033[38;2;255;107;128m` |
+| | `●` | `warning` (黄) | `\033[38;2;255;193;7m` |
+| pr `✎` | — | 無色 | — |
 
 - ctx と rate は警戒 (黄) → 危険 (橙) → 致命 (赤 + 点滅) の 3 段階。致命段は点滅属性 (`\033[5m`) で危険段と区別する
 - model の判定は部分一致で、`Fable` → `Opus` → `Haiku` の順に評価する。バージョン表記に依存しない (`Fable 5 (1M context)` も紫)
@@ -412,6 +410,7 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 | --- | --- | --- |
 | 1 行目 | `directory` | ディレクトリ名 |
 | | `branch` | `<ブランチ名>[ <ab>][ <diff>]` |
+| | `pr` | PR の状態 ([詳細](#pr-の状態-pr-トークン))。既定の並びには含まれない |
 | | `session` | セッション名 |
 | 2 行目 | `model_ctx` | `✻ <model>∙<effort> <ctx>` |
 | | `rate` | レートリミット |
@@ -514,7 +513,9 @@ CI 記号は、PR の head コミットの `statusCheckRollup.state` (GitHub が
 ### 対象の PR
 
 - 問い合わせ先 (base リポジトリ) は `gh` 自身の解決に任せる (`gh api` の `{owner}` / `{repo}`)
-- head のブランチ名とオーナーは push 先から決める。`git rev-parse --abbrev-ref '@{push}'` の `<remote>/<branch>` から `<branch>` を、`git remote get-url <remote>` の URL (`git@host:owner/repo.git`、`https://host/owner/repo(.git)`、`ssh://git@host/owner/repo`) から `<owner>` を取る
+- head のブランチ名とオーナーは push 先から決める
+  - ブランチ名: `git rev-parse --abbrev-ref '@{push}'` の `<remote>/<branch>` の `<branch>`
+  - オーナー: `git remote get-url --push <remote>` の URL (`git@host:owner/repo.git`、`https://host/owner/repo(.git)`、`ssh://git@host/owner/repo`) の `<owner>`
 - push 先が取れない (まだ push していない) ときは、ローカルのブランチ名と base リポジトリのオーナーを使う。URL からオーナーを取れないときも base リポジトリのオーナーを使う
 - head のブランチ名で新しい順に 10 件を取り、`headRepositoryOwner` が head のオーナーと一致するもの (大文字小文字は区別しない) だけを候補にして、次の順で選ぶ
   1. `OPEN` のうち最も新しいもの
@@ -529,11 +530,12 @@ CI 記号は、PR の head コミットの `statusCheckRollup.state` (GitHub が
 - キャッシュがまだない (ブランチを切り替えた直後の 1 回目の描画など)
 - PR がない
 - 最後に取得に成功してから `PR_STALE_SEC` (1800 秒) を超えた。`gh` の未認証、オフライン、GitHub 以外のリモート、base リポジトリが決まらない、などで取得に失敗し続けるとこれに当たる
+- キャッシュの取得時刻が現在より未来 (時計が戻った後など)。次の取得の結果で置き換わる
 - キャッシュが壊れている (フィールドの数、`fetched_at`、番号、状態のいずれかが不正)
 - `HISTORY_DIR` が無効
 - `gh` がインストールされていない
 
-`gh` を案内するメッセージは出さない。キャッシュのうち番号と状態以外のフィールドが想定外の値のときは、そのフィールドがないものとして扱う (レビュー状態は pending、CI 記号と `✎` は出さない)。URL が `https://` で始まらないか制御文字を含むときは、リンクにしない。
+`gh` を案内するメッセージは出さない。キャッシュのうち番号と状態以外のフィールドが想定外の値のときは、そのフィールドがないものとして扱う (レビュー状態は pending、CI 記号と `✎` は出さない)。URL が `https://` で始まらないか、URL に使う ASCII の英数字と記号 (`._~:/?#=&+@%-`) 以外の文字を含むときは、リンクにしない。
 
 ### 更新
 
@@ -550,6 +552,7 @@ CI 記号は、PR の head コミットの `statusCheckRollup.state` (GitHub が
 | 前回の試行が失敗した、またはキャッシュがない (2 回目以降の試行) | 300 秒 |
 
 - 間隔と `PR_STALE_SEC` は内部定数で、conf からは変えられない
+- ローカルの HEAD と PR の head が一致するかは取得の時点で判定する。描画は HEAD を見ないため、merged / closed の PR は、同じブランチに新しいコミットを積んでも次の再取得 (最大 900 秒後) まで表示が残る
 - 取得の実行中は次の取得を起動しない。実行中の印が 90 秒より古いときは、異常終了の跡として消してから起動する
 - 1 回の `gh` は 60 秒で打ち切る。失敗 (非ゼロ終了、打ち切り、想定外の出力) したときはキャッシュを書き換えず、前回の表示を残す
 - 1 回の問い合わせの GraphQL のコストは 1 ポイント。最も短い 30 秒間隔が続くと、キャッシュ 1 つあたり 1 時間に最大 120 回になる
@@ -573,7 +576,6 @@ CI 記号は、PR の head コミットの `statusCheckRollup.state` (GitHub が
 
 - **1 行構成へ戻す設定は設けない**。1 行目が出ないのは、1 行目の要素がすべて空のときだけ
 - `pr` トークンでは GitLab の merge request を扱わない
-- `pr` トークンの表示に stdin の `pr` フィールドを使わない (補助にも使わない)
 - Claude Code 標準のフッターの PR バッジは消さない (`pr` トークンとは別の場所に並んで表示される)
 - 表示幅に基づくトリム (CJK を 2 桁として数える) は行わない
 - 描画のたびに同期的に `git fetch` することはしない

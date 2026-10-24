@@ -49,8 +49,12 @@ green() { printf '\033[32m%s\033[0m' "$*"; }
 failed=0
 total=0
 
-pass_case() { printf '  %s %s\n' "$(green ok)" "$1"; }
+pass_case() {
+  total=$((total + 1))
+  printf '  %s %s\n' "$(green ok)" "$1"
+}
 fail_case() {
+  total=$((total + 1))
   printf '  %s %s\n' "$(red FAIL)" "$1" >&2
   printf '    %s\n' "$2" >&2
   failed=$((failed + 1))
@@ -117,6 +121,18 @@ wait_until() {
 
 sentinel_count() { wc -l < "$sentinel" | tr -d ' '; }
 
+# main ブランチの取得が終わる (キャッシュがあり、.inflight が消える) まで最大 5 秒待つ。
+wait_fetch_done() {
+  wait_until 5 '[ -s "$(cache_path main)" ] && ! compgen -G "$hist/pr-*.inflight" >/dev/null'
+}
+
+# ファイル $1 の mtime を $2 秒前にする。touch -t は macOS / GNU の両方にあり、時刻はローカル時刻で
+# 解釈される。epoch 秒からの変換は BSD date (-r) を先に試し、だめなら GNU date (-d @) を使う。
+age_file() {
+  local old=$(( $(date +%s) - $2 ))
+  touch -t "$(date -r "$old" +%Y%m%d%H%M.%S 2>/dev/null || date -d "@$old" +%Y%m%d%H%M.%S)" "$1"
+}
+
 # repo とブランチ名からキャッシュのパスを出す。
 cache_path() { printf '%s/pr-%s' "$hist" "$(pr_cache_key "$repo" "$1")"; }
 
@@ -133,8 +149,7 @@ cache_body() {
 case_invoked() {
   local bash_bin=$1 script=$2 label=$3
   setup_case "branch=main;ab=0,0"
-  # shellcheck disable=SC2064
-  trap "cleanup_case" RETURN
+  trap 'cleanup_case; trap - RETURN' RETURN
 
   run_sl "$bash_bin" "$script" >/dev/null
   if ! wait_until 5 '[ -s "$(cache_path main)" ]'; then
@@ -154,8 +169,7 @@ case_invoked() {
 case_not_invoked_without_token() {
   local bash_bin=$1 script=$2 label=$3
   setup_case "branch=main;ab=0,0"
-  # shellcheck disable=SC2064
-  trap "cleanup_case" RETURN
+  trap 'cleanup_case; trap - RETURN' RETURN
 
   run_sl "$bash_bin" "$script" CLAUDE_STATUSLINE_LAYOUT_LINE1="branch|session" >/dev/null
   sleep 0.5
@@ -171,8 +185,7 @@ case_not_invoked_without_token() {
 case_non_blocking() {
   local bash_bin=$1 script=$2 label=$3
   setup_case "branch=main;ab=0,0"
-  # shellcheck disable=SC2064
-  trap "cleanup_case" RETURN
+  trap 'cleanup_case; trap - RETURN' RETURN
 
   local start end elapsed out
   start=$(date +%s)
@@ -193,11 +206,10 @@ case_non_blocking() {
 case_throttle() {
   local bash_bin=$1 script=$2 label=$3
   setup_case "branch=main;ab=0,0"
-  # shellcheck disable=SC2064
-  trap "cleanup_case" RETURN
+  trap 'cleanup_case; trap - RETURN' RETURN
 
   run_sl "$bash_bin" "$script" >/dev/null
-  if ! wait_until 5 '[ -s "$(cache_path main)" ] && ! compgen -G "$hist/pr-*.inflight" >/dev/null'; then
+  if ! wait_fetch_done; then
     fail_case "throttle [$label]" "1 回目の取得が終わらない (前提が崩れている)"
     return
   fi
@@ -214,8 +226,7 @@ case_throttle() {
 case_single_flight() {
   local bash_bin=$1 script=$2 label=$3
   setup_case "branch=main;ab=0,0"
-  # shellcheck disable=SC2064
-  trap "cleanup_case" RETURN
+  trap 'cleanup_case; trap - RETURN' RETURN
 
   # マーカーなし (= すぐ取得すべき状態) で、実行中の印だけを先に置く。
   local inflight
@@ -236,17 +247,12 @@ case_single_flight() {
 case_stale_inflight() {
   local bash_bin=$1 script=$2 label=$3
   setup_case "branch=main;ab=0,0"
-  # shellcheck disable=SC2064
-  trap "cleanup_case" RETURN
+  trap 'cleanup_case; trap - RETURN' RETURN
 
   local inflight
   inflight="$(cache_path main).inflight"
   mkdir "$inflight"
-  # 2 分前の mtime にする。touch -t は macOS / GNU の両方にあり、時刻はローカル時刻で解釈される。
-  # epoch 秒からの変換は BSD date (-r) を先に試し、だめなら GNU date (-d @) を使う。
-  local old
-  old=$(( $(date +%s) - 120 ))
-  touch -t "$(date -r "$old" +%Y%m%d%H%M.%S 2>/dev/null || date -d "@$old" +%Y%m%d%H%M.%S)" "$inflight"
+  age_file "$inflight" 120
   run_sl "$bash_bin" "$script" >/dev/null
   if wait_until 5 '[ -s "$(cache_path main)" ] && [ ! -d "$inflight" ]'; then
     pass_case "stale-inflight [$label]"
@@ -260,8 +266,7 @@ case_stale_inflight() {
 case_timeout() {
   local bash_bin=$1 script=$2 label=$3
   setup_case "branch=main;ab=0,0"
-  # shellcheck disable=SC2064
-  trap "cleanup_case" RETURN
+  trap 'cleanup_case; trap - RETURN' RETURN
 
   local inflight
   inflight="$(cache_path main).inflight"
@@ -282,15 +287,15 @@ case_timeout() {
 case_no_overwrite_by_older() {
   local bash_bin=$1 script=$2 label=$3
   setup_case "branch=main;ab=0,0"
-  # shellcheck disable=SC2064
-  trap "cleanup_case" RETURN
+  trap 'cleanup_case; trap - RETURN' RETURN
 
   local cache newer
   cache="$(cache_path main)"
-  run_sl "$bash_bin" "$script" STATUSLINE_TEST_GH_SLEEP=2 >/dev/null
+  run_sl "$bash_bin" "$script" STATUSLINE_TEST_GH_SLEEP=3 >/dev/null
   wait_until 3 '[ "$(sentinel_count)" = "1" ]' || true
-  # gh の実行中に、後から始まった取得の結果が書かれた状態を作る。
-  newer="$(( $(date +%s) + 1000 ))"
+  # gh の実行中に、後から始まった取得の結果が書かれた状態を作る。fetched_at は取得の開始より後で、
+  # 取得の終了 (gh の 3 秒後) より前にする (現在より未来の fetched_at は上書きされる)。
+  newer="$(( $(date +%s) + 1 ))"
   printf '%s\t34\tmerged\t\t\t0\t1\thttps://github.com/my-org/my-project/pull/34\n' "$newer" > "$cache"
   if ! wait_until 5 '! compgen -G "$hist/pr-*.inflight" >/dev/null'; then
     fail_case "no-overwrite-by-older [$label]" "取得が終わらない (前提が崩れている)"
@@ -307,11 +312,10 @@ case_no_overwrite_by_older() {
 case_branch_switch() {
   local bash_bin=$1 script=$2 label=$3
   setup_case "branch=main;ab=0,0"
-  # shellcheck disable=SC2064
-  trap "cleanup_case" RETURN
+  trap 'cleanup_case; trap - RETURN' RETURN
 
   run_sl "$bash_bin" "$script" >/dev/null
-  if ! wait_until 5 '[ -s "$(cache_path main)" ] && ! compgen -G "$hist/pr-*.inflight" >/dev/null'; then
+  if ! wait_fetch_done; then
     fail_case "branch-switch [$label]" "main の取得が終わらない (前提が崩れている)"
     return
   fi
@@ -362,8 +366,7 @@ case_push_branch_name() {
 case_marker_unwritable() {
   local bash_bin=$1 script=$2 label=$3
   setup_case "branch=main;ab=0,0"
-  # shellcheck disable=SC2064
-  trap "cleanup_case" RETURN
+  trap 'cleanup_case; trap - RETURN' RETURN
 
   mkdir "$(cache_path main).marker"
   run_sl "$bash_bin" "$script" >/dev/null
@@ -380,8 +383,7 @@ case_marker_unwritable() {
 case_gh_failure_keeps_cache() {
   local bash_bin=$1 script=$2 label=$3
   setup_case "branch=main;ab=0,0"
-  # shellcheck disable=SC2064
-  trap "cleanup_case" RETURN
+  trap 'cleanup_case; trap - RETURN' RETURN
 
   local cache before
   cache="$(cache_path main)"
@@ -408,8 +410,7 @@ case_gh_failure_keeps_cache() {
 case_env_sanitized() {
   local bash_bin=$1 script=$2 label=$3
   setup_case "branch=main;ab=0,0"
-  # shellcheck disable=SC2064
-  trap "cleanup_case" RETURN
+  trap 'cleanup_case; trap - RETURN' RETURN
 
   run_sl "$bash_bin" "$script" GH_REPO=someone/else GH_FORCE_TTY=1 CLICOLOR_FORCE=1 \
     GH_TOKEN=test-token >/dev/null
@@ -419,7 +420,7 @@ case_env_sanitized() {
   fi
   local line expected
   line=$(cut -d' ' -f4- < "$sentinel")
-  expected='GH_REPO=<unset> GH_FORCE_TTY=<unset> CLICOLOR_FORCE=<unset> GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 GH_NO_EXTENSION_UPDATE_NOTIFIER=1 GH_TOKEN=test-token'
+  expected='GH_REPO=<unset> GH_FORCE_TTY=<unset> CLICOLOR_FORCE=<unset> GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 GH_NO_EXTENSION_UPDATE_NOTIFIER=1 GH_TOKEN=test-token GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/true SSH_ASKPASS=/bin/true SSH_ASKPASS_REQUIRE=force'
   if [ "$line" = "$expected" ]; then
     pass_case "env-sanitized [$label]"
   else
@@ -434,8 +435,7 @@ case_env_sanitized() {
 case_no_gh() {
   local bash_bin=$1 script=$2 label=$3
   setup_case "branch=main;ab=0,0"
-  # shellcheck disable=SC2064
-  trap "cleanup_case" RETURN
+  trap 'cleanup_case; trap - RETURN' RETURN
 
   local bin="$case_dir/bin" cmd path
   mkdir "$bin"
@@ -446,17 +446,98 @@ case_no_gh() {
   # 前回の取得結果が残っていても、gh がなければ表示しない。
   printf '%s\t12\topen\tapproved\tpass\t0\t1\thttps://github.com/my-org/my-project/pull/12\n' \
     "$(date +%s)" > "$(cache_path main)"
+  # env は後に書いた PATH が勝つので、run_sl の PATH を差し替えられる。
   local out
-  out=$(env CLAUDE_STATUSLINE_HISTORY_DIR="$hist" TZ=UTC \
-    CLAUDE_STATUSLINE_CONFIG="$NO_CONFIG" \
-    CLAUDE_STATUSLINE_COLOR_SCHEME="" CLAUDE_STATUSLINE_GIT_FETCH="" \
-    CLAUDE_STATUSLINE_LAYOUT_LINE1="branch|pr" CLAUDE_STATUSLINE_LAYOUT_LINE2="" \
-    PATH="$GIT_SHIM_DIR:$bin" \
-    "$bash_bin" "$script" < "$input" 2>&1)
+  out=$(run_sl "$bash_bin" "$script" PATH="$GIT_SHIM_DIR:$bin")
   if [ "${out%%$'\n'*}" = "main" ] && [ ! -e "$(cache_path main).marker" ]; then
     pass_case "no-gh [$label]"
   else
     fail_case "no-gh [$label]" "gh がないのに PR が出た、またはマーカーが作られた: ${out%%$'\n'*}"
+  fi
+}
+
+# --- refresh-interval: キャッシュの状態から決まる間隔 (FAST 30 / SLOW 300 / DONE 900 秒) で起動する ---
+# マーカーの mtime を過去にずらし、間隔を過ぎていれば gh を起動し、過ぎていなければ起動しない。
+#   <キャッシュの fetched_at 以降 (タブは \t)>;<マーカーの経過秒>;<起動の回数>
+# fetched_at はマーカーより新しくする (古いと「前回の試行が失敗した」扱いで SLOW になる)。
+# 最後の 1 件は fetched_at がマーカーより古いので、merged でも DONE ではなく SLOW になる。
+case_refresh_interval() {
+  local bash_bin=$1 script=$2 label=$3 spec body marker_age want url=https://github.com/my-org/my-project/pull/12
+  for spec in \
+    "12\topen\tapproved\tpending\t0\t1\t$url;60;1" \
+    "12\topen\tapproved\tpass\t0\t0\t$url;60;1" \
+    "12\topen\tapproved\tpass\t0\t1\t$url;60;0" \
+    "12\topen\tapproved\tpass\t0\t1\t$url;400;1" \
+    "12\tmerged\t\tpass\t0\t1\t$url;400;0" \
+    "12\tmerged\t\tpass\t0\t1\t$url;1000;1" \
+    "old:12\tmerged\t\tpass\t0\t1\t$url;400;1"; do
+    body=${spec%%;*}
+    marker_age=${spec#*;}; marker_age=${marker_age%%;*}
+    want=${spec##*;}
+    setup_case "branch=main;ab=0,0"
+    local cache fetched
+    cache="$(cache_path main)"
+    : > "$cache.marker"
+    age_file "$cache.marker" "$marker_age"
+    fetched=$(( $(date +%s) - marker_age + 10 ))
+    case "$body" in old:*) body=${body#old:}; fetched=$(( fetched - 20 )) ;; esac
+    printf '%s\t%b\n' "$fetched" "$body" > "$cache"
+    run_sl "$bash_bin" "$script" >/dev/null
+    sleep 0.5
+    local got
+    got=$(sentinel_count)
+    cleanup_case
+    if [ "$got" != "$want" ]; then
+      fail_case "refresh-interval [$label]" "マーカーが ${marker_age} 秒前で gh が ${got} 回呼ばれた (期待 ${want} 回): ${spec%%;*}"
+      return
+    fi
+  done
+  pass_case "refresh-interval [$label]"
+}
+
+# --- not-invoked-without-prerequisites: detached HEAD と、symlink の履歴ディレクトリ (無効になる) では起動しない ---
+case_not_invoked_without_prerequisites() {
+  local bash_bin=$1 script=$2 label=$3 kind
+  for kind in detached history-symlink; do
+    case "$kind" in
+      detached) setup_case "detached" ;;
+      history-symlink) setup_case "branch=main;ab=0,0"; mv "$hist" "$case_dir/real"; ln -s real "$hist" ;;
+    esac
+    run_sl "$bash_bin" "$script" >/dev/null
+    sleep 0.5
+    local count files=0
+    count=$(sentinel_count)
+    compgen -G "$hist/pr-*" >/dev/null && files=1
+    cleanup_case
+    if [ "$count" != "0" ] || [ "$files" != "0" ]; then
+      fail_case "not-invoked-without-prerequisites [$label]" \
+        "$kind で gh が ${count} 回呼ばれた、または pr-* が作られた"
+      return
+    fi
+  done
+  pass_case "not-invoked-without-prerequisites [$label]"
+}
+
+# --- future-fetched-at: fetched_at が現在より未来のキャッシュは表示せず、取得の結果で置き換える ---
+# 時計が戻った後に、その差の時間だけ古い表示が残り、更新もされなくなるのを防ぐ。
+case_future_fetched_at() {
+  local bash_bin=$1 script=$2 label=$3
+  setup_case "branch=main;ab=0,0"
+  trap 'cleanup_case; trap - RETURN' RETURN
+
+  local cache out
+  cache="$(cache_path main)"
+  printf '%s\t34\topen\tapproved\tpass\t0\t1\thttps://github.com/my-org/my-project/pull/34\n' \
+    "$(( $(date +%s) + 1000 ))" > "$cache"
+  out=$(run_sl "$bash_bin" "$script")
+  if [[ "$out" == *'#34'* ]]; then
+    fail_case "future-fetched-at [$label]" "未来の fetched_at のキャッシュを表示した: $out"
+    return
+  fi
+  if wait_until 5 '[ "$(cache_body "$cache")" = "12|open|approved|pass|1|1|https://github.com/my-org/my-project/pull/12" ]'; then
+    pass_case "future-fetched-at [$label]"
+  else
+    fail_case "future-fetched-at [$label]" "取得の結果で置き換わらない: $(cache_body "$cache")"
   fi
 }
 
@@ -467,8 +548,7 @@ run_jq_case() {
   local bash_bin=$1 script=$2 label=$3 name=$4 response=$5 expected=$6
   local spec=${7:-"branch=main;ab=0,0;push=origin~main;owner=me"}
   setup_case "$spec"
-  # shellcheck disable=SC2064
-  trap "cleanup_case" RETURN
+  trap 'cleanup_case; trap - RETURN' RETURN
 
   run_sl "$bash_bin" "$script" STATUSLINE_TEST_GH_RESPONSE="$RESPONSES_DIR/$response.json" >/dev/null
   if ! wait_until 5 '[ -s "$(cache_path main)" ]'; then
@@ -489,7 +569,6 @@ run_jq_case() {
 run_all_cases() {
   local bash_bin=$1 script=$2 label=$3
   local url12="https://github.com/my-org/my-project/pull/12"
-  total=$((total + 20))
   case_invoked                    "$bash_bin" "$script" "$label"
   case_not_invoked_without_token  "$bash_bin" "$script" "$label"
   case_non_blocking               "$bash_bin" "$script" "$label"
@@ -504,6 +583,9 @@ run_all_cases() {
   case_gh_failure_keeps_cache     "$bash_bin" "$script" "$label"
   case_env_sanitized              "$bash_bin" "$script" "$label"
   case_no_gh                      "$bash_bin" "$script" "$label"
+  case_refresh_interval           "$bash_bin" "$script" "$label"
+  case_not_invoked_without_prerequisites "$bash_bin" "$script" "$label"
+  case_future_fetched_at          "$bash_bin" "$script" "$label"
   # 他人の fork の同名ブランチの OPEN より、自分の MERGED (HEAD 一致) を選ぶ。オーナーは大文字小文字を区別しない
   run_jq_case "$bash_bin" "$script" "$label" jq-fork-same-name fork-same-name \
     "12|merged||pass|0|1|$url12"
@@ -520,6 +602,16 @@ run_all_cases() {
     "12|draft|pending|pending|0|1|$url12" "branch=main;ab=0,0"
   # push 先のオーナー (me) と違うオーナー (my-org) の PR は拾わない
   run_jq_case "$bash_bin" "$script" "$label" jq-other-owner base-owner ""
+  # reviewDecision が null なら latestReviews の CHANGES_REQUESTED を APPROVED より優先する。
+  # reviews だけが 1 以上でも ✎。FAILURE は fail。headRefOid が違えば head_matches=0
+  run_jq_case "$bash_bin" "$script" "$label" jq-open-changes-requested open-changes-requested \
+    "12|open|changes_requested|fail|1|0|$url12" "branch=main;ab=0,0"
+  # REVIEW_REQUIRED は latestReviews に APPROVED があっても pending。PENDING は pending
+  run_jq_case "$bash_bin" "$script" "$label" jq-open-review-required open-review-required \
+    "12|open|pending|pending|0|1|$url12" "branch=main;ab=0,0"
+  # CLOSED (HEAD 一致) は closed で review は空。ERROR は fail
+  run_jq_case "$bash_bin" "$script" "$label" jq-closed-error closed-error \
+    "12|closed||fail|0|1|$url12" "branch=main;ab=0,0"
 }
 
 require_command() {

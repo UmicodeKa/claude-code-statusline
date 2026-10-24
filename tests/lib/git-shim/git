@@ -13,7 +13,7 @@
 #   git -C <dir> fetch --quiet   (maybe_git_fetch の投げっぱなし fetch。no-op)
 #   git -C <dir> rev-parse HEAD                    (pr トークンの子プロセス。ローカルの HEAD)
 #   git -C <dir> rev-parse --abbrev-ref '@{push}'  (同上。push 先の <remote>/<branch>)
-#   git -C <dir> remote get-url <remote>           (同上。push 先のリモートの URL)
+#   git -C <dir> remote get-url --push <remote>    (同上。push 先のリモートの URL)
 #
 # <dir> 末尾の規約 (#以降) でリポジトリ状態を表す。複数指定は ; で区切る:
 #   branch=<name>  -> branch --show-current が <name> を返す

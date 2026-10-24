@@ -9,9 +9,6 @@
 #       @STALE@ -> 現在時刻 - 4000 (PR_STALE_SEC の 1800 を超えて古い)
 #   - マーカー ${hist_dir}/pr-<key>.marker: 今書いた空ファイル。再取得の間隔内になるため、
 #     描画は取得を起動せず、仕込んだキャッシュがそのまま読まれる。
-# 2 行目に branch=<name> があれば、キャッシュだけをそのブランチのキーで置く
-# (ブランチを切り替えた後に前のブランチの PR を表示しないことの検証用)。マーカーは常に
-# fixture のブランチのキーで置く。
 #
 # <key> は本体と同じく「cwd + 改行 + ローカルのブランチ名」の cksum。ブランチ名は fixture の
 # current_dir に埋めた fake git の規約 (#...;branch=<name>;...) から取る。
@@ -33,8 +30,8 @@ seed_pr_cache_for_case() {
   local path="$PR_CACHE_LIB_TESTS_DIR/pr-cache/$case_name"
   [ -f "$path" ] || return 0
 
-  local template="" override=""
-  { IFS= read -r template || true; IFS= read -r override || true; } < "$path"
+  local template=""
+  IFS= read -r template < "$path" || true
 
   local cwd spec branch="" token
   cwd=$(jq -r '.workspace.current_dir // ""' < "$fixture")
@@ -45,15 +42,14 @@ seed_pr_cache_for_case() {
     case "$token" in branch=*) branch=${token#branch=} ;; esac
   done
 
-  local cache_branch=$branch
-  case "$override" in branch=*) cache_branch=${override#branch=} ;; esac
-
+  local cache
+  cache="$hist_dir/pr-$(pr_cache_key "$cwd" "$branch")"
   if [ -n "$template" ]; then
     local now
     now=$(date +%s)
     template=${template//@NOW@/$now}
     template=${template//@STALE@/$((now - 4000))}
-    printf '%b\n' "$template" > "$hist_dir/pr-$(pr_cache_key "$cwd" "$cache_branch")"
+    printf '%b\n' "$template" > "$cache"
   fi
-  : > "$hist_dir/pr-$(pr_cache_key "$cwd" "$branch").marker"
+  : > "$cache.marker"
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # テスト用の fake `gh`。statusline 本体の pr トークンが子プロセスで呼ぶ
-#   gh api graphql -f query=<query> -F owner={owner} -F repo={repo} -F head=<branch> --jq <expr>
+#   gh api graphql -f query=<query> -F owner={owner} -F repo={repo} -f head=<branch> --jq <expr>
 # だけを受ける。実ネットワークには出ない。PATH 先頭にこのディレクトリを差し込んで本物の gh を隠す。
 #
 # 既定では何もせずに失敗する (exit 1)。regression.sh / e2e-preview.sh はキャッシュを仕込んで
@@ -22,7 +22,15 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     -F|-f)
       case "${2:-}" in
-        head=*) head_branch=${2#head=} ;;
+        # 本物の gh の -F は値を型変換する (123 / true が数値や真偽値になり、@ で始まればファイルを
+        # 読む)。head は -f で渡す約束なので、-F で来たら本物の GraphQL と同じく型エラーで失敗させる。
+        head=*)
+          if [ "$1" = "-F" ]; then
+            printf 'gh-shim: head must be passed with -f\n' >&2
+            exit 1
+          fi
+          head_branch=${2#head=}
+          ;;
       esac
       shift 2
       ;;
@@ -35,11 +43,13 @@ while [ "$#" -gt 0 ]; do
 done
 
 if [ -n "${STATUSLINE_TEST_GH_SENTINEL:-}" ]; then
-  printf 'head=%s head_owner=%s local_head=%s GH_REPO=%s GH_FORCE_TTY=%s CLICOLOR_FORCE=%s GH_PROMPT_DISABLED=%s GH_NO_UPDATE_NOTIFIER=%s GH_NO_EXTENSION_UPDATE_NOTIFIER=%s GH_TOKEN=%s\n' \
+  printf 'head=%s head_owner=%s local_head=%s GH_REPO=%s GH_FORCE_TTY=%s CLICOLOR_FORCE=%s GH_PROMPT_DISABLED=%s GH_NO_UPDATE_NOTIFIER=%s GH_NO_EXTENSION_UPDATE_NOTIFIER=%s GH_TOKEN=%s GIT_TERMINAL_PROMPT=%s GIT_ASKPASS=%s SSH_ASKPASS=%s SSH_ASKPASS_REQUIRE=%s\n' \
     "$head_branch" "${HEAD_OWNER-<unset>}" "${LOCAL_HEAD-<unset>}" \
     "${GH_REPO-<unset>}" "${GH_FORCE_TTY-<unset>}" "${CLICOLOR_FORCE-<unset>}" \
     "${GH_PROMPT_DISABLED-<unset>}" "${GH_NO_UPDATE_NOTIFIER-<unset>}" \
     "${GH_NO_EXTENSION_UPDATE_NOTIFIER-<unset>}" "${GH_TOKEN-<unset>}" \
+    "${GIT_TERMINAL_PROMPT-<unset>}" "${GIT_ASKPASS-<unset>}" \
+    "${SSH_ASKPASS-<unset>}" "${SSH_ASKPASS_REQUIRE-<unset>}" \
     >> "$STATUSLINE_TEST_GH_SENTINEL"
 fi
 

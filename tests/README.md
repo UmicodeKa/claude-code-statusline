@@ -1,15 +1,3 @@
-| `lib/gh-shim/gh` | テスト用の fake gh |
-| `lib/pr-cache.sh` | `seed_pr_cache_for_case` で `pr` トークンのキャッシュとマーカーを仕込む |
-| `lib/` | ハーネス間で共有するヘルパと fake git / fake gh || `pr-cache/<case>` | `pr` トークンのキャッシュとして仕込む 1 行 (`lib/pr-cache.sh`) |
-| `hyperlink-off/<case>` | 空ファイル。`FORCE_HYPERLINK=0` を渡す |
-| `pr-responses/*.json` | `pr-status-behavior.sh` で fake gh に返させる GraphQL の応答 |
-| `block:pr-constants` | `pr` トークンの内部定数が両版で一致する |
-| `block:pr-common` | `pr` トークンの共通部分 (クエリ、`--jq`、キャッシュの読み書き、子プロセス、描画) が両版で一致する |
-| `block:pr-main` | main から `pr` トークンを呼ぶ部分が両版で一致する |
-| `static:pr-gh-env:*` | `pr` の子プロセスに渡す `GH_PROMPT_DISABLED=1` / `GH_NO_UPDATE_NOTIFIER=1` / `GH_NO_EXTENSION_UPDATE_NOTIFIER=1` と、`unset GH_REPO GH_FORCE_TTY CLICOLOR_FORCE` が残っている |
-| `static:pr-fd-redirect` | `pr` の子プロセスの `>/dev/null 2>&1 </dev/null` が残っている |
-| `pr-status-behavior.sh` | `npm run test:pr` | `pr` トークンのバックグラウンド取得の挙動と、`--jq` による変換を検証する |
-
 # テスト
 
 macOS 版 (`statusline-macos.sh`) と Linux 版 (`statusline-linux.sh`) が同じ入力に対して同じ出力を返すことを確かめるテスト群です。出力の仕様は [docs/SPEC.md](../docs/SPEC.md)、各防御コードとそれを守るテストの対応は [docs/DESIGN.md](../docs/DESIGN.md)、開発環境の準備は [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md) を参照してください。
@@ -50,7 +38,7 @@ fetch は投げっぱなしの非同期処理で描画出力に現れないた�
 
 ### pr-status-behavior.sh
 
-`pr` トークンの取得も投げっぱなしの非同期処理のため、fake gh のフック (後述) を使って出力以外の不変条件を確かめます。各ケースは一時ディレクトリの中に fake git の規約を名前に埋めた実在のディレクトリを作り、それを `workspace.current_dir` として渡します。子プロセスは cwd に `cd` してから `gh` を呼ぶため、cwd が実在しないと取得まで進みません。ケースは次の 20 個で、両版それぞれで実行します。
+`pr` トークンの取得も投げっぱなしの非同期処理のため、fake gh のフック (後述) を使って出力以外の不変条件を確かめます。各ケースは一時ディレクトリの中に fake git の規約を名前に埋めた実在のディレクトリを作り、それを `workspace.current_dir` として渡します。子プロセスは cwd に `cd` してから `gh` を呼ぶため、cwd が実在しないと取得まで進みません。ケースは次のとおりで、両版それぞれで実行します。
 
 | ケース名 | 確かめること |
 | --- | --- |
@@ -66,16 +54,22 @@ fetch は投げっぱなしの非同期処理で描画出力に現れないた�
 | `push-branch-name` | ローカル名と push 先の名前が違うとき、push 先の名前とオーナーで問い合わせる (URL の 3 形式) |
 | `marker-unwritable` | マーカーを書けないときは `gh` を起動しない |
 | `gh-failure-keeps-cache` | `gh` が非ゼロで終了したとき、キャッシュを書き換えず前回の表示を残す |
-| `env-sanitized` | `GH_REPO` / `GH_FORCE_TTY` / `CLICOLOR_FORCE` が `gh` に渡らず、gh 用の 3 変数が設定され、`GH_TOKEN` は残る |
+| `env-sanitized` | `GH_REPO` / `GH_FORCE_TTY` / `CLICOLOR_FORCE` が `gh` に渡らず、gh 用の 3 変数と git 用の 4 変数が設定され、`GH_TOKEN` は残る |
 | `no-gh` | `gh` が PATH にないときは何も起動せず、列を省略する |
+| `refresh-interval` | キャッシュの状態とマーカーの経過時間から、30 / 300 / 900 秒の間隔で起動する (前回の試行が失敗したときは 300 秒) |
+| `not-invoked-without-prerequisites` | detached HEAD と、symlink の履歴ディレクトリ (無効になる) では `gh` を起動しない |
+| `future-fetched-at` | `fetched_at` が現在より未来のキャッシュは表示せず、取得の結果で置き換える |
 | `jq-fork-same-name` | 他人の fork の同名ブランチの OPEN より、自分の MERGED (HEAD 一致) を選ぶ |
 | `jq-review-null-approved` | `reviewDecision` が `null` でも、`latestReviews` の `APPROVED` で approved になる |
 | `jq-review-threads-only` | `reviewThreads.totalCount` だけが 1 以上でも `✎` が付く |
 | `jq-merged-head-mismatch` | MERGED の `headRefOid` がローカルの HEAD と違えば PR なし |
 | `jq-base-owner` | push 先がないときは base リポジトリのオーナーで候補を絞る |
 | `jq-other-owner` | push 先のオーナーと違うオーナーの PR は拾わない |
+| `jq-open-changes-requested` | `reviewDecision` が `null` なら `latestReviews` の `CHANGES_REQUESTED` を優先する。`reviews` だけでも `✎`、`FAILURE` は fail |
+| `jq-open-review-required` | `REVIEW_REQUIRED` は `latestReviews` に `APPROVED` があっても pending |
+| `jq-closed-error` | CLOSED (HEAD 一致) は closed でレビュー状態は空。`ERROR` は fail |
 
-- `jq-*` は、`pr-responses/` の GraphQL 応答を fake gh に返させ、本体の `--jq` の式を本物の `jq` で評価した結果のキャッシュを確かめます。
+- `jq-*` は、`pr-responses/` の GraphQL 応答を fake gh に返させ、本体の `--jq` の式を本物の `jq` で評価した結果のキャッシュを確かめます。`gh` 組み込みの `--jq` は gojq なので、jq にしかない関数を使っても検出できません。
 - `no-gh` は、本体と fake git が使うコマンドだけを symlink したディレクトリを `PATH` にします。本物の `gh` は `jq` と同じディレクトリ (`/usr/bin` や `/opt/homebrew/bin`) にあることが多く、ディレクトリごと外せないためです。
 
 ### e2e-preview.sh
@@ -96,16 +90,18 @@ fetch は投げっぱなしの非同期処理で描画出力に現れないた�
 | `block:settings` | カスタマイズ設定ブロックが両版で一致する |
 | `block:interval-clamp` | 間引き定数の clamp ブロックが両版で一致する |
 | `block:color-scheme` | カラースキーム定義ブロックが両版で一致する |
+| `block:pr-constants` | `pr` トークンの内部定数が両版で一致する |
+| `block:pr-common` | `pr` トークンの共通部分 (クエリ、`--jq`、キャッシュの読み書き、子プロセスの起動と本体、描画) が両版で一致する |
+| `block:layout` | レイアウトの組み立て (`layout_token` / `build_layout`) が両版で一致する |
 | `static:locale` | 先頭 20 行に `export LC_ALL=C.UTF-8` がある |
-| `static:fetch-no-prompt:GIT_TERMINAL_PROMPT` | `GIT_TERMINAL_PROMPT=0` が残っている |
-| `static:fetch-no-prompt:GIT_ASKPASS` | `GIT_ASKPASS=/bin/true` が残っている |
-| `static:fetch-no-prompt:SSH_ASKPASS` | `SSH_ASKPASS=/bin/true` が残っている |
-| `static:fetch-no-prompt:SSH_ASKPASS_REQUIRE` | `SSH_ASKPASS_REQUIRE=force` が残っている |
-| `static:fetch-fd-redirect` | fetch 子プロセスの `>/dev/null 2>&1 </dev/null` が残っている |
+| `static:no-prompt:<関数>:*` | `maybe_git_fetch` と `pr_spawn_refresh` のそれぞれに、`GIT_TERMINAL_PROMPT=0` / `GIT_ASKPASS=/bin/true` / `SSH_ASKPASS=/bin/true` / `SSH_ASKPASS_REQUIRE=force` が残っている |
+| `static:fetch-fd-redirect` | `maybe_git_fetch` に `>/dev/null 2>&1 </dev/null` が残っている |
+| `static:pr-gh-env:*` | `pr_spawn_refresh` に `GH_PROMPT_DISABLED=1` / `GH_NO_UPDATE_NOTIFIER=1` / `GH_NO_EXTENSION_UPDATE_NOTIFIER=1` と、`unset GH_REPO GH_FORCE_TTY CLICOLOR_FORCE` が残っている |
+| `static:pr-fd-redirect` | `pr_spawn_refresh` に `>/dev/null 2>&1 </dev/null` が残っている |
 | `static:no-echo` | コメント以外の行で `echo` を使っていない |
 
 - `block:*` は、開始マーカーのコメント行 (行頭一致) から終了マーカー行の手前までを取り出して比較します。マーカーのコメントを書き換えるとブロックを取り出せず、失敗になります。
-- `static:*` は、両版それぞれに固定文字列が含まれることを確かめます。
+- `static:*` は、両版それぞれに固定文字列が含まれることを確かめます。関数名を挙げたチェックは、その関数の範囲 (`<関数>() {` から次の行頭の `}` まで) だけを探します。
 
 ## ディレクトリ構成
 
@@ -122,7 +118,10 @@ fetch は投げっぱなしの非同期処理で描画出力に現れないた�
 | `git-fetch-on/<case>` | 空ファイル。`CLAUDE_STATUSLINE_GIT_FETCH=1` を渡す |
 | `config-file/<case>` | 設定ファイルとして読ませる中身 |
 | `layout/<case>` | 1 行目 = `LAYOUT_LINE1`、2 行目 = `LAYOUT_LINE2` |
-| `lib/` | ハーネス間で共有するヘルパと fake git |
+| `pr-cache/<case>` | `pr` トークンのキャッシュとして仕込む 1 行 (`lib/pr-cache.sh`) |
+| `hyperlink-off/<case>` | 空ファイル。`FORCE_HYPERLINK=0` を渡す |
+| `pr-responses/*.json` | `pr-status-behavior.sh` で fake gh に返させる GraphQL の応答 |
+| `lib/` | ハーネス間で共有するヘルパと fake git / fake gh |
 
 マーカーごとの補足です。
 
@@ -133,19 +132,21 @@ fetch は投げっぱなしの非同期処理で描画出力に現れないた�
   - `86-config-template` / `95-config-template-layout` は配布テンプレート `statusline.conf` を読ませ、出力が既定値のときと一致することで、テンプレートの値が既定値とずれていないことを確かめます。`86` は branch / session の無い fixture のため、1 行目の並びの一致は `95` で確かめます。
   - レイアウトの値は `|` を含むため、テンプレートではクォートで囲んでいます。
 - `layout/`: 空行は｢指定なし｣を意味します。
-- `pr-cache/`: 1 行目をキャッシュの 1 行として書きます。`printf %b` で展開するのでタブは `\t`、ESC は `\033` と書けます。`fetched_at` は現在時刻に依存するため、`@NOW@` (現在時刻) と `@STALE@` (現在時刻 - 4000 秒) を仕込む直前に置き換えます。1 行目が空ならキャッシュを置きません。2 行目に `branch=<name>` を書くと、キャッシュだけをそのブランチのキーで置きます。どの場合も新しいマーカーを置くため、描画は取得を起動せず、仕込んだキャッシュがそのまま読まれます
+- `pr-cache/`: 1 行目をキャッシュの 1 行として書きます。`printf %b` で展開するのでタブは `\t`、ESC は `\033` と書けます。`fetched_at` は現在時刻に依存するため、`@NOW@` (現在時刻) と `@STALE@` (現在時刻 - 4000 秒) を仕込む直前に置き換えます。1 行目が空ならキャッシュを置きません。どの場合も新しいマーカーを置くため、描画は取得を起動せず、仕込んだキャッシュがそのまま読まれます
 - `hyperlink-off/`: マーカーが無いケースでは `FORCE_HYPERLINK` を空で渡し、開発者のシェルの値が混ざらないようにしています
 
 `lib/` の中身は次のとおりです。
 
 | ファイル | 役割 |
 | --- | --- |
-| `lib/escape-ansi.sh` | ESC を `\e` に置き換える (`perl` を使用) |
+| `lib/escape-ansi.sh` | ESC を `\e` に、BEL を `\a` に置き換える (`perl` を使用) |
 | `lib/config-file.sh` | `config_for_case` で conf のパスを解決する。マーカーが無ければ存在しないパス (`NO_CONFIG`) を返す |
 | `lib/layout.sh` | `layout_for_case` でレイアウト文字列を解決する |
 | `lib/find-debian-bash.sh` | Linux 版を実行できる bash を探す。CI 用の必須化チェックも持つ |
 | `lib/is-macos-host.sh` | macOS ホストかどうかを判定する |
 | `lib/git-shim/git` | テスト用の fake git |
+| `lib/gh-shim/gh` | テスト用の fake gh |
+| `lib/pr-cache.sh` | `seed_pr_cache_for_case` で `pr` トークンのキャッシュとマーカーを仕込む |
 
 ## assertion ファイルの書き方
 
@@ -236,8 +237,9 @@ directory 列は `current_dir` の basename から作られるため、規約文
 `pr` トークンの子プロセスが呼ぶ `gh api graphql ... --jq <式>` だけを受ける fake です。`regression.sh` / `pr-status-behavior.sh` / `e2e-preview.sh` は `PATH` に `lib/gh-shim/` を差し込み、本物の gh (ネットワーク) に出ないようにしています。
 
 - 既定では何もせずに失敗します (終了コード 1)。`regression.sh` と `e2e-preview.sh` はキャッシュと新しいマーカーを仕込むため、通常は取得自体が起動されません
+- `head` が `-F` で渡されたときは失敗します。本物の `gh` の `-F` は値を型変換し (`123` や `true` が数値や真偽値になる)、`@` で始まる値をファイルとして読むためです
 - `pr-status-behavior.sh` は次の環境変数で挙動を制御します
-  - `STATUSLINE_TEST_GH_SENTINEL=<path>`: 呼び出し 1 回ごとに、`head` 変数と、子プロセスが設定･除去する環境変数の値を 1 行追記する
+  - `STATUSLINE_TEST_GH_SENTINEL=<path>`: 呼び出し 1 回ごとに、`head` 変数と、子プロセスが設定･除去する環境変数 (gh 用と git 用) の値を 1 行追記する
   - `STATUSLINE_TEST_GH_SLEEP=<秒>`: 応答を指定秒だけ遅らせる
   - `STATUSLINE_TEST_GH_EXIT=<code>`: 応答の代わりに指定の終了コードで終わる
   - `STATUSLINE_TEST_GH_RESPONSE=<path>`: GraphQL の応答 JSON。`--jq` の式を本物の `jq -r` で評価して出す
