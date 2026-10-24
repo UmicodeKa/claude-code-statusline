@@ -39,11 +39,18 @@ SHOW_CWD_OFF_DIR="$TESTS_DIR/show-cwd-off"
 # マーカーが無いケースは存在しないパスに固定する (lib/config-file.sh)。
 # layout/<case> があればそのケースで 1 行目 / 2 行目のレイアウト文字列を
 # CLAUDE_STATUSLINE_LAYOUT_LINE1 / _LINE2 に渡す (lib/layout.sh)。無ければ既定レイアウト。
+# pr-cache/<case> があればそのケースの履歴 dir に pr トークンのキャッシュとマーカーを仕込む
+# (lib/pr-cache.sh)。マーカーが新しいので描画は取得を起動しない。
+# hyperlink-off/<case> があればそのケースで FORCE_HYPERLINK=0 を渡す (OSC 8 を出さない)。
+# マーカーが無ければ空文字を渡す (開発者の shell の値を混ぜない)。
+HYPERLINK_OFF_DIR="$TESTS_DIR/hyperlink-off"
 
 # shellcheck source=lib/config-file.sh
 source "$TESTS_DIR/lib/config-file.sh"
 # shellcheck source=lib/layout.sh
 source "$TESTS_DIR/lib/layout.sh"
+# shellcheck source=lib/pr-cache.sh
+source "$TESTS_DIR/lib/pr-cache.sh"
 # shellcheck source=lib/escape-ansi.sh
 source "$TESTS_DIR/lib/escape-ansi.sh"
 # shellcheck source=lib/find-debian-bash.sh
@@ -55,6 +62,9 @@ source "$TESTS_DIR/lib/is-macos-host.sh"
 # PATH 先頭へこの dir を差し込み、本物の git を覆い隠す。fixture の current_dir に
 # 埋めた #branch=<name> / #detached の規約を fake git が読んでブランチ名を返す。
 GIT_SHIM_DIR="$TESTS_DIR/lib/git-shim"
+# pr トークンの取得は lib/gh-shim/gh (fake gh) が受ける。既定では何もせずに失敗するので、
+# 取得が起動されても実ネットワークには出ず、仕込んだキャッシュも書き換えない。
+GH_SHIM_DIR="$TESTS_DIR/lib/gh-shim"
 
 MACOS_SCRIPT="$REPO_DIR/statusline-macos.sh"
 DEBIAN_SCRIPT="$REPO_DIR/statusline-linux.sh"
@@ -276,6 +286,8 @@ run_case() {
     cp "$seed" "$hist_dir/rate"
   fi
 
+  seed_pr_cache_for_case "$case_name" "$fixture" "$hist_dir"
+
   # disable-history/<case> があれば HISTORY_DIR を symlink に向けて本体の
   # symlink ガードを発動させ、履歴機能を無効化した状態を作る。statusline は
   # この override 先が symlink だと HISTORY_DIR="" にする (履歴なしで継続)。
@@ -309,6 +321,10 @@ run_case() {
   # show-cwd-off/<case> があれば directory 列を非表示にする (既定は 1 = 表示)。
   local show_cwd=""
   if [ -f "$SHOW_CWD_OFF_DIR/${case_name}" ]; then show_cwd="0"; fi
+
+  # hyperlink-off/<case> があれば OSC 8 のリンクを出さない (既定は空 = リンクあり)。
+  local force_hyperlink=""
+  if [ -f "$HYPERLINK_OFF_DIR/${case_name}" ]; then force_hyperlink="0"; fi
 
   # config-file/<case> があればそれを設定ファイルとして読ませる (無ければ conf 無し)。
   local config
@@ -347,7 +363,8 @@ run_case() {
       CLAUDE_STATUSLINE_SHOW_CWD="$show_cwd" \
       CLAUDE_STATUSLINE_LAYOUT_LINE1="$case_layout_line1" \
       CLAUDE_STATUSLINE_LAYOUT_LINE2="$case_layout_line2" \
-      PATH="$GIT_SHIM_DIR:$PATH" \
+      FORCE_HYPERLINK="$force_hyperlink" \
+      PATH="$GIT_SHIM_DIR:$GH_SHIM_DIR:$PATH" \
         "$bash_bin" "$script" < "$fixture" 2>&1 | escape_ansi
     }
     printf 'X%s' "$?"

@@ -104,6 +104,11 @@ main() {
   check_block settings '# === カスタマイズ設定' '# === 内部定数'
   check_block interval-clamp '# --- 間引き定数の推奨レンジ ---' '# --- カラースキーム ---'
   check_block color-scheme '# --- カラースキーム ---' 'esac'
+  # pr トークン。ロックの取り方が違う maybe_pr_refresh を除き、定数・キャッシュの読み書き・
+  # 子プロセス・描画・main からの呼び出しは両版で同じ。
+  check_block pr-constants '# pr トークンの再取得間隔' '[ "$PR_TIMEOUT_SEC" -lt 1 ]'
+  check_block pr-common '# --- PR の状態 (pr トークン) ---' '# maybe_pr_refresh:'
+  check_block pr-main '# pr トークン。LAYOUT_LINE1 に pr があるとき' '# ブランチが取れたときだけ作業ツリー'
 
   # ロケール固定はトリムの文字数換算に効くため冒頭 (先頭 20 行) にあることまで見る。
   check_static locale '1,20p' 'export LC_ALL=C.UTF-8'
@@ -114,6 +119,13 @@ main() {
   check_static fetch-no-prompt:SSH_ASKPASS_REQUIRE '1,$p' 'SSH_ASKPASS_REQUIRE=force'
   # fetch 子プロセスの fd 付け替え。外すと描画が fetch 完了まで待たされる。
   check_static fetch-fd-redirect '1,$p' '>/dev/null 2>&1 </dev/null'
+  # pr トークンの子プロセス。gh のプロンプトと更新通知を封じる 3 つと、出力や問い合わせ先を
+  # 変えてしまう 3 つの除去。fd の付け替えは外すと描画が gh の完了まで待たされる。
+  check_static pr-gh-env:GH_PROMPT_DISABLED '1,$p' 'GH_PROMPT_DISABLED=1'
+  check_static pr-gh-env:GH_NO_UPDATE_NOTIFIER '1,$p' 'GH_NO_UPDATE_NOTIFIER=1'
+  check_static pr-gh-env:GH_NO_EXTENSION_UPDATE_NOTIFIER '1,$p' 'GH_NO_EXTENSION_UPDATE_NOTIFIER=1'
+  check_static pr-gh-env:unset '1,$p' 'unset GH_REPO GH_FORCE_TTY CLICOLOR_FORCE'
+  check_static pr-fd-redirect '1,$p' 'pr_refresh_child "$cwd" "$branch" "$cache" "$inflight" >/dev/null 2>&1 </dev/null &'
   check_no_echo
 
   printf '\n'

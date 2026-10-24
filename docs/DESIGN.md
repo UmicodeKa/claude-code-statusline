@@ -24,6 +24,7 @@ macOS 版 (`statusline-macos.sh`) と Linux 版 (`statusline-linux.sh`) は同�
 7. 入力 JSON を `jq` 1 回で読み取る
 8. rate 履歴を更新してチャートを作る
 9. git のブランチ、変更行数、ahead/behind を取得する (`GIT_FETCH=1` のときはここでバックグラウンド fetch を投げる)
+    - `LAYOUT_LINE1` に `pr` があるときは、続けて PR のキャッシュを読み、必要ならバックグラウンドで取得を投げる
 10. 各フィールドを着色し、レイアウトに従って 1 行目と 2 行目を組み立てて出力する
 
 Linux 版はステップ 1 の前に bash 4.1+ ゲートを置き、ステップ 6 では履歴ディレクトリの準備を先に行ってから `jq` / `flock` を確認します (macOS 版は `jq` の確認が先です)。また `LOCK_TIMEOUT_SEC` は、Linux 版では内部定数のブロックに、macOS 版ではロック取得関数 (`acquire_lock`) の直前にあります。
@@ -44,7 +45,7 @@ Linux 版はステップ 1 の前に bash 4.1+ ゲートを置き、ステップ
 
 macOS 版で `flock` を使わないのは、macOS に標準で入っておらず、無い環境では黙って失敗するためです。代わりに POSIX で原子性が保証されている `mkdir` でロックを取り、`LOCK_TIMEOUT_SEC` × 5 秒 (既定 10 秒) より古いロックディレクトリは stale とみなして削除します。Linux 版の `flock` はプロセス終了時に自動で解放されるため、stale 処理は持ちません。
 
-これ以外のブロック (設定の読み込み、カスタマイズ設定、clamp、カラースキーム) は両版で一字一句同じに保ちます。`tests/script-parity.sh` がこれらのブロックを抜き出して比較します。
+これ以外のブロック (設定の読み込み、カスタマイズ設定、clamp、カラースキーム、pr トークンの定数･共通部分･main からの呼び出し) は両版で一字一句同じに保ちます。pr トークンで両版が違うのは、ロックを取る `maybe_pr_refresh` だけです。`tests/script-parity.sh` がこれらのブロックを抜き出して比較します。
 
 ## 実装上の仕組み
 
@@ -159,9 +160,39 @@ rate チャートは `HISTORY_LEN` (6) 文字で、左 5 文字が履歴、右�
 - `workspace.current_dir` の basename をパラメータ展開 (`${path##*/}`) だけで取り出し、`basename` や git の呼び出しを足しません
 - 末尾のスラッシュは先に取り除きます。`/tmp/project/` のような値では `${cwd##*/}` が空になり、実在するディレクトリなのに列が消えるためです。`/` だけは除去すると空になり、｢ルートは列ごと省略｣と同じ結果になります
 
+### pr トークンの取得とキャッシュ
+
+PR の状態は `gh api graphql` で取りますが、1 回に 1 秒近くかかるため描画経路では呼びません。構造は `maybe_git_fetch` と同じで、描画はキャッシュを読むだけにし、取得は投げっぱなしの子プロセスで行います。
+
+| ファイル | 書く人 | 内容 |
+| --- | --- | --- |
+| `${HISTORY_DIR}/pr-<key>` | 子プロセス | キャッシュ (タブ区切りの 1 行)。取得に成功したときだけ置き換える |
+| `${HISTORY_DIR}/pr-<key>.marker` | 親 (描画側) | 空ファイル。mtime が最後に取得を試みた時刻 |
+| `${HISTORY_DIR}/pr-<key>.inflight` | 子プロセス | ディレクトリ。取得している間だけ存在する |
+
+- `<key>` は `cwd + 改行 + ローカルのブランチ名` の `cksum` です。描画のたびに今のブランチからキーを作るので、ブランチを切り替えたり `/clear` したりしても前の PR は残りません
+- キャッシュとマーカーを別のファイルにしているのは、マーカーの書き方 (`true > "$marker"`) がファイルを空にするためです。兼ねると試行のたびにキャッシュが消えます
+- 再取得の間隔はキャッシュに記録した状態から決めます (CI 実行中や push 前後は 30 秒、merged / closed は 900 秒など)。キャッシュの `fetched_at` がマーカーの mtime より古ければ、最後の試行は失敗したとみなします
+- 子プロセスは `.inflight` を `mkdir` で作れたときだけ取得します。描画側も `.inflight` があれば取得を起動しないため、ネットワークが詰まっても `gh` が溜まりません
+- `gh` は子プロセスの中でさらにバックグラウンドで起動し、0.2 秒ごとに `kill -0` で生存を確かめて、60 秒を過ぎたら `kill` します。macOS には `timeout(1)` がないためです
+- 結果は一時ファイルに書いてから `mv` で置き換えます。描画が書きかけのファイルを読まないようにするためです。置き換える前に、既存のキャッシュの `fetched_at` が自分の開始時刻より新しくないことを確かめ、古い結果で新しい結果を上書きしないようにしています
+- 候補の選び方と状態の決め方は `gh` の `--jq` (gh に組み込みの jq) の中で済ませ、キャッシュの 1 行に変換します。`--jq` は `--arg` を受け付けないため、ローカルの HEAD と head のオーナーは環境変数で渡して `$ENV` で読みます。値を式に文字列として埋め込むと、ブランチ名などに含まれる記号で式が壊れます
+- ローカルの HEAD と push 先を取る `git` の呼び出しは、子プロセスの中で行います。描画経路に入れると描画のたびに fork が増えます
+- 描画側はキャッシュを組み込みの `read` で読み、パラメータ展開でタブごとに分けます。タブは IFS の空白文字なので、`IFS=$'\t' read` で分けると空のフィールドが詰められて列がずれます
+- 描画コスト: `pr` があるときは、間隔内の通常経路でも描画ごとに `cksum` / `date` / `stat` の fork が増えます。`pr` がなければ増えません
+
+head のブランチ名とオーナーを push 先 (`@{push}`) から決めるのは、ローカルのブランチ名だけで探すと次の誤りが起きるためです。
+
+- 公開リポジトリの `main` にいるとき、他人が自分の fork の `main` から出した PR を拾う (`patch-1` などのありがちな名前でも同じ)
+- ローカルの `fix` が `origin/feature/fix` を追跡しているときや、`gh pr checkout` が `<owner>-<branch>` という名前でブランチを作ったときに、PR が見つからない
+
+`MERGED` / `CLOSED` を選ぶのは `headRefOid` がローカルの HEAD と一致するときだけです。マージ済みの PR と同じ名前のブランチを使い回して新しいコミットを積んだときに、古い PR を表示しないためです。
+
+`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` は見ません。Claude Code 標準の PR バッジを消すためにこの変数を設定した人でも、`pr` トークンは使えるようにするためです。`pr` を書くこと自体が明示的なオプトインになっています。
+
 ## 壊れやすい箇所と守っているテスト
 
-各項目は｢箇所 / 何をしているか / 外すと何が起きるか / 守っているテスト｣の順に書いています。テスト名は `tests/assertions/` のケース名、`tests/git-fetch-behavior.sh` のケース名、`tests/script-parity.sh` のチェック名、`tests/regression.sh` の静的チェック名です。
+各項目は｢箇所 / 何をしているか / 外すと何が起きるか / 守っているテスト｣の順に書いています。テスト名は `tests/assertions/` のケース名、`tests/git-fetch-behavior.sh` と `tests/pr-status-behavior.sh` のケース名、`tests/script-parity.sh` のチェック名、`tests/regression.sh` の静的チェック名です。
 
 `tests/script-parity.sh` は `npm test` に含まれ、OS に依存しないため CI (ubuntu) でも実行されます。
 
@@ -314,6 +345,37 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 
 両版で同じ順序にしておくと、実装の違いをロック機構 (flock / mkdir) だけに閉じ込められます。
 
+### pr 子プロセスの fd 付け替えと環境変数
+
+- 箇所: `maybe_pr_refresh` の `( ... pr_refresh_child ... >/dev/null 2>&1 </dev/null & )` と、その直前の `unset` / `export`
+- 何をしているか: 子プロセスを投げっぱなしで起動して fd 0/1/2 を `/dev/null` に付け替え、`gh` 用に次の環境変数を整える
+  - 設定する: `GH_PROMPT_DISABLED=1`、`GH_NO_UPDATE_NOTIFIER=1`、`GH_NO_EXTENSION_UPDATE_NOTIFIER=1`。`gh` が内部で git を呼ぶことがあるため、fetch と同じ git 用の 4 つも設定する
+  - 外す: `GH_REPO` (cwd ではなくそのリポジトリを問い合わせてしまう)、`GH_FORCE_TTY` と `CLICOLOR_FORCE` (出力が端末向けの書式や色付きになり、キャッシュの形が壊れる)
+  - 残す: `GH_TOKEN` / `GITHUB_TOKEN` / `GH_HOST` / `GH_ENTERPRISE_TOKEN` (ユーザーが選んだ認証方法と接続先)
+- 外すと何が起きるか: fd を付け替えないと、描画が `gh` の完了を待って止まる ([fetch 子プロセスの fd 付け替え](#fetch-子プロセスの-fd-付け替え) と同じ)。環境変数を外すと、認証や更新通知の表示が Claude Code の画面に割り込んだり、別のリポジトリの PR を表示したりする
+- 守っているテスト: `non-blocking` / `env-sanitized` (pr-status-behavior)、`tests/script-parity.sh` の `static:pr-gh-env:*` / `static:pr-fd-redirect`
+
+### pr の marker → unlock → spawn の順序とマーカー書き込み失敗
+
+- 箇所: `maybe_pr_refresh` の後半
+- 何をしているか: ロック取得 → 間隔の再確認 → マーカーの mtime 更新 → ロック解放 → 子プロセス起動、の順に行う。マーカーを書けなければ子プロセスを起動しない
+- 外すと何が起きるか: [marker → unlock → spawn の順序](#marker--unlock--spawn-の順序) と [マーカー書き込み失敗時に fetch しない](#マーカー書き込み失敗時に-fetch-しない) と同じ。Linux 版では取得が終わるまで flock が残り、マーカーを書けないまま起動すると描画のたびに `gh` が起動する
+- 守っているテスト: `marker-unwritable` / `throttle` (pr-status-behavior)。flock が子に渡らないことは fetch の `lock-released` と同じ構造で、pr 側には専用のテストはない
+
+### pr の `.inflight` の後始末を trap にしない
+
+- 箇所: `pr_refresh_child` の `mkdir` → `pr_refresh_run` → `rmdir`
+- 何をしているか: `.inflight` を作れたときだけ取得し、終わったら `rmdir` する。後始末を EXIT の `trap` にしない
+- 外すと何が起きるか: macOS の `/bin/bash` 3.2 では、`&` で起動したサブシェルに張った EXIT の `trap` が走らない。`trap` に任せると `.inflight` が残り、`PR_INFLIGHT_STALE_SEC` (90 秒) が過ぎるまで次の取得が起動しない。kill などで `rmdir` まで届かなかった印も、同じ 90 秒で消える
+- 守っているテスト: `throttle` / `branch-switch` / `no-overwrite-by-older` など、取得の完了を `.inflight` の消滅で待つケース (pr-status-behavior)、`single-flight` / `stale-inflight`
+
+### pr のキャッシュの読み取りと値の検証
+
+- 箇所: `pr_cache_load`、`format_pr`
+- 何をしているか: キャッシュを信用せず、番号と状態が不正なら列ごと省略し、ほかのフィールドは想定外の値を無いものとして扱う。URL は `https://` で始まり制御文字を含まないときだけ OSC 8 に埋め込む
+- 外すと何が起きるか: キャッシュは `/tmp` 配下のファイルで、壊れることも、`gh` の出力が想定と違うこともある。URL に ESC や BEL が混ざると、OSC 8 が途中で閉じて後続の列の表示が崩れる
+- 守っているテスト: `105-pr-not-in-layout`〜`112-pr-invalid-optional-fields`
+
 ### rate のハイフン区切り
 
 - 箇所: `format_rate`
@@ -406,6 +468,26 @@ directory 列は `workspace.current_dir` の basename から取ります。次�
 
 間引きのマーカーは `cwd` の `cksum` をキーにしています。repo のルート単位にするには `git rev-parse --show-toplevel` などの呼び出しが要るため、cwd 単位のままにしています。そのため、同じリポジトリの別のサブディレクトリや worktree は別々に数えられ、開いている数に比例して fetch の回数が増えます。`cksum` はバイト列の CRC なので、ロケールやマルチバイトのパスに影響されません。
 
+### pr トークンの有効化フラグ
+
+`GIT_FETCH` のように `PR_STATUS=1` といった有効化フラグを別に設ける案は採りませんでした。フラグを設けると｢フラグは 1 だがレイアウトに `pr` がない｣といった組み合わせを考える必要が出ます。レイアウトにトークンがあるかどうかだけで決まれば、スイッチは 1 つで済みます。
+
+### stdin の `pr` フィールド
+
+Claude Code が statusline に渡す `pr` フィールドは使いません。フッターの PR バッジと同じ情報源で、同じセッションで PR を切り替えても最初の PR に固定されたまま更新されません。また open の PR があるときしか存在せず、CI の情報もありません。`gh` で自前に取得すれば、同じセッションでも正しい PR を表示できます。
+
+### PR の状態を下線色 (SGR 58) で表す
+
+Claude Code のフッターの PR バッジは下線に色を付けていますが、`pr` トークンは `#<番号>` の文字色で表します。下線色 (SGR 58) を Claude Code の statusline 描画がそのまま通すかを確認できていないためです。
+
+### `gh pr list --json`
+
+`gh pr list --json` は使いません。件数を知りたいだけのコメントとレビューの本文まで取ってしまい重いうえ、行コメントの件数 (`reviewThreads`) を取れないためです。GraphQL なら必要な件数と集約値だけを 1 回 (コスト 1) で取れます。
+
+### `statusCheckRollup` の各チェックを自前で集約する
+
+CI 記号は `statusCheckRollup.state` (GitHub が集約した値) をそのまま使い、個々のチェックを自前で集約しません。自前で集約すると、失敗したジョブを再実行して成功させても古い失敗が残って `✗` のままになるうえ、取得件数の上限を超えたチェックが落ちるためです。
+
 ### その他
 
 次の案も採っていません。理由はそれぞれのリンク先に書いています。
@@ -428,3 +510,6 @@ directory 列は `workspace.current_dir` の basename から取ります。次�
 - `UNTRACKED_DIFF_LIMIT` による上限
 - 設定ファイルのパスへの `./` の前置
 - ロケール固定 (記述の有無は `tests/script-parity.sh` で確認。出力比較は実行環境のロケールに左右される)
+- pr トークンの子プロセスで、`gh` や git の認証プロンプトが実際に出ないこと (記述の有無は `tests/script-parity.sh` で確認)
+- pr トークンの取り消し線 (SGR 9) と OSC 8 のリンクが、実際の Claude Code の statusline で描画されること (端末と Claude Code の描画に依存するため、目視で確認する)
+- 実際の GitHub の応答の形 (fake gh は応答の JSON を固定で返す。クエリと `--jq` が実際の `gh` で動くことは手元で確認する)

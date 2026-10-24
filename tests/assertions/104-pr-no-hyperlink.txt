@@ -1,0 +1,3 @@
+# FORCE_HYPERLINK=0: OSC 8 を出さず、色と記号だけを出す
+matches_line1: ^main \| \\e\[38;2;78;186;101m#12\\e\[0m \\e\[38;2;78;186;101m✓\\e\[0m$
+not_contains: \e]8;;

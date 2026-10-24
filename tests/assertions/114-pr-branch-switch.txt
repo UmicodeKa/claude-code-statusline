@@ -1,0 +1,2 @@
+# 別のブランチ (feature/old) のキャッシュしかない: キーが違うので前のブランチの PR を表示しない
+matches_line1: ^main$

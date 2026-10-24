@@ -1,3 +1,15 @@
+| | `pr` | PR の状態 ([詳細](#pr-の状態-pr-トークン))。既定の並びには含まれない |
+| pr `#<番号>` | open + approved | `success` (緑) | `\033[38;2;78;186;101m` |
+| | open + pending | `warning` (黄) | `\033[38;2;255;193;7m` |
+| | open + changes requested | `error` (赤) | `\033[38;2;255;107;128m` |
+| | draft | `inactive` (灰) | `\033[38;2;102;102;102m` |
+| | merged | `merged` (紫) + 取り消し線 | `\033[9m\033[38;2;135;0;255m` |
+| | closed | `inactive` (灰) + 取り消し線 | `\033[9m\033[38;2;102;102;102m` |
+| pr CI 記号 | `✓` | `success` (緑) | `\033[38;2;78;186;101m` |
+| | `✗` | `error` (赤) | `\033[38;2;255;107;128m` |
+| | `●` | `warning` (黄) | `\033[38;2;255;193;7m` |
+| pr `✎` | — | 無色 | — |
+
 # 出力仕様
 
 statusline-macos.sh (macOS 版) と statusline-linux.sh (Linux 版) が満たす、外から観測できる出力の仕様をまとめる。両版は同じ入力に対して**同一の出力**を返す。実装上の理由や過去に採らなかった案は [DESIGN.md](./DESIGN.md)、テストの書き方は [tests/README.md](../tests/README.md) を参照。
@@ -15,6 +27,7 @@ statusline-macos.sh (macOS 版) と statusline-linux.sh (Linux 版) が満たす
 - [レートリミット履歴](#レートリミット履歴)
 - [設定](#設定)
 - [バックグラウンド fetch (`GIT_FETCH=1`)](#バックグラウンド-fetch-git_fetch1)
+- [PR の状態 (`pr` トークン)](#pr-の状態-pr-トークン)
 - [起動時チェックとフォールバック出力](#起動時チェックとフォールバック出力)
 - [非目標](#非目標)
 
@@ -34,6 +47,7 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 
 - 文字列フィールド (`model.display_name` / `session_name` / `workspace.current_dir` / `effort.level`) に含まれる制御文字 (改行･タブ･CR･ESC など) は半角スペースに置き換える。値に紛れた ANSI エスケープで後続の列の色が変わるのを防ぐ
 - 値は加工せずそのまま出力する (`-n` で始まるセッション名なども文字どおり表示する)
+- `pr` フィールドは使わない。同じセッションで PR を切り替えても最初の PR のまま更新されず、merged / closed になると消え、CI の情報も無いため。PR の状態は [`pr` トークン](#pr-の状態-pr-トークン) が `gh` で自前に取得する
 
 ## 出力構造
 
@@ -44,7 +58,7 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 ✻ <model>∙<effort> <ctx> | <rate>
 ```
 
-上は既定のレイアウトでの並び。各行の並び順は [レイアウト](#レイアウト-layout_line1--layout_line2) で変えられる。
+上は既定のレイアウトでの並び。各行の並び順は [レイアウト](#レイアウト-layout_line1--layout_line2) で変えられる。 1 行目には、既定の並びに無い `pr` (PR の状態) も置ける。
 
 ### 区切り
 
@@ -130,6 +144,10 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 - `session_name` の値をそのまま出す。空なら列ごと省略する
 - 40 文字でトリムする
 - 既定のレイアウトでは 1 行目の末尾に置く
+
+### pr
+
+現在のブランチに紐付く GitHub の PR を `#<番号>[ <CI記号>][ ✎]` で出す。既定の並びには含まれず、`LAYOUT_LINE1` に `pr` を書いたときだけ表示する。詳細は [PR の状態 (`pr` トークン)](#pr-の状態-pr-トークン)。
 
 ## 2 行目の要素
 
@@ -429,6 +447,115 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 - 認証の入力を求めない (`GIT_TERMINAL_PROMPT=0`、`GIT_ASKPASS=/bin/true`、`SSH_ASKPASS=/bin/true`、`SSH_ASKPASS_REQUIRE=force`)。資格情報が無いリモートでは fetch は静かに失敗し、`↓behind` は更新されない
 - fetch 自身の出力は捨て、statusline には混ざらない。`GIT_FETCH` による違いは、更新されたリモート追跡ブランチが次回以降の `<ab>` に反映されることだけ
 
+## PR の状態 (`pr` トークン)
+
+`LAYOUT_LINE1` に `pr` を書いたときだけ、現在のブランチに紐付く GitHub の PR を 1 行目に表示する (例 `LAYOUT_LINE1="directory|branch|pr|session"`)。情報は `gh api graphql` をバックグラウンドで起動して取得し、描画はキャッシュを読むだけにする。
+
+- `pr` を書かなければ `gh` を一切起動せず、ネットワークにもアクセスしない。既定の `LAYOUT_LINE1` には含まれないため、既定の出力は変わらない
+- 有効化のための設定項目は別に設けない (トークンの有無だけで決まる)
+- `pr` は 1 行目専用。`LAYOUT_LINE2` に書いても無視する
+- 値が空のときは、1 行目の規則どおり列ごと省略する
+- 環境変数 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` は見ない。設定されていても取得する
+
+### 表示形式
+
+```text
+#<番号>[ <CI記号>][ ✎]
+```
+
+| 状態 | `#<番号>` の色 | 装飾 | CI 記号 | `✎` |
+| --- | --- | --- | --- | --- |
+| open: approved | `success` | なし | 表示する | 表示する |
+| open: pending (レビュー待ち、またはレビューがまだない) | `warning` | なし | 表示する | 表示する |
+| open: changes requested | `error` | なし | 表示する | 表示する |
+| draft | `inactive` | なし | 表示する | 表示する |
+| merged | `merged` | 取り消し線 (SGR 9) | 出さない | 出さない |
+| closed (マージされずに閉じた) | `inactive` | 取り消し線 (SGR 9) | 出さない | 出さない |
+
+- `PR` という接頭辞は付けない (`#12`)
+- 色は既存の色定義 ([セマンティックカラー](#セマンティックカラー)) の値を使う。取り消し線は `\033[9m` を色の前に置き、`\033[0m` で解除する
+- `pr` はトリムしない
+
+レビュー状態は `reviewDecision` で決める。`reviewDecision` はレビューが必須でないリポジトリでは approve 済みでも常に `null` になるため、`null` のときは `latestReviews` (レビュアーごとの最新のレビュー) から決める。
+
+| `reviewDecision` | `latestReviews` | レビュー状態 |
+| --- | --- | --- |
+| `APPROVED` | (見ない) | approved |
+| `CHANGES_REQUESTED` | (見ない) | changes requested |
+| `REVIEW_REQUIRED` | (見ない) | pending |
+| 上記以外 (`null` など) | `CHANGES_REQUESTED` が 1 件でもある | changes requested |
+| | 上に当たらず、`APPROVED` が 1 件でもある | approved |
+| | どちらもない | pending |
+
+CI 記号は、PR の head コミットの `statusCheckRollup.state` (GitHub が全チェックを集約した値で、PR 画面のチェック表示と同じもの) から決める。
+
+| `statusCheckRollup.state` | 記号 | 色 |
+| --- | --- | --- |
+| `SUCCESS` | `✓` | `success` |
+| `FAILURE` / `ERROR` | `✗` | `error` |
+| `PENDING` / `EXPECTED` | `●` | `warning` |
+| `null` (チェックが 1 つもない) など | 出さない | — |
+
+`✎` (U+270E):
+
+- 次のどれかが 1 以上なら付ける。bot のコメントも数える
+  - `comments.totalCount` (会話タブのコメント)
+  - `reviewThreads.totalCount` (コードの行に付いたコメントのスレッド)
+  - `reviews(states: [COMMENTED, CHANGES_REQUESTED]).totalCount` (本文付きのレビュー)
+- 前には常に半角スペースを 1 個置く。CI 記号があればその後ろ (`#12 ✓ ✎`)、なければ番号の後ろ (`#12 ✎`)
+- 無色
+
+リンク:
+
+- `#<番号>` の部分 (色と取り消し線を含む) だけを OSC 8 で囲み、PR の URL へのリンクにする (`\033]8;;<url>\a` … `\033]8;;\a`)。CI 記号と `✎` はリンクに含めない
+- 環境変数 `FORCE_HYPERLINK` が `0` のときは OSC 8 を出さない
+- OSC 8 に対応していない端末ではクリックできない
+
+### 対象の PR
+
+- 問い合わせ先 (base リポジトリ) は `gh` 自身の解決に任せる (`gh api` の `{owner}` / `{repo}`)
+- head のブランチ名とオーナーは push 先から決める。`git rev-parse --abbrev-ref '@{push}'` の `<remote>/<branch>` から `<branch>` を、`git remote get-url <remote>` の URL (`git@host:owner/repo.git`、`https://host/owner/repo(.git)`、`ssh://git@host/owner/repo`) から `<owner>` を取る
+- push 先が取れない (まだ push していない) ときは、ローカルのブランチ名と base リポジトリのオーナーを使う。URL からオーナーを取れないときも base リポジトリのオーナーを使う
+- head のブランチ名で新しい順に 10 件を取り、`headRepositoryOwner` が head のオーナーと一致するもの (大文字小文字は区別しない) だけを候補にして、次の順で選ぶ
+  1. `OPEN` のうち最も新しいもの
+  2. なければ、`headRefOid` がローカルの HEAD と一致する `MERGED` / `CLOSED` のうち最も新しいもの
+  3. どちらもなければ PR なし
+
+### 表示しないとき
+
+次のいずれかに当たるときは `pr` を空として扱う。
+
+- ブランチが取れない (git 外)、または detached HEAD
+- キャッシュがまだない (ブランチを切り替えた直後の 1 回目の描画など)
+- PR がない
+- 最後に取得に成功してから `PR_STALE_SEC` (1800 秒) を超えた。`gh` の未認証、オフライン、GitHub 以外のリモート、base リポジトリが決まらない、などで取得に失敗し続けるとこれに当たる
+- キャッシュが壊れている (フィールドの数、`fetched_at`、番号、状態のいずれかが不正)
+- `HISTORY_DIR` が無効
+- `gh` がインストールされていない
+
+`gh` を案内するメッセージは出さない。キャッシュのうち番号と状態以外のフィールドが想定外の値のときは、そのフィールドがないものとして扱う (レビュー状態は pending、CI 記号と `✎` は出さない)。URL が `https://` で始まらないか制御文字を含むときは、リンクにしない。
+
+### 更新
+
+- 描画時はキャッシュを読むだけで、`gh` も追加の `git` も呼ばない
+- キャッシュは `workspace.current_dir` とローカルのブランチ名の組ごとに持つ (`<HISTORY_DIR>/pr-<key>`)。ブランチを切り替えると別のキャッシュを読むため、前のブランチの PR は表示しない
+- 前回の取得の試行から次の間隔が過ぎていたら、バックグラウンドで取得を起動する。今回の描画は待たず、結果は次回以降の描画に反映される
+
+| 状態 | 再取得の間隔 |
+| --- | --- |
+| open / draft で CI が実行中、またはローカルの HEAD が PR の head と違う | 30 秒 |
+| open / draft で上に当たらない | 300 秒 |
+| PR がない | 300 秒 |
+| merged / closed | 900 秒 |
+| 前回の試行が失敗した、またはキャッシュがない (2 回目以降の試行) | 300 秒 |
+
+- 間隔と `PR_STALE_SEC` は内部定数で、conf からは変えられない
+- 取得の実行中は次の取得を起動しない。実行中の印が 90 秒より古いときは、異常終了の跡として消してから起動する
+- 1 回の `gh` は 60 秒で打ち切る。失敗 (非ゼロ終了、打ち切り、想定外の出力) したときはキャッシュを書き換えず、前回の表示を残す
+- 1 回の問い合わせの GraphQL のコストは 1 ポイント。最も短い 30 秒間隔が続くと、キャッシュ 1 つあたり 1 時間に最大 120 回になる
+- 認証などの入力を求めない (`GH_PROMPT_DISABLED=1` と、[バックグラウンド fetch](#バックグラウンド-fetch-git_fetch1) と同じ git 用の 4 つ)。更新通知も出さない (`GH_NO_UPDATE_NOTIFIER=1`、`GH_NO_EXTENSION_UPDATE_NOTIFIER=1`)
+- `GH_REPO`、`GH_FORCE_TTY`、`CLICOLOR_FORCE` は `gh` に渡さない。`GH_TOKEN`、`GITHUB_TOKEN`、`GH_HOST`、`GH_ENTERPRISE_TOKEN` はそのまま渡す
+
 ## 起動時チェックとフォールバック出力
 
 必要なものが揃っていないときは、次の 1 行だけを出して終了する (終了コード 0)。
@@ -445,6 +572,9 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 ## 非目標
 
 - **1 行構成へ戻す設定は設けない**。1 行目が出ないのは、1 行目の要素がすべて空のときだけ
+- `pr` トークンでは GitLab の merge request を扱わない
+- `pr` トークンの表示に stdin の `pr` フィールドを使わない (補助にも使わない)
+- Claude Code 標準のフッターの PR バッジは消さない (`pr` トークンとは別の場所に並んで表示される)
 - 表示幅に基づくトリム (CJK を 2 桁として数える) は行わない
 - 描画のたびに同期的に `git fetch` することはしない
 - ctx の履歴チャートは持たない

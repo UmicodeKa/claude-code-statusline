@@ -11,6 +11,9 @@
 #   git -C <dir> diff --no-index --numstat -- /dev/null <dir>/<path>
 #   git -C <dir> rev-list --left-right --count '@{upstream}...HEAD'
 #   git -C <dir> fetch --quiet   (maybe_git_fetch の投げっぱなし fetch。no-op)
+#   git -C <dir> rev-parse HEAD                    (pr トークンの子プロセス。ローカルの HEAD)
+#   git -C <dir> rev-parse --abbrev-ref '@{push}'  (同上。push 先の <remote>/<branch>)
+#   git -C <dir> remote get-url <remote>           (同上。push 先のリモートの URL)
 #
 # <dir> 末尾の規約 (#以降) でリポジトリ状態を表す。複数指定は ; で区切る:
 #   branch=<name>  -> branch --show-current が <name> を返す
@@ -28,6 +31,18 @@
 #       rev-list --left-right --count '@{upstream}...HEAD' が "<behind>\t<ahead>" を返す
 #       (左 = @{upstream} 側 = behind、右 = HEAD 側 = ahead)。
 #   ab 規約なし        -> upstream 未設定扱い (本物の git と同じく非ゼロ終了・無出力)
+#   head=<sha>          -> rev-parse HEAD が <sha> を返す (既定は 0123456789abcdef0123456789abcdef01234567)
+#   push=<remote>~<branch> -> rev-parse --abbrev-ref '@{push}' が返す値。~ は / として返す
+#       (例 push=origin~feature~fix は origin/feature/fix)。cwd を実在のディレクトリにする
+#       テストがあり、パスに / を書けないため。
+#       規約なしはまだ push していない扱い (本物の git と同じく非ゼロ終了)
+#   owner=<login>       -> remote get-url が <login> をオーナーとする URL を返す
+#   urlform=https|scp|ssh -> その URL の形式 (既定 https):
+#       https: https://github.com/<login>/repo.git
+#       scp:   git@github.com:<login>/repo.git
+#       ssh:   ssh://git@github.com/<login>/repo
+#       owner 規約なしの remote get-url は非ゼロ終了
+#       (push と同じくパスに / を書けないため、URL は規約から組み立てる)
 #   規約なしのパス      -> git 外扱い (本物の git と同じく非ゼロ終了・無出力)
 #
 # 例: .../repo#branch=main;diff=12,3;untracked=new.txt:5;ab=2,3
@@ -59,6 +74,10 @@ branch_spec=""
 diff_spec=""
 untracked_spec=""
 ab_spec=""
+head_spec="0123456789abcdef0123456789abcdef01234567"
+push_spec=""
+owner_spec=""
+urlform_spec="https"
 rest=$spec
 while [ -n "$rest" ]; do
   token=${rest%%;*}
@@ -72,8 +91,18 @@ while [ -n "$rest" ]; do
     diff=*)      diff_spec=${token#diff=} ;;
     untracked=*) untracked_spec=${token#untracked=} ;;
     ab=*)        ab_spec=${token#ab=} ;;
+    head=*)      head_spec=${token#head=} ;;
+    push=*)      push_spec=${token#push=} ;;
+    owner=*)     owner_spec=${token#owner=} ;;
+    urlform=*)   urlform_spec=${token#urlform=} ;;
   esac
 done
+
+# STATUSLINE_TEST_BRANCH=<name> があれば branch 規約を上書きする。cwd を変えずにブランチだけを
+# 切り替えたい検証 (pr-status-behavior.sh の branch-switch) のための口。
+if [ -n "${STATUSLINE_TEST_BRANCH:-}" ]; then
+  branch_spec="branch=$STATUSLINE_TEST_BRANCH"
+fi
 
 case "$subcommand" in
   branch)
@@ -85,11 +114,33 @@ case "$subcommand" in
     esac
     ;;
   rev-parse)
-    # rev-parse --short HEAD: detached HEAD のフォールバック用。7 桁 hex を返す。
     case "$branch_spec" in
-      detached|branch=*) printf 'a1b2c3d\n'; exit 0 ;;
+      detached|branch=*) ;;
       *) exit 128 ;;
     esac
+    case "${2:-}" in
+      # rev-parse --short HEAD: detached HEAD のフォールバック用。7 桁 hex を返す。
+      --short) printf 'a1b2c3d\n'; exit 0 ;;
+      # rev-parse --abbrev-ref '@{push}': push 規約があればそれを返す。
+      --abbrev-ref)
+        [ -n "$push_spec" ] || exit 128
+        printf '%s\n' "${push_spec//\~//}"
+        exit 0
+        ;;
+      # rev-parse HEAD: ローカルの HEAD (40 桁)。
+      HEAD) printf '%s\n' "$head_spec"; exit 0 ;;
+      *) exit 128 ;;
+    esac
+    ;;
+  remote)
+    # remote get-url <remote>: owner 規約から urlform の形式で URL を組み立てる。
+    [ "${2:-}" = "get-url" ] && [ -n "$owner_spec" ] || exit 2
+    case "$urlform_spec" in
+      scp) printf 'git@github.com:%s/repo.git\n' "$owner_spec" ;;
+      ssh) printf 'ssh://git@github.com/%s/repo\n' "$owner_spec" ;;
+      *)   printf 'https://github.com/%s/repo.git\n' "$owner_spec" ;;
+    esac
+    exit 0
     ;;
   diff)
     # 第2引数が --no-index なら未追跡ファイルの行数取得、それ以外は diff HEAD --numstat。

@@ -1,0 +1,2 @@
+# PR がない (fetched_at だけのキャッシュ): 列ごと省略する
+matches_line1: ^main$

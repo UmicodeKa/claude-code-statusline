@@ -35,10 +35,17 @@ source "$TESTS_DIR/lib/config-file.sh"
 # layout/<case> があればそのケースをそのレイアウト文字列で表示する。
 # shellcheck source=lib/layout.sh
 source "$TESTS_DIR/lib/layout.sh"
+# pr-cache/<case> があればそのケースの履歴 dir に pr トークンのキャッシュを仕込む。
+# shellcheck source=lib/pr-cache.sh
+source "$TESTS_DIR/lib/pr-cache.sh"
+# hyperlink-off/<case> があればそのケースを FORCE_HYPERLINK=0 (OSC 8 なし) で表示する。
+HYPERLINK_OFF_DIR="$TESTS_DIR/hyperlink-off"
 
 # branch 取得経路を fake git で差し替えるための shim ディレクトリ。
 # statusline 実行時に PATH 先頭へ差し込み、本物の git を覆い隠す。
 GIT_SHIM_DIR="$TESTS_DIR/lib/git-shim"
+# pr トークンの取得を fake gh で受け、本物の gh (ネットワーク) に出さないための shim ディレクトリ。
+GH_SHIM_DIR="$TESTS_DIR/lib/gh-shim"
 
 MACOS_SCRIPT="$REPO_DIR/statusline-macos.sh"
 DEBIAN_SCRIPT="$REPO_DIR/statusline-linux.sh"
@@ -151,6 +158,7 @@ print_case() {
   local hist_dir
   hist_dir="$(mktemp -d -t claude-statusline-preview.XXXXXX)"
   seed_history "$fixture" "$hist_dir"
+  seed_pr_cache_for_case "$case_name" "$fixture" "$hist_dir"
   printf '\n\033[1;33m-- %s [%s] --\033[0m\n' "$case_name" "$label"
   printf 'input: '
   cat "$fixture"
@@ -170,14 +178,18 @@ print_case() {
   # layout マーカーがあればそのレイアウト文字列で表示する (無ければ空 = 既定レイアウト)。
   local case_layout_line1 case_layout_line2
   layout_for_case "$case_name"
-  # PATH 先頭に git-shim を差し込み、statusline 本体の git 呼び出しを fake git に差し替える。
+  # hyperlink-off マーカーがあれば OSC 8 のリンクを出さない (無ければ空 = リンクあり)。
+  local force_hyperlink=""
+  if [ -f "$HYPERLINK_OFF_DIR/${case_name}" ]; then force_hyperlink="0"; fi
+  # PATH 先頭に git-shim / gh-shim を差し込み、statusline 本体の git / gh 呼び出しを fake に差し替える。
   CLAUDE_STATUSLINE_HISTORY_DIR="$hist_dir" TZ=UTC \
     CLAUDE_STATUSLINE_CONFIG="$config" \
     CLAUDE_STATUSLINE_SHOW_MODEL_NAME="$show_model_name" \
     CLAUDE_STATUSLINE_COLOR_SCHEME="" CLAUDE_STATUSLINE_GIT_FETCH="" \
     CLAUDE_STATUSLINE_SHOW_CWD="$show_cwd" \
     CLAUDE_STATUSLINE_LAYOUT_LINE1="$case_layout_line1" \
-    CLAUDE_STATUSLINE_LAYOUT_LINE2="$case_layout_line2" PATH="$GIT_SHIM_DIR:$PATH" \
+    CLAUDE_STATUSLINE_LAYOUT_LINE2="$case_layout_line2" FORCE_HYPERLINK="$force_hyperlink" \
+    PATH="$GIT_SHIM_DIR:$GH_SHIM_DIR:$PATH" \
     "$bash_bin" "$script" < "$fixture"
   printf '\n'
   rm -r "$hist_dir" 2>/dev/null || true

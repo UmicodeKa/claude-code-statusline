@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# テスト用の fake `gh`。statusline 本体の pr トークンが子プロセスで呼ぶ
+#   gh api graphql -f query=<query> -F owner={owner} -F repo={repo} -F head=<branch> --jq <expr>
+# だけを受ける。実ネットワークには出ない。PATH 先頭にこのディレクトリを差し込んで本物の gh を隠す。
+#
+# 既定では何もせずに失敗する (exit 1)。regression.sh / e2e-preview.sh はキャッシュを仕込んで
+# 描画だけを検証するため、取得が起動されても結果を書かせない。
+#
+# pr-status-behavior.sh から下記 env を渡すと、取得の挙動を観測・制御できる:
+#   STATUSLINE_TEST_GH_SENTINEL=<path>  -> 1 回の呼び出しにつき 1 行 append する。
+#       行には head 変数と、子プロセスが設定 / 除去すべき環境変数の値を記録する
+#       (未設定は <unset>)
+#   STATUSLINE_TEST_GH_SLEEP=<秒>       -> 応答を <秒> 遅らせる (非ブロッキング / 打ち切りの検証用)
+#   STATUSLINE_TEST_GH_EXIT=<code>      -> 応答の代わりに <code> で終了する (失敗の検証用)
+#   STATUSLINE_TEST_GH_RESPONSE=<path>  -> GraphQL の応答 JSON。--jq の式を本物の jq で評価して出す
+#       (gh の --jq と同じく文字列は生のまま出す)。式は本体の環境変数 ($ENV.LOCAL_HEAD など) を読む
+set -u
+
+head_branch=""
+jq_expr=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -F|-f)
+      case "${2:-}" in
+        head=*) head_branch=${2#head=} ;;
+      esac
+      shift 2
+      ;;
+    --jq)
+      jq_expr=${2:-}
+      shift 2
+      ;;
+    *) shift ;;
+  esac
+done
+
+if [ -n "${STATUSLINE_TEST_GH_SENTINEL:-}" ]; then
+  printf 'head=%s head_owner=%s local_head=%s GH_REPO=%s GH_FORCE_TTY=%s CLICOLOR_FORCE=%s GH_PROMPT_DISABLED=%s GH_NO_UPDATE_NOTIFIER=%s GH_NO_EXTENSION_UPDATE_NOTIFIER=%s GH_TOKEN=%s\n' \
+    "$head_branch" "${HEAD_OWNER-<unset>}" "${LOCAL_HEAD-<unset>}" \
+    "${GH_REPO-<unset>}" "${GH_FORCE_TTY-<unset>}" "${CLICOLOR_FORCE-<unset>}" \
+    "${GH_PROMPT_DISABLED-<unset>}" "${GH_NO_UPDATE_NOTIFIER-<unset>}" \
+    "${GH_NO_EXTENSION_UPDATE_NOTIFIER-<unset>}" "${GH_TOKEN-<unset>}" \
+    >> "$STATUSLINE_TEST_GH_SENTINEL"
+fi
+
+[ "${STATUSLINE_TEST_GH_SLEEP:-0}" -gt 0 ] 2>/dev/null && sleep "$STATUSLINE_TEST_GH_SLEEP"
+
+if [ -n "${STATUSLINE_TEST_GH_EXIT:-}" ]; then
+  exit "$STATUSLINE_TEST_GH_EXIT"
+fi
+
+if [ -n "${STATUSLINE_TEST_GH_RESPONSE:-}" ] && [ -n "$jq_expr" ]; then
+  jq -r "$jq_expr" < "$STATUSLINE_TEST_GH_RESPONSE"
+  exit $?
+fi
+
+exit 1

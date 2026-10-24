@@ -1,0 +1,2 @@
+# merged: #12 を merged で塗り、取り消し線 (SGR 9) を重ねる。CI 記号と ✎ は出さない
+matches_line1: ^main \| \\e\]8;;https://github\.com/my-org/my-project/pull/12\\a\\e\[9m\\e\[38;2;135;0;255m#12\\e\[0m\\e\]8;;\\a$
