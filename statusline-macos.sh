@@ -851,12 +851,12 @@ format_pr() {
       case "$pr_review" in
         approved)          color=$COLOR_success ;;
         changes_requested) color=$COLOR_error ;;
-        *)                 color=$COLOR_warning ;;
+        *)                 color=$COLOR_permission ;;
       esac
       ;;
-    draft)  color=$COLOR_inactive ;;
+    draft)  ;;
     merged) color=$COLOR_merged; deco='4;9' ;;
-    closed) color=$COLOR_inactive; deco='4;9' ;;
+    closed) deco='4;9' ;;
     *) return ;;
   esac
   num=$'\033['"${deco}m${color}#${pr_number}"$'\033[0m'

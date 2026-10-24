@@ -1,2 +1,2 @@
-# closed (マージされずに閉じた): #12 を inactive で塗り、取り消し線を重ねる。CI 記号と ✎ は出さない
-matches_line1: ^main \\e\]8;;https://github\.com/my-org/my-project/pull/12\\a\\e\[4;9m\\e\[38;2;102;102;102m#12\\e\[0m\\e\]8;;\\a$
+# closed (マージされずに閉じた): #12 は無色 (端末の前景色) で、取り消し線を重ねる。CI 記号と ✎ は出さない
+matches_line1: ^main \\e\]8;;https://github\.com/my-org/my-project/pull/12\\a\\e\[4;9m#12\\e\[0m\\e\]8;;\\a$

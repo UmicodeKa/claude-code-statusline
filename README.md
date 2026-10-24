@@ -170,7 +170,7 @@ LAYOUT_LINE1="session|directory|branch"
 
 ### `PR_STATUS=1` で PR の状態を表示する
 
-`PR_STATUS=1` にすると、現在のブランチに紐付く GitHub の PR をブランチ列の右端 (変更行数の右) に ` ∙ ` で区切って表示する。既定 (`0`) では表示せず、`gh` で GitHub に問い合わせることもない。
+`PR_STATUS=1` にすると、現在のブランチに紐付く GitHub の PR をブランチ列の右端 (変更行数の右) に半角スペースで区切って表示する。既定 (`0`) では表示せず、`gh` で GitHub に問い合わせることもない。
 
 ```bash
 PR_STATUS=1
@@ -180,10 +180,10 @@ PR_STATUS=1
 my-project | feature/login ↑1 3+10-2 #12✓✎ | my-session
 ```
 
-- `#12` には下線が付き、色は PR の状態を表す (approved 緑、レビュー待ち黄、changes requested 赤、draft 灰、merged と closed は取り消し線付き)
+- `#12` には下線が付き、色は PR の状態を表す (approved 緑、レビュー待ち青紫、changes requested 赤、draft 無色、merged 紫 + 取り消し線、closed 無色 + 取り消し線)
 - `✓` / `✗` / `●` は CI の成功 / 失敗 / 実行中で、`#12` に続けて表示する。チェックが無ければ出ない
 - `✎` は PR にコメント (会話、行コメント、本文付きのレビュー) が 1 件でもあると付く
-- PR が無い、または取得できないときは ` ∙ ` ごと出ない
+- PR が無い、または取得できないときは何も出ない
 - `LAYOUT_LINE1` から `branch` を外すと PR も表示されず、`gh` も起動しない
 
 使うための準備:
@@ -268,7 +268,7 @@ my-project
 | コンテキスト使用率 | 70% 以上で黄、80% 以上でオレンジ、90% 以上で赤の点滅 |
 | レートリミット残量 | 40% 以下で黄、15% 以下でオレンジ、5% 以下で赤の点滅 |
 | ブランチ列 | `↑` 青、`↓` 黄、追加行 緑、削除行 赤 |
-| PR 番号 | 下線付き。approved 緑、pending 黄、changes requested 赤、draft 灰、merged 紫 + 取り消し線、closed 灰 + 取り消し線 |
+| PR 番号 | 下線付き。approved 緑、pending 青紫、changes requested 赤、draft 無色、merged 紫 + 取り消し線、closed 無色 + 取り消し線 |
 | PR の CI | `✓` 緑、`✗` 赤、`●` 黄 |
 
 ## 更新とアンインストール
