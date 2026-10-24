@@ -8,7 +8,7 @@ macOS 版 (`statusline-macos.sh`) と Linux 版 (`statusline-linux.sh`) が同�
 | --- | --- | --- |
 | `regression.sh` | `npm run test:regression` | fixture を両スクリプトに流し、出力を assertion と突き合わせる |
 | `git-fetch-behavior.sh` | `npm run test:fetch` | `GIT_FETCH=1` のバックグラウンド fetch の挙動を検証する |
-| `pr-status-behavior.sh` | `npm run test:pr` | `pr` トークンのバックグラウンド取得の挙動と、`--jq` による変換を検証する |
+| `pr-status-behavior.sh` | `npm run test:pr` | PR の状態表示のバックグラウンド取得の挙動と、`--jq` による変換を検証する |
 | `e2e-preview.sh` | `npm run preview` | 実際の ANSI 色付き出力を端末に流し、目視で確認する |
 | `script-parity.sh` | `npm run test:parity` | 両スクリプトの共通ブロックの一致と、必要な記述が残っていることを静的に確かめる |
 
@@ -38,12 +38,12 @@ fetch は投げっぱなしの非同期処理で描画出力に現れないた�
 
 ### pr-status-behavior.sh
 
-`pr` トークンの取得も投げっぱなしの非同期処理のため、fake gh のフック (後述) を使って出力以外の不変条件を確かめます。各ケースは一時ディレクトリの中に fake git の規約を名前に埋めた実在のディレクトリを作り、それを `workspace.current_dir` として渡します。子プロセスは cwd に `cd` してから `gh` を呼ぶため、cwd が実在しないと取得まで進みません。ケースは次のとおりで、両版それぞれで実行します。
+PR の状態表示の取得も投げっぱなしの非同期処理のため、fake gh のフック (後述) を使って出力以外の不変条件を確かめます。各ケースは一時ディレクトリの中に fake git の規約を名前に埋めた実在のディレクトリを作り、それを `workspace.current_dir` として渡します。子プロセスは cwd に `cd` してから `gh` を呼ぶため、cwd が実在しないと取得まで進みません。ケースは次のとおりで、両版それぞれで実行します。
 
 | ケース名 | 確かめること |
 | --- | --- |
-| `invoked` | `pr` があるときに `gh` が起動され、次の描画に PR が出る |
-| `not-invoked-without-token` | `pr` がないときは `gh` を起動せず、`pr-*` のファイルも作らない |
+| `invoked` | `PR_STATUS=1` のときに `gh` が起動され、次の描画に PR が出る |
+| `not-invoked-when-disabled` | `PR_STATUS=0` のときと、`PR_STATUS=1` でも branch 列を描画しないときは `gh` を起動せず、`pr-*` のファイルも作らない |
 | `non-blocking` | `gh` が 5 秒かかっても、描画は 3 秒未満で返る |
 | `throttle` | 間隔内の 2 回目の描画では `gh` を起動しない |
 | `single-flight` | 取得の実行中 (`.inflight` がある) は、間隔を過ぎても次の `gh` を起動しない |
@@ -90,8 +90,8 @@ fetch は投げっぱなしの非同期処理で描画出力に現れないた�
 | `block:settings` | カスタマイズ設定ブロックが両版で一致する |
 | `block:interval-clamp` | 間引き定数の clamp ブロックが両版で一致する |
 | `block:color-scheme` | カラースキーム定義ブロックが両版で一致する |
-| `block:pr-constants` | `pr` トークンの内部定数が両版で一致する |
-| `block:pr-common` | `pr` トークンの共通部分 (クエリ、`--jq`、キャッシュの読み書き、子プロセスの起動と本体、描画) が両版で一致する |
+| `block:pr-constants` | PR の状態表示の内部定数が両版で一致する |
+| `block:pr-common` | PR の状態表示の共通部分 (クエリ、`--jq`、キャッシュの読み書き、子プロセスの起動と本体、描画) が両版で一致する |
 | `block:layout` | レイアウトの組み立て (`layout_token` / `build_layout`) が両版で一致する |
 | `static:locale` | 先頭 20 行に `export LC_ALL=C.UTF-8` がある |
 | `static:no-prompt:<関数>:*` | `maybe_git_fetch` と `pr_spawn_refresh` のそれぞれに、`GIT_TERMINAL_PROMPT=0` / `GIT_ASKPASS=/bin/true` / `SSH_ASKPASS=/bin/true` / `SSH_ASKPASS_REQUIRE=force` が残っている |
@@ -118,8 +118,9 @@ fetch は投げっぱなしの非同期処理で描画出力に現れないた�
 | `git-fetch-on/<case>` | 空ファイル。`CLAUDE_STATUSLINE_GIT_FETCH=1` を渡す |
 | `config-file/<case>` | 設定ファイルとして読ませる中身 |
 | `layout/<case>` | 1 行目 = `LAYOUT_LINE1`、2 行目 = `LAYOUT_LINE2` |
-| `pr-cache/<case>` | `pr` トークンのキャッシュとして仕込む 1 行 (`lib/pr-cache.sh`) |
+| `pr-cache/<case>` | PR の状態表示のキャッシュとして仕込む 1 行 (`lib/pr-cache.sh`) |
 | `hyperlink-off/<case>` | 空ファイル。`FORCE_HYPERLINK=0` を渡す |
+| `pr-status-on/<case>` | 空ファイル。`CLAUDE_STATUSLINE_PR_STATUS=1` を渡す |
 | `pr-responses/*.json` | `pr-status-behavior.sh` で fake gh に返させる GraphQL の応答 |
 | `lib/` | ハーネス間で共有するヘルパと fake git / fake gh |
 
@@ -134,6 +135,7 @@ fetch は投げっぱなしの非同期処理で描画出力に現れないた�
 - `layout/`: 空行は｢指定なし｣を意味します。
 - `pr-cache/`: 1 行目をキャッシュの 1 行として書きます。`printf %b` で展開するのでタブは `\t`、ESC は `\033` と書けます。`fetched_at` は現在時刻に依存するため、`@NOW@` (現在時刻) と `@STALE@` (現在時刻 - 4000 秒) を仕込む直前に置き換えます。1 行目が空ならキャッシュを置きません。どの場合も新しいマーカーを置くため、描画は取得を起動せず、仕込んだキャッシュがそのまま読まれます
 - `hyperlink-off/`: マーカーが無いケースでは `FORCE_HYPERLINK` を空で渡し、開発者のシェルの値が混ざらないようにしています
+- `pr-status-on/`: マーカーが無いケースでは `CLAUDE_STATUSLINE_PR_STATUS` を空で渡します。PR は fake gh が受け、`pr-cache/` で仕込んだキャッシュを branch 列に出すケースで使います
 
 `lib/` の中身は次のとおりです。
 
@@ -146,7 +148,7 @@ fetch は投げっぱなしの非同期処理で描画出力に現れないた�
 | `lib/is-macos-host.sh` | macOS ホストかどうかを判定する |
 | `lib/git-shim/git` | テスト用の fake git |
 | `lib/gh-shim/gh` | テスト用の fake gh |
-| `lib/pr-cache.sh` | `seed_pr_cache_for_case` で `pr` トークンのキャッシュとマーカーを仕込む |
+| `lib/pr-cache.sh` | `seed_pr_cache_for_case` で PR の状態表示のキャッシュとマーカーを仕込む |
 
 ## assertion ファイルの書き方
 
@@ -200,7 +202,7 @@ contains: | main
 
 実際の git リポジトリを作らずに branch･変更行数･ahead/behind の経路を検証するため、ハーネスは `PATH` の先頭に `lib/git-shim/` を差し込み、本物の git を隠します。
 fake git は statusline が使うサブコマンド (`branch --show-current` / `rev-parse --short HEAD` / `diff HEAD --numstat` / `status -z` / `diff --no-index --numstat` / `rev-list --left-right --count` / `fetch`) だけを実装しています。
-`pr` トークンの子プロセスが使う `rev-parse HEAD` / `rev-parse --abbrev-ref '@{push}'` / `remote get-url` も実装しています。
+PR の状態表示の子プロセスが使う `rev-parse HEAD` / `rev-parse --abbrev-ref '@{push}'` / `remote get-url` も実装しています。
 
 リポジトリの状態は、fixture の `workspace.current_dir` の `#` 以降に書きます。複数指定は `;` で区切ります。
 
@@ -234,7 +236,7 @@ directory 列は `current_dir` の basename から作られるため、規約文
 
 ## fake gh (`lib/gh-shim/gh`)
 
-`pr` トークンの子プロセスが呼ぶ `gh api graphql ... --jq <式>` だけを受ける fake です。`regression.sh` / `pr-status-behavior.sh` / `e2e-preview.sh` は `PATH` に `lib/gh-shim/` を差し込み、本物の gh (ネットワーク) に出ないようにしています。
+PR の状態表示の子プロセスが呼ぶ `gh api graphql ... --jq <式>` だけを受ける fake です。`regression.sh` / `pr-status-behavior.sh` / `e2e-preview.sh` は `PATH` に `lib/gh-shim/` を差し込み、本物の gh (ネットワーク) に出ないようにしています。
 
 - 既定では何もせずに失敗します (終了コード 1)。`regression.sh` と `e2e-preview.sh` はキャッシュと新しいマーカーを仕込むため、通常は取得自体が起動されません
 - `head` が `-F` で渡されたときは失敗します。本物の `gh` の `-F` は値を型変換し (`123` や `true` が数値や真偽値になる)、`@` で始まる値をファイルとして読むためです
@@ -251,7 +253,7 @@ directory 列は `current_dir` の basename から作られるため、規約文
 - 履歴ディレクトリ: `regression.sh` / `git-fetch-behavior.sh` / `pr-status-behavior.sh` / `e2e-preview.sh` のいずれも、ケースごとに `mktemp -d` で作った一時ディレクトリを `CLAUDE_STATUSLINE_HISTORY_DIR` に渡し、終了時に削除します。本番の `/tmp/claude-statusline-<uid>/` には触れません。実 uid で作られたディレクトリなので本体の所有者チェックを通り、初回起動時の履歴書き込みも実際に動きます。
 - 設定ファイル: `CLAUDE_STATUSLINE_CONFIG` は、`config-file/` にマーカーがあるケースを除き、存在しないパスに固定します。開発者の `~/.claude/statusline.conf` を読むことはありません。すべてのハーネスが `lib/config-file.sh` を通してこの規則に従います。
 - `CLAUDE_STATUSLINE_*` の環境変数: マーカーが無いときは空文字で渡します。本体は空を未設定と同じに扱うため、conf → 既定値の順にフォールバックします。既定値を直接渡すと conf の値が常に環境変数に負け、conf の検証ができなくなるためです。`CLAUDE_STATUSLINE_COLOR_SCHEME` も空で渡し、開発者のシェルの値が混ざらないようにしています。
-- 短縮名の変数: `regression.sh` は `SHOW_MODEL_NAME` や `LAYOUT_LINE1` などの短縮名 8 つを、全ケースで既定値と異なる値にして渡します。本体は conf を読む前にこれらを `unset` するため、出力には影響しません。この `unset` が消えると全ケースが失敗するので、その回帰ガードを兼ねています。
+- 短縮名の変数: `regression.sh` は `SHOW_MODEL_NAME` や `LAYOUT_LINE1` などの短縮名 9 つを、全ケースで既定値と異なる値にして渡します。本体は conf を読む前にこれらを `unset` するため、出力には影響しません。この `unset` が消えると全ケースが失敗するので、その回帰ガードを兼ねています。
 - git / gh: 前述の fake git と fake gh を `PATH` の先頭に置きます。
 - `FORCE_HYPERLINK`: `regression.sh` と `e2e-preview.sh` は、`hyperlink-off/` にマーカーがあるケースを除き空で渡します。
 

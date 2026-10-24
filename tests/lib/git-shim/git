@@ -11,7 +11,7 @@
 #   git -C <dir> diff --no-index --numstat -- /dev/null <dir>/<path>
 #   git -C <dir> rev-list --left-right --count '@{upstream}...HEAD'
 #   git -C <dir> fetch --quiet   (maybe_git_fetch の投げっぱなし fetch。no-op)
-#   git -C <dir> rev-parse HEAD                    (pr トークンの子プロセス。ローカルの HEAD)
+#   git -C <dir> rev-parse HEAD                    (PR の状態表示の子プロセス。ローカルの HEAD)
 #   git -C <dir> rev-parse --abbrev-ref '@{push}'  (同上。push 先の <remote>/<branch>)
 #   git -C <dir> remote get-url --push <remote>    (同上。push 先のリモートの URL)
 #

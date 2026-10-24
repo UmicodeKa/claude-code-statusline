@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# テスト用の fake `gh`。statusline 本体の pr トークンが子プロセスで呼ぶ
+# テスト用の fake `gh`。statusline 本体の PR の状態表示が子プロセスで呼ぶ
 #   gh api graphql -f query=<query> -F owner={owner} -F repo={repo} -f head=<branch> --jq <expr>
 # だけを受ける。実ネットワークには出ない。PATH 先頭にこのディレクトリを差し込んで本物の gh を隠す。
 #

@@ -15,7 +15,7 @@ statusline-macos.sh (macOS 版) と statusline-linux.sh (Linux 版) が満たす
 - [レートリミット履歴](#レートリミット履歴)
 - [設定](#設定)
 - [バックグラウンド fetch (`GIT_FETCH=1`)](#バックグラウンド-fetch-git_fetch1)
-- [PR の状態 (`pr` トークン)](#pr-の状態-pr-トークン)
+- [PR の状態 (`PR_STATUS=1`)](#pr-の状態-pr_status1)
 - [起動時チェックとフォールバック出力](#起動時チェックとフォールバック出力)
 - [非目標](#非目標)
 
@@ -35,18 +35,18 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 
 - 文字列フィールド (`model.display_name` / `session_name` / `workspace.current_dir` / `effort.level`) に含まれる制御文字 (改行･タブ･CR･ESC など) は半角スペースに置き換える。値に紛れた ANSI エスケープで後続の列の色が変わるのを防ぐ
 - 値は加工せずそのまま出力する (`-n` で始まるセッション名なども文字どおり表示する)
-- `pr` フィールドは使わない ([理由](DESIGN.md#stdin-の-pr-フィールド))。PR の状態は [`pr` トークン](#pr-の状態-pr-トークン) が `gh` で自前に取得する
+- `pr` フィールドは使わない ([理由](DESIGN.md#stdin-の-pr-フィールド))。PR の状態は [`PR_STATUS=1`](#pr-の状態-pr_status1) のとき `gh` で自前に取得する
 
 ## 出力構造
 
 出力は **2 行構成**。
 
 ```text
-<directory> | <branch><ab><diff> | <session_name>
+<directory> | <branch><ab><diff><pr> | <session_name>
 ✻ <model>∙<effort> <ctx> | <rate>
 ```
 
-上は既定のレイアウトでの並び。各行の並び順は [レイアウト](#レイアウト-layout_line1--layout_line2) で変えられる。 1 行目には、既定の並びに無い `pr` (PR の状態) も置ける。
+上は既定のレイアウトでの並び。各行の並び順は [レイアウト](#レイアウト-layout_line1--layout_line2) で変えられる。`<pr>` は `PR_STATUS=1` のときだけ出る。
 
 ### 区切り
 
@@ -56,6 +56,7 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 | `<model>` と `<effort>` の間 | `∙` (U+2219、前後スペースなし、無色) |
 | `<effort>` (または `<model>`) と `<ctx>` の間 | 半角スペース 1 個 (パイプは出さない) |
 | ブランチ名と `<ab>`、`<ab>` と `<diff>` の間 | 半角スペース 1 個 (空の要素の前には置かない) |
+| `<pr>` の前 | ` ∙ ` (スペース･`∙`･スペース、無色。`<pr>` が空なら置かない) |
 
 ### 1 行目
 
@@ -85,14 +86,14 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 
 ### branch 列
 
-`<ブランチ名>[ <ab>][ <diff>]` を 1 つの列として出す。
+`<ブランチ名>[ <ab>][ <diff>][ ∙ <pr>]` を 1 つの列として出す。
 
 ブランチ名:
 
 - `workspace.current_dir` で `git branch --show-current` を実行した結果
 - 結果が空 (detached HEAD) のときは `git rev-parse --short HEAD` の短縮 sha を使う
-- git 外、`current_dir` が空、git が未インストールのときは**列ごと省略**する (`<ab>` と `<diff>` も出ない)
-- 25 文字でトリムする。`<ab>` と `<diff>` はトリムの対象外で、ブランチ名が切れても残る
+- git 外、`current_dir` が空、git が未インストールのときは**列ごと省略**する (`<ab>`、`<diff>`、`<pr>` も出ない)
+- 25 文字でトリムする。`<ab>`、`<diff>`、`<pr>` はトリムの対象外で、ブランチ名が切れても残る
 
 #### ahead/behind (`<ab>`)
 
@@ -127,15 +128,15 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 | 片方が 0 | その側を省略する (`3+8`、`2-5`)。ファイル数は変更があれば常に出す |
 | すべて 0 (クリーン) | 何も出さない |
 
+#### PR の状態 (`<pr>`)
+
+現在のブランチに紐付く GitHub の PR を `#<番号>[<CI記号>][ ✎]` で、`<diff>` (なければ `<ab>`、ブランチ名) の右に ` ∙ ` 区切りで出す (例 `main ↑1 3+10-2 ∙ #12✓ ✎`)。`PR_STATUS=1` のときだけ表示する。詳細は [PR の状態 (`PR_STATUS=1`)](#pr-の状態-pr_status1)。
+
 ### session_name
 
 - `session_name` の値をそのまま出す。空なら列ごと省略する
 - 40 文字でトリムする
 - 既定のレイアウトでは 1 行目の末尾に置く
-
-### pr
-
-現在のブランチに紐付く GitHub の PR を `#<番号>[ <CI記号>][ ✎]` で出す。既定の並びには含まれず、`LAYOUT_LINE1` に `pr` を書いたときだけ表示する。詳細は [PR の状態 (`pr` トークン)](#pr-の状態-pr-トークン)。
 
 ## 2 行目の要素
 
@@ -262,12 +263,14 @@ RGB は dark の値。light の値は [セマンティックカラー](#セマ�
 | | open + pending | `warning` (黄) | `\033[38;2;255;193;7m` |
 | | open + changes requested | `error` (赤) | `\033[38;2;255;107;128m` |
 | | draft | `inactive` (灰) | `\033[38;2;102;102;102m` |
-| | merged | `merged` (紫) + 取り消し線 | `\033[9m\033[38;2;135;0;255m` |
-| | closed | `inactive` (灰) + 取り消し線 | `\033[9m\033[38;2;102;102;102m` |
+| | merged | `merged` (紫) + 取り消し線 | `\033[4;9m\033[38;2;135;0;255m` |
+| | closed | `inactive` (灰) + 取り消し線 | `\033[4;9m\033[38;2;102;102;102m` |
 | pr CI 記号 | `✓` | `success` (緑) | `\033[38;2;78;186;101m` |
 | | `✗` | `error` (赤) | `\033[38;2;255;107;128m` |
 | | `●` | `warning` (黄) | `\033[38;2;255;193;7m` |
 | pr `✎` | — | 無色 | — |
+
+- pr `#<番号>` は状態によらず下線 (`\033[4m`) を付ける。上表の色の ESC の前に置く (merged / closed は取り消し線と合わせて `\033[4;9m`)
 
 - ctx と rate は警戒 (黄) → 危険 (橙) → 致命 (赤 + 点滅) の 3 段階。致命段は点滅属性 (`\033[5m`) で危険段と区別する
 - model の判定は部分一致で、`Fable` → `Opus` → `Haiku` の順に評価する。バージョン表記に依存しない (`Fable 5 (1M context)` も紫)
@@ -381,6 +384,7 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 | `COLOR_SCHEME` | `dark` | `CLAUDE_STATUSLINE_COLOR_SCHEME` | `light` で light。それ以外は dark |
 | `SHOW_CWD` | `1` | `CLAUDE_STATUSLINE_SHOW_CWD` | `1` で directory 列を表示。それ以外は非表示 |
 | `GIT_FETCH` | `0` | `CLAUDE_STATUSLINE_GIT_FETCH` | `1` でバックグラウンド fetch を有効化。それ以外は無効 |
+| `PR_STATUS` | `0` | `CLAUDE_STATUSLINE_PR_STATUS` | `1` で [PR の状態](#pr-の状態-pr_status1) を branch 列に表示。それ以外は無効 |
 | `LAYOUT_LINE1` | `directory\|branch\|session` | `CLAUDE_STATUSLINE_LAYOUT_LINE1` | [レイアウト](#レイアウト-layout_line1--layout_line2) |
 | `LAYOUT_LINE2` | `model_ctx\|rate` | `CLAUDE_STATUSLINE_LAYOUT_LINE2` | [レイアウト](#レイアウト-layout_line1--layout_line2) |
 | `POLL_INTERVAL_SEC` | `480` | なし | [推奨レンジ](#間引き間隔の推奨レンジ) |
@@ -395,8 +399,8 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 - 既定のパスは `~/.claude/statusline.conf`。env `CLAUDE_STATUSLINE_CONFIG` で差し替えられる
 - シェルスクリプトとして読み込む (`.` で source)。短縮名 (`COLOR_SCHEME=light` 等) を変数代入で書く
 - 通常のファイルで、かつ読めるときだけ読み込む。それ以外 (存在しない･権限が無い･ディレクトリ) は黙って無視する
-- 読み込み前に上表の短縮名 8 つを未設定に戻すため、外の環境に同名の変数があっても影響しない
-- 読み込み後、8 つの値の末尾の `\r` を取り除く (CRLF で保存したファイルでも同じ結果になる)
+- 読み込み前に上表の短縮名 9 つを未設定に戻すため、外の環境に同名の変数があっても影響しない
+- 読み込み後、9 つの値の末尾の `\r` を取り除く (CRLF で保存したファイルでも同じ結果になる)
 - `HISTORY_LEN` などの内部定数は、書いても読み込み後に定義し直されるため効かない
 - 間引き間隔は読み込み後に [丸め](#間引き間隔の推奨レンジ) を適用する
 
@@ -409,8 +413,7 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 | 行 | トークン | 内容 |
 | --- | --- | --- |
 | 1 行目 | `directory` | ディレクトリ名 |
-| | `branch` | `<ブランチ名>[ <ab>][ <diff>]` |
-| | `pr` | PR の状態 ([詳細](#pr-の状態-pr-トークン))。既定の並びには含まれない |
+| | `branch` | `<ブランチ名>[ <ab>][ <diff>][ ∙ <pr>]` |
 | | `session` | セッション名 |
 | 2 行目 | `model_ctx` | `✻ <model>∙<effort> <ctx>` |
 | | `rate` | レートリミット |
@@ -421,7 +424,7 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 - その行で使えないトークン (未知のもの、他方の行のもの) は無視する
 - 同じトークンが複数回あるときは最初の 1 回だけ採る
 - 値が空文字のときは既定値を使う
-- 1 トークンに束ねた要素 (`model` と `ctx`、ブランチ名と `<ab>`･`<diff>`) は個別に並べ替えられない
+- 1 トークンに束ねた要素 (`model` と `ctx`、ブランチ名と `<ab>`･`<diff>`･`<pr>`) は個別に並べ替えられない
 
 1 行目:
 
@@ -446,34 +449,34 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 - 認証の入力を求めない (`GIT_TERMINAL_PROMPT=0`、`GIT_ASKPASS=/bin/true`、`SSH_ASKPASS=/bin/true`、`SSH_ASKPASS_REQUIRE=force`)。資格情報が無いリモートでは fetch は静かに失敗し、`↓behind` は更新されない
 - fetch 自身の出力は捨て、statusline には混ざらない。`GIT_FETCH` による違いは、更新されたリモート追跡ブランチが次回以降の `<ab>` に反映されることだけ
 
-## PR の状態 (`pr` トークン)
+## PR の状態 (`PR_STATUS=1`)
 
-`LAYOUT_LINE1` に `pr` を書いたときだけ、現在のブランチに紐付く GitHub の PR を 1 行目に表示する (例 `LAYOUT_LINE1="directory|branch|pr|session"`)。情報は `gh api graphql` をバックグラウンドで起動して取得し、描画はキャッシュを読むだけにする。
+`PR_STATUS=1` のときだけ、現在のブランチに紐付く GitHub の PR を branch 列の `<pr>` に表示する。情報は `gh api graphql` をバックグラウンドで起動して取得し、描画はキャッシュを読むだけにする。
 
-- `pr` を書かなければ `gh` を一切起動せず、ネットワークにもアクセスしない。既定の `LAYOUT_LINE1` には含まれないため、既定の出力は変わらない
-- 有効化のための設定項目は別に設けない (トークンの有無だけで決まる)
-- `pr` は 1 行目専用。`LAYOUT_LINE2` に書いても無視する
-- 値が空のときは、1 行目の規則どおり列ごと省略する
+- `PR_STATUS=0` (既定) では `gh` を一切起動せず、ネットワークにもアクセスしない
+- `PR_STATUS=1` でも、`LAYOUT_LINE1` に `branch` が無ければ `gh` を起動しない
+- 値が空のときは `<pr>` も前の ` ∙ ` も出さない。branch 列そのものは残る
 - 環境変数 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` は見ない。設定されていても取得する
 
 ### 表示形式
 
 ```text
-#<番号>[ <CI記号>][ ✎]
+#<番号>[<CI記号>][ ✎]
 ```
 
 | 状態 | `#<番号>` の色 | 装飾 | CI 記号 | `✎` |
 | --- | --- | --- | --- | --- |
-| open: approved | `success` | なし | 表示する | 表示する |
-| open: pending (レビュー待ち、またはレビューがまだない) | `warning` | なし | 表示する | 表示する |
-| open: changes requested | `error` | なし | 表示する | 表示する |
-| draft | `inactive` | なし | 表示する | 表示する |
-| merged | `merged` | 取り消し線 (SGR 9) | 出さない | 出さない |
-| closed (マージされずに閉じた) | `inactive` | 取り消し線 (SGR 9) | 出さない | 出さない |
+| open: approved | `success` | 下線 (SGR 4) | 表示する | 表示する |
+| open: pending (レビュー待ち、またはレビューがまだない) | `warning` | 下線 (SGR 4) | 表示する | 表示する |
+| open: changes requested | `error` | 下線 (SGR 4) | 表示する | 表示する |
+| draft | `inactive` | 下線 (SGR 4) | 表示する | 表示する |
+| merged | `merged` | 下線 + 取り消し線 (SGR 4;9) | 出さない | 出さない |
+| closed (マージされずに閉じた) | `inactive` | 下線 + 取り消し線 (SGR 4;9) | 出さない | 出さない |
 
 - `PR` という接頭辞は付けない (`#12`)
-- 色は既存の色定義 ([セマンティックカラー](#セマンティックカラー)) の値を使う。取り消し線は `\033[9m` を色の前に置き、`\033[0m` で解除する
-- `pr` はトリムしない
+- 色は既存の色定義 ([セマンティックカラー](#セマンティックカラー)) の値を使う。装飾は `\033[4m` (merged / closed は `\033[4;9m`) を色の前に置き、`\033[0m` で解除する。装飾は `#<番号>` だけに掛かり、CI 記号と `✎` には掛からない
+- CI 記号は `#<番号>` の直後に区切りなしで続ける (`#12✓`)
+- `<pr>` はトリムしない
 
 レビュー状態は `reviewDecision` で決める。`reviewDecision` はレビューが必須でないリポジトリでは approve 済みでも常に `null` になるため、`null` のときは `latestReviews` (レビュアーごとの最新のレビュー) から決める。
 
@@ -501,12 +504,12 @@ CI 記号は、PR の head コミットの `statusCheckRollup.state` (GitHub が
   - `comments.totalCount` (会話タブのコメント)
   - `reviewThreads.totalCount` (コードの行に付いたコメントのスレッド)
   - `reviews(states: [COMMENTED, CHANGES_REQUESTED]).totalCount` (本文付きのレビュー)
-- 前には常に半角スペースを 1 個置く。CI 記号があればその後ろ (`#12 ✓ ✎`)、なければ番号の後ろ (`#12 ✎`)
+- 前には常に半角スペースを 1 個置く。CI 記号があればその後ろ (`#12✓ ✎`)、なければ番号の後ろ (`#12 ✎`)
 - 無色
 
 リンク:
 
-- `#<番号>` の部分 (色と取り消し線を含む) だけを OSC 8 で囲み、PR の URL へのリンクにする (`\033]8;;<url>\a` … `\033]8;;\a`)。CI 記号と `✎` はリンクに含めない
+- `#<番号>` の部分 (色と装飾を含む) だけを OSC 8 で囲み、PR の URL へのリンクにする (`\033]8;;<url>\a` … `\033]8;;\a`)。CI 記号と `✎` はリンクに含めない
 - 環境変数 `FORCE_HYPERLINK` が `0` のときは OSC 8 を出さない
 - OSC 8 に対応していない端末ではクリックできない
 
@@ -524,7 +527,7 @@ CI 記号は、PR の head コミットの `statusCheckRollup.state` (GitHub が
 
 ### 表示しないとき
 
-次のいずれかに当たるときは `pr` を空として扱う。
+次のいずれかに当たるときは `<pr>` を空として扱う。
 
 - ブランチが取れない (git 外)、または detached HEAD
 - キャッシュがまだない (ブランチを切り替えた直後の 1 回目の描画など)
@@ -575,8 +578,8 @@ CI 記号は、PR の head コミットの `statusCheckRollup.state` (GitHub が
 ## 非目標
 
 - **1 行構成へ戻す設定は設けない**。1 行目が出ないのは、1 行目の要素がすべて空のときだけ
-- `pr` トークンでは GitLab の merge request を扱わない
-- Claude Code 標準のフッターの PR バッジは消さない (`pr` トークンとは別の場所に並んで表示される)
+- PR の状態表示では GitLab の merge request を扱わない
+- Claude Code 標準のフッターの PR バッジは消さない (PR の状態表示とは別の場所に並んで表示される)
 - 表示幅に基づくトリム (CJK を 2 桁として数える) は行わない
 - 描画のたびに同期的に `git fetch` することはしない
 - ctx の履歴チャートは持たない

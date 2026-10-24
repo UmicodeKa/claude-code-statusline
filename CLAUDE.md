@@ -32,7 +32,7 @@ CI は Linux 版のみを実行します。macOS 版の変更はローカルの 
 - `maybe_git_fetch` の 4 変数 (`GIT_TERMINAL_PROMPT=0` / `GIT_ASKPASS=/bin/true` / `SSH_ASKPASS=/bin/true` / `SSH_ASKPASS_REQUIRE=force`): 1 つでも外すと、SSH のパスフレーズやホスト鍵の確認が Claude Code の TUI に表示されてキー入力を奪う。([詳細](docs/DESIGN.md#認証プロンプトを抑える-4-つの環境変数))
 - `maybe_git_fetch` の｢マーカー書き込み → ロック解放 → fetch 起動｣の順序: 入れ替えると Linux 版では fetch の子プロセスにロックの fd が引き継がれ、fetch 完了までロックが残る。([詳細](docs/DESIGN.md#marker--unlock--spawn-の順序))
 - マーカー書き込み失敗時に fetch を起動しないガード: 外すと間引きの基点が残らず、描画のたびに fetch が起動する。([詳細](docs/DESIGN.md#マーカー書き込み失敗時に-fetch-しない))
-- `pr` トークンの取得 (`maybe_pr_refresh` / `pr_spawn_refresh`) も `maybe_git_fetch` と同じ約束事 (fd の付け替え、git 用の 4 変数、marker → unlock → spawn、マーカー書き込み失敗時に起動しない) を守る。加えて gh 用の 3 変数と `unset GH_REPO GH_FORCE_TTY CLICOLOR_FORCE` を外さない。([詳細](docs/DESIGN.md#pr-子プロセスの-fd-付け替えと環境変数))
+- PR の状態表示の取得 (`maybe_pr_refresh` / `pr_spawn_refresh`) も `maybe_git_fetch` と同じ約束事 (fd の付け替え、git 用の 4 変数、marker → unlock → spawn、マーカー書き込み失敗時に起動しない) を守る。加えて gh 用の 3 変数と `unset GH_REPO GH_FORCE_TTY CLICOLOR_FORCE` を外さない。([詳細](docs/DESIGN.md#pr-子プロセスの-fd-付け替えと環境変数))
 - `pr` の `.inflight` の後始末を EXIT の `trap` に移さない。bash 3.2 では `&` で起動したサブシェルの EXIT trap が走らず、印が残って 90 秒間取得が止まる。([詳細](docs/DESIGN.md#pr-の-inflight-の後始末を-trap-にしない))
 - 描画経路 (`git_ahead_behind` など) に同期 `git fetch` や追加の `git` / `gh` 呼び出しを足すと、ネットワーク I/O や fork が増えて描画が遅くなる。([詳細](docs/DESIGN.md#描画経路にネットワーク-io-と余分な-git-呼び出しを入れない))
 - 2 行目のトークンは値が空でも積む (`build_layout` の第 3 引数 `1`)。空なら省く扱いにすると｢2 行目は常に出力する｣が崩れるが、既存ケースでは表面化しない。([詳細](docs/DESIGN.md#2-行目のトークンは空でも積む))

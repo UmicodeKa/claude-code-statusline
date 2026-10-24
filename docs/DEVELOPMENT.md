@@ -71,7 +71,7 @@ git config commit.template .gitmessage
 
 | コマンド | 内容 |
 | --- | --- |
-| `npm test` | 回帰テスト (`tests/regression.sh`) 、バックグラウンド fetch の挙動テスト (`tests/git-fetch-behavior.sh`)、`pr` トークンの取得の挙動テスト (`tests/pr-status-behavior.sh`)、両版の静的一致チェック (`tests/script-parity.sh`) を順に実行 |
+| `npm test` | 回帰テスト (`tests/regression.sh`) 、バックグラウンド fetch の挙動テスト (`tests/git-fetch-behavior.sh`)、PR の状態表示の取得の挙動テスト (`tests/pr-status-behavior.sh`)、両版の静的一致チェック (`tests/script-parity.sh`) を順に実行 |
 | `npm run preview` | 各 fixture の実出力を ANSI 色付きのまま端末に表示 (`tests/e2e-preview.sh`)。`--macos` / `--linux` で片方だけ表示できる (`bash tests/e2e-preview.sh --linux`) |
 | `npm run check` | Markdown の整形チェックと lint を実行 |
 | `npm run fix` | Markdown の整形と lint の自動修正を実行 |

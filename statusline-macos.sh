@@ -19,7 +19,7 @@ export LC_ALL=C.UTF-8
 STATUSLINE_CONFIG="${CLAUDE_STATUSLINE_CONFIG:-$HOME/.claude/statusline.conf}"
 # `/` を含まないパスを `.` に渡すと $PATH から探索されるため、カレント相対に固定する。
 case "$STATUSLINE_CONFIG" in */*) ;; *) STATUSLINE_CONFIG="./$STATUSLINE_CONFIG" ;; esac
-unset SHOW_MODEL_NAME COLOR_SCHEME GIT_FETCH SHOW_CWD POLL_INTERVAL_SEC GIT_FETCH_INTERVAL_SEC \
+unset SHOW_MODEL_NAME COLOR_SCHEME GIT_FETCH PR_STATUS SHOW_CWD POLL_INTERVAL_SEC GIT_FETCH_INTERVAL_SEC \
   LAYOUT_LINE1 LAYOUT_LINE2
 if [ -f "$STATUSLINE_CONFIG" ] && [ -r "$STATUSLINE_CONFIG" ]; then
   # shellcheck source=/dev/null
@@ -28,6 +28,7 @@ if [ -f "$STATUSLINE_CONFIG" ] && [ -r "$STATUSLINE_CONFIG" ]; then
   SHOW_MODEL_NAME="${SHOW_MODEL_NAME%$'\r'}"
   COLOR_SCHEME="${COLOR_SCHEME%$'\r'}"
   GIT_FETCH="${GIT_FETCH%$'\r'}"
+  PR_STATUS="${PR_STATUS%$'\r'}"
   SHOW_CWD="${SHOW_CWD%$'\r'}"
   POLL_INTERVAL_SEC="${POLL_INTERVAL_SEC%$'\r'}"
   GIT_FETCH_INTERVAL_SEC="${GIT_FETCH_INTERVAL_SEC%$'\r'}"
@@ -54,6 +55,12 @@ COLOR_SCHEME="${CLAUDE_STATUSLINE_COLOR_SCHEME:-${COLOR_SCHEME:-dark}}"
 # env CLAUDE_STATUSLINE_GIT_FETCH でも上書き可。
 GIT_FETCH="${CLAUDE_STATUSLINE_GIT_FETCH:-${GIT_FETCH:-0}}"
 
+# PR の状態表示のオプトイン設定。既定 0=無効。
+# 1 のとき、branch 列の末尾 (diff の右) に、現在のブランチに紐付く GitHub の PR の状態を ` ∙ ` 区切りで出す。
+# 取得は gh で行い、描画経路とは分離した投げっぱなし子プロセスに任せる (gh のインストールと gh auth login が必要)。
+# env CLAUDE_STATUSLINE_PR_STATUS でも上書き可。
+PR_STATUS="${CLAUDE_STATUSLINE_PR_STATUS:-${PR_STATUS:-0}}"
+
 # 1 行目のカレントディレクトリ表示の ON/OFF。既定 1=表示。
 # 0 にすると directory 列だけが消え、2 行構成 (branch 列は 1 行目に残る) は維持する。
 # 1 行構成へ戻す設定は設けない (2 行化は仕様であり戻す口は用意しない)。
@@ -61,8 +68,7 @@ GIT_FETCH="${CLAUDE_STATUSLINE_GIT_FETCH:-${GIT_FETCH:-0}}"
 SHOW_CWD="${CLAUDE_STATUSLINE_SHOW_CWD:-${SHOW_CWD:-1}}"
 
 # 表示要素の並び。トークンを `|` で区切って並べる (前後の空白は無視)。
-# 1 行目: directory / branch / pr / session。値が空のトークンは列ごと省略し、全て空なら 1 行目ごと出さない。
-# pr (PR の状態) は既定の並びに含めない。書いたときだけ gh で GitHub に問い合わせる (オプトイン)。
+# 1 行目: directory / branch / session。値が空のトークンは列ごと省略し、全て空なら 1 行目ごと出さない。
 # 2 行目: model_ctx / rate。並び順だけを変えられる (書かなかったトークンは既定順で末尾に補い、常に両方出す)。
 # 未知のトークンは黙って無視する。空文字は既定値扱い (1 行目を消したいときは none 等の未知トークンを書く)。
 # SHOW_CWD=0 は 1 行目から directory を外すのと等価 (directory トークンが空を返す)。
@@ -85,7 +91,7 @@ HISTORY_LEN=6                               # チャートに表示する履歴�
 # 未追跡の行数取得 (diff --no-index) を行う上限件数。超過分はファイル数のみ数える。
 UNTRACKED_DIFF_LIMIT=50
 
-# pr トークンの再取得間隔 (秒)。conf からは変えられない (この位置は conf の読み込みより後)。
+# PR の状態表示の再取得間隔 (秒)。conf からは変えられない (この位置は conf の読み込みより後)。
 #   FAST: CI が実行中、またはローカルの HEAD が PR の head と違う (push 直後や push 前)
 #   SLOW: open で CI が完了している / PR がない / 前回の試行が失敗した / キャッシュがない
 #   DONE: merged / closed
@@ -102,7 +108,7 @@ PR_INFLIGHT_STALE_SEC=90
 PR_TIMEOUT_SEC="${CLAUDE_STATUSLINE_TEST_PR_TIMEOUT_SEC:-60}"
 # 0 / 先頭が 0 (算術式で 8 進数と解釈される) / 非数値 / 4 桁以上は既定値に戻す。
 case "$PR_TIMEOUT_SEC" in ''|0*|*[!0-9]*|????*) PR_TIMEOUT_SEC=60 ;; esac
-# --- pr トークンの内部定数ここまで ---
+# --- PR の状態表示の内部定数ここまで ---
 
 # --- 間引き定数の推奨レンジ ---
 # POLL_INTERVAL_SEC / GIT_FETCH_INTERVAL_SEC は env 上書き口を持たず、conf (または上の定数の直接編集) で変える運用。
@@ -705,9 +711,9 @@ maybe_git_fetch() {
       git -C "$repo" fetch --quiet >/dev/null 2>&1 </dev/null & )
 }
 
-# --- PR の状態 (pr トークン) ---
-# LAYOUT_LINE1 に pr を書いたときだけ、現在のブランチに紐付く GitHub の PR を
-# `#<番号>[ <CI記号>][ ✎]` で表示する。情報はバックグラウンドの子プロセスが gh api graphql で
+# --- PR の状態表示 ---
+# PR_STATUS=1 のときだけ、現在のブランチに紐付く GitHub の PR を
+# `#<番号>[<CI記号>][ ✎]` で表示する。情報はバックグラウンドの子プロセスが gh api graphql で
 # 取得してキャッシュに書き、描画はキャッシュを読むだけにする (gh も追加の git も描画経路に入れない)。
 # stdin の pr フィールドは、同じセッションで PR を切り替えても更新されないため使わない。
 #
@@ -832,15 +838,15 @@ pr_cache_load() {
   return 0
 }
 
-# 読み込んだキャッシュから pr トークンの値を組み立てて pr_str に入れる。PR がなければ空。
-#   #<番号>: 状態の色で塗り、merged / closed は取り消し線 (SGR 9) を重ねる。
+# 読み込んだキャッシュから PR の状態表示の値を組み立てて pr_str に入れる。PR がなければ空。
+#   #<番号>: 状態の色で塗り、下線 (SGR 4) を付ける。merged / closed は取り消し線 (SGR 9) も重ねる。
 #            url があり FORCE_HYPERLINK=0 でなければ、ここだけを OSC 8 で PR へのリンクにする
-#   CI 記号 / ✎: open / draft のときだけ付ける。✎ の前には常に半角スペースを 1 個入れる
+#   CI 記号 / ✎: open / draft のときだけ付ける。CI 記号は #<番号> に詰めて続け、✎ の前には常に半角スペースを 1 個入れる
 #            (✓ などと詰めると、端末によっては表示幅の違いで記号が重なって見えるため)
 # OSC 8 のエスケープ列を含むので、truncate_label や ${#var} の幅計算には渡さない。
 format_pr() {
   pr_str=""
-  local color="" deco="" num
+  local color="" deco=4 num
   case "$pr_state" in
     open)
       case "$pr_review" in
@@ -850,11 +856,11 @@ format_pr() {
       esac
       ;;
     draft)  color=$COLOR_inactive ;;
-    merged) color=$COLOR_merged; deco=$'\033[9m' ;;
-    closed) color=$COLOR_inactive; deco=$'\033[9m' ;;
+    merged) color=$COLOR_merged; deco='4;9' ;;
+    closed) color=$COLOR_inactive; deco='4;9' ;;
     *) return ;;
   esac
-  num="${deco}${color}#${pr_number}"$'\033[0m'
+  num=$'\033['"${deco}m${color}#${pr_number}"$'\033[0m'
   if [ -n "$pr_url" ] && [ "${FORCE_HYPERLINK-}" != "0" ]; then
     num=$'\033]8;;'"${pr_url}"$'\a'"${num}"$'\033]8;;\a'
   fi
@@ -862,9 +868,9 @@ format_pr() {
   case "$pr_state" in
     open|draft)
       case "$pr_ci" in
-        pass)    pr_str="${pr_str} ${COLOR_success}✓"$'\033[0m' ;;
-        fail)    pr_str="${pr_str} ${COLOR_error}✗"$'\033[0m' ;;
-        pending) pr_str="${pr_str} ${COLOR_warning}●"$'\033[0m' ;;
+        pass)    pr_str="${pr_str}${COLOR_success}✓"$'\033[0m' ;;
+        fail)    pr_str="${pr_str}${COLOR_error}✗"$'\033[0m' ;;
+        pending) pr_str="${pr_str}${COLOR_warning}●"$'\033[0m' ;;
       esac
       [ "$pr_commented" = "1" ] && pr_str="${pr_str} ✎"
       ;;
@@ -927,13 +933,15 @@ pr_spawn_refresh() {
     pr_refresh_child "$cwd" "$branch" "$cache" "$inflight" >/dev/null 2>&1 </dev/null & )
 }
 
-# pr トークンの値を pr_str に入れ、必要ならバックグラウンドで取得を起動する。build_layout が
-# 1 行目で pr を引いたときだけ呼ぶので、pr を書かなければ gh も date も cksum も起動しない。
+# PR の状態表示の値を pr_str に入れ、必要ならバックグラウンドで取得を起動する。layout_token が
+# branch 列を組み立てるときだけ呼び、PR_STATUS=1 でなければ何もしない。PR_STATUS=0 か、
+# LAYOUT_LINE1 に branch が無ければ gh も date も cksum も起動しない。
 # キャッシュを先に読んでから起動するので、今回の描画は起動した取得の結果を待たない。
 # キーは毎回「今の cwd とブランチ」から作るため、ブランチの切り替えや /clear で別の PR が残らない。
 # fetched_at が現在より未来のキャッシュ (時計が戻った後など) は期限切れと同じく表示しない。
 pr_token() {
   pr_str=""
+  [ "$PR_STATUS" = "1" ] || return
   [ -n "$branch" ] && [ "$branch_detached" != "1" ] && [ -n "$HISTORY_DIR" ] || return
   command -v gh >/dev/null 2>&1 || return
   local key cache now age
@@ -1151,7 +1159,7 @@ format_ctx() {
 
 # レイアウトのトークンを描画済み文字列に引く。値は token_value に返す (呼び出し側で $(...) を
 # 挟まないため。branch/session のトリムは従来どおり truncate_label の command substitution を伴う)。
-# トークン内部の区切り (branch の ab/diff 前のスペース、model_ctx の ∙/スペース) は
+# トークン内部の区切り (branch の ab/diff 前のスペースと PR 前の ∙、model_ctx の ∙/スペース) は
 # トークン間の " | " とは別ルールなので、ここで組み立て済みの 1 塊として返す。
 layout_token() {
   token_value=""
@@ -1159,7 +1167,8 @@ layout_token() {
     directory) token_value="$dir_field" ;;
     branch)
       if [ -n "$branch" ]; then
-        token_value="$(truncate_label 25 "$branch")${ab_str:+ $ab_str}${diff_str:+ $diff_str}"
+        pr_token
+        token_value="$(truncate_label 25 "$branch")${ab_str:+ $ab_str}${diff_str:+ $diff_str}${pr_str:+ ∙ $pr_str}"
       fi
       ;;
     session)
@@ -1167,7 +1176,6 @@ layout_token() {
         token_value="$(truncate_label 40 "$session")"
       fi
       ;;
-    pr) pr_token; token_value="$pr_str" ;;
     model_ctx) token_value="${model_field} ${ctx_str}" ;;
     rate) token_value="$rate_str" ;;
   esac
@@ -1370,7 +1378,7 @@ parts=("${layout_parts[@]}")
 # 値が空のトークンと未知のトークンは列ごと省略する (区切りも出さない)。
 # 全部空のときは改行そのものを出さない (空行が statusline の高さを 1 行占有するため)。
 # 改行は 1 行目の**末尾**に置く (2 行目の先頭に置くと、1 行目が無いとき先頭に空行が出る)。
-build_layout "$LAYOUT_LINE1" "|directory|branch|pr|session|" 0
+build_layout "$LAYOUT_LINE1" "|directory|branch|session|" 0
 line1_parts=("${layout_parts[@]}")
 
 # " | " で結合

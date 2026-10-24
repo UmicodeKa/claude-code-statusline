@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pr トークン (PR の状態) のバックグラウンド取得の挙動テスト。
+# PR の状態表示 のバックグラウンド取得の挙動テスト。
 #
 # regression.sh はキャッシュを仕込んで「描画された文字列」だけを検証する。取得は投げっぱなしの
 # 非同期処理なので出力に現れないため、本スクリプトは fake gh (lib/gh-shim/gh) のフック
@@ -90,14 +90,14 @@ cleanup_case() {
 
 # statusline を 1 回実行し、ANSI を可読化した出力を stdout に返す。
 #   $1 bash / $2 script / 以降は env に渡す追加の VAR=value
-# 既定では LAYOUT_LINE1=branch|pr、応答は open-approved。
+# 既定では PR_STATUS=1 で LAYOUT_LINE1=branch、応答は open-approved。
 run_sl() {
   local bash_bin=$1 script=$2
   shift 2
   env CLAUDE_STATUSLINE_HISTORY_DIR="$hist" TZ=UTC \
     CLAUDE_STATUSLINE_CONFIG="$NO_CONFIG" \
     CLAUDE_STATUSLINE_COLOR_SCHEME="" CLAUDE_STATUSLINE_GIT_FETCH="" \
-    CLAUDE_STATUSLINE_LAYOUT_LINE1="branch|pr" CLAUDE_STATUSLINE_LAYOUT_LINE2="" \
+    CLAUDE_STATUSLINE_PR_STATUS=1 CLAUDE_STATUSLINE_LAYOUT_LINE1="branch" CLAUDE_STATUSLINE_LAYOUT_LINE2="" \
     FORCE_HYPERLINK=0 \
     STATUSLINE_TEST_GH_SENTINEL="$sentinel" \
     STATUSLINE_TEST_GH_RESPONSE="$RESPONSES_DIR/open-approved.json" \
@@ -145,7 +145,7 @@ cache_body() {
   printf '%s' "${line//$'\t'/|}"
 }
 
-# --- invoked: pr があるときに gh が起動され、結果が次回の描画に出る ---
+# --- invoked: PR_STATUS=1 のときに gh が起動され、結果が次回の描画に出る ---
 case_invoked() {
   local bash_bin=$1 script=$2 label=$3
   setup_case "branch=main;ab=0,0"
@@ -159,25 +159,27 @@ case_invoked() {
   local out
   out=$(run_sl "$bash_bin" "$script")
   case "$out" in
-    *'main | \e[38;2;78;186;101m#12\e[0m \e[38;2;78;186;101m✓\e[0m ✎'*)
+    *'main ∙ \e[4m\e[38;2;78;186;101m#12\e[0m\e[38;2;78;186;101m✓\e[0m ✎'*)
       pass_case "invoked [$label]" ;;
     *) fail_case "invoked [$label]" "2 回目の描画に PR が出ない: $out" ;;
   esac
 }
 
-# --- not-invoked-without-token: pr がないときは gh を起動せず、ファイルも作らない ---
-case_not_invoked_without_token() {
+# --- not-invoked-when-disabled: PR_STATUS=0 のときと、
+# PR_STATUS=1 でも branch 列を描画しないときは gh を起動せず、ファイルも作らない ---
+case_not_invoked_when_disabled() {
   local bash_bin=$1 script=$2 label=$3
   setup_case "branch=main;ab=0,0"
   trap 'cleanup_case; trap - RETURN' RETURN
 
-  run_sl "$bash_bin" "$script" CLAUDE_STATUSLINE_LAYOUT_LINE1="branch|session" >/dev/null
+  run_sl "$bash_bin" "$script" CLAUDE_STATUSLINE_PR_STATUS=0 >/dev/null
+  run_sl "$bash_bin" "$script" CLAUDE_STATUSLINE_LAYOUT_LINE1="directory|session" >/dev/null
   sleep 0.5
   if [ "$(sentinel_count)" = "0" ] && ! compgen -G "$hist/pr-*" >/dev/null; then
-    pass_case "not-invoked-without-token [$label]"
+    pass_case "not-invoked-when-disabled [$label]"
   else
-    fail_case "not-invoked-without-token [$label]" \
-      "pr がないのに gh が $(sentinel_count) 回呼ばれた、または pr-* が作られた"
+    fail_case "not-invoked-when-disabled [$label]" \
+      "無効なのに gh が $(sentinel_count) 回呼ばれた、または pr-* が作られた"
   fi
 }
 
@@ -570,7 +572,7 @@ run_all_cases() {
   local bash_bin=$1 script=$2 label=$3
   local url12="https://github.com/my-org/my-project/pull/12"
   case_invoked                    "$bash_bin" "$script" "$label"
-  case_not_invoked_without_token  "$bash_bin" "$script" "$label"
+  case_not_invoked_when_disabled  "$bash_bin" "$script" "$label"
   case_non_blocking               "$bash_bin" "$script" "$label"
   case_throttle                   "$bash_bin" "$script" "$label"
   case_single_flight              "$bash_bin" "$script" "$label"

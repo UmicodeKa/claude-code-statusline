@@ -18,7 +18,7 @@ my-project | main ↑2↓3 3+13-5 | my-session
 ```
 
 - 1 行目: ディレクトリ名 / git ブランチ (リモートとの差･変更行数つき) / セッション名
-  - 設定すると、現在のブランチの GitHub の PR の状態 (`#12 ✓ ✎`) も表示できる ([`pr` トークン](#pr-トークンで-pr-の状態を表示する))
+  - 設定すると、ブランチ列に現在のブランチの GitHub の PR の状態 (`∙ #12✓ ✎`) も表示できる ([`PR_STATUS=1`](#pr_status1-で-pr-の状態を表示する))
 - 2 行目: モデル名と推論強度 (effort) / コンテキスト使用率 / レートリミット残量の推移とリセット時刻
 
 コンテキスト使用率が高まる、またはレートリミット残量が減ると、色と数値で知らせる。
@@ -31,11 +31,11 @@ my-project | main ↑2↓3 3+13-5 | my-session
 | bash | `/bin/bash` (3.2 以上) | 4.1 以上 |
 | 必須コマンド | `jq` | `jq`, `flock` (util-linux に含まれる) |
 | 任意 | `git` | `git` |
-| 任意 (`pr` トークン) | `gh` (最新版) | `gh` (最新版) |
+| 任意 (`PR_STATUS=1`) | `gh` (最新版) | `gh` (最新版) |
 | ロケール | `C.UTF-8` (現行 macOS は標準搭載) | `C.UTF-8` (Debian 11 以降は標準搭載) |
 
 - `git` が無い場合や git 管理外のディレクトリでは、ブランチ列が省略されるだけで他は表示される
-- `gh` は `pr` トークンを使うときだけ必要。最新版を前提にしている (動作確認は 2.103)
+- `gh` は `PR_STATUS=1` のときだけ必要。最新版を前提にしている (動作確認は 2.103)
 - ログインシェル (zsh など) は問わない
 - 上記以外は `awk`, `date`, `stat`, `mkdir` など各 OS の標準コマンドだけを使う
 - 色は 24bit カラー (truecolor) で出力する。truecolor に対応した端末を使う
@@ -119,6 +119,7 @@ LAYOUT_LINE1="session|directory|branch"
 | `LAYOUT_LINE1` | `directory\|branch\|session` | 1 行目の要素と並び |
 | `LAYOUT_LINE2` | `model_ctx\|rate` | 2 行目の並び |
 | `GIT_FETCH` | `0` | `1` でバックグラウンド `git fetch` を有効にする |
+| `PR_STATUS` | `0` | `1` でブランチ列に PR の状態を表示する ([詳細](#pr_status1-で-pr-の状態を表示する)) |
 | `POLL_INTERVAL_SEC` | `480` | レートリミット履歴を記録する間隔 (秒) |
 | `GIT_FETCH_INTERVAL_SEC` | `900` | バックグラウンド `git fetch` の最小間隔 (秒) |
 
@@ -142,8 +143,7 @@ LAYOUT_LINE1="session|directory|branch"
 | 行 | トークン | 内容 |
 | --- | --- | --- |
 | 1 行目 | `directory` | ディレクトリ名 |
-| 1 行目 | `branch` | ブランチ名 + リモートとの差 + 変更行数 |
-| 1 行目 | `pr` | 現在のブランチの PR の状態 (既定では出ない。[`pr` トークン](#pr-トークンで-pr-の状態を表示する)) |
+| 1 行目 | `branch` | ブランチ名 + リモートとの差 + 変更行数 (+ `PR_STATUS=1` なら PR の状態) |
 | 1 行目 | `session` | セッション名 |
 | 2 行目 | `model_ctx` | モデル名･effort･コンテキスト使用率 |
 | 2 行目 | `rate` | レートリミット |
@@ -168,22 +168,23 @@ LAYOUT_LINE1="session|directory|branch"
 
 自動最新化を使うには、あらかじめ `ssh-add` で鍵を ssh-agent に登録するか、資格情報ヘルパを設定しておく。
 
-### `pr` トークンで PR の状態を表示する
+### `PR_STATUS=1` で PR の状態を表示する
 
-`LAYOUT_LINE1` に `pr` を書くと、現在のブランチに紐付く GitHub の PR を 1 行目に表示する。既定では表示せず、書いたときだけ `gh` で GitHub に問い合わせる。
+`PR_STATUS=1` にすると、現在のブランチに紐付く GitHub の PR をブランチ列の右端 (変更行数の右) に ` ∙ ` で区切って表示する。既定 (`0`) では表示せず、`gh` で GitHub に問い合わせることもない。
 
 ```bash
-LAYOUT_LINE1="directory|branch|pr|session"
+PR_STATUS=1
 ```
 
 ```text
-my-project | feature/login ↑1 | #12 ✓ ✎ | my-session
+my-project | feature/login ↑1 3+10-2 ∙ #12✓ ✎ | my-session
 ```
 
-- `#12` の色は PR の状態を表す (approved 緑、レビュー待ち黄、changes requested 赤、draft 灰、merged と closed は取り消し線付き)
-- `✓` / `✗` / `●` は CI の成功 / 失敗 / 実行中。チェックが無ければ出ない
+- `#12` には下線が付き、色は PR の状態を表す (approved 緑、レビュー待ち黄、changes requested 赤、draft 灰、merged と closed は取り消し線付き)
+- `✓` / `✗` / `●` は CI の成功 / 失敗 / 実行中で、`#12` に続けて表示する。チェックが無ければ出ない
 - `✎` は PR にコメント (会話、行コメント、本文付きのレビュー) が 1 件でもあると付く
-- PR が無い、または取得できないときは列ごと出ない
+- PR が無い、または取得できないときは ` ∙ ` ごと出ない
+- `LAYOUT_LINE1` から `branch` を外すと PR も表示されず、`gh` も起動しない
 
 使うための準備:
 
@@ -197,7 +198,7 @@ my-project | feature/login ↑1 | #12 ✓ ✎ | my-session
 - statusline は Claude Code にイベントがあったときにしか更新されない。アイドル中に CI の完了なども反映させたいときは、`~/.claude/settings.json` の `statusLine` に `"refreshInterval": 30` を足す。描画はキャッシュを読むだけなので、30 秒ごとに再実行しても負荷は小さい
 - 再取得の間隔は状態に応じて 30〜900 秒。1 回の問い合わせは GitHub API の GraphQL で 1 ポイントで、`gh` のほかの利用と同じ枠 (1 時間 5000 ポイント) を使う
 - `#12` は OSC 8 のリンクで、対応端末 (iTerm2 など) では Cmd+click / Ctrl+click で PR を開ける。Terminal.app は OSC 8 に対応していないためクリックできない。SSH や tmux 越しではエスケープ列が落ちてリンクにならないことがある。環境変数 `FORCE_HYPERLINK=0` でリンクを出さなくできる
-- Claude Code 標準のフッターの PR バッジとは別の場所に表示されるため、両方が並んで見える。標準のバッジは同じセッションで PR を切り替えると更新されないことがあるが、`pr` トークンは毎回いまのブランチの PR を表示する
+- Claude Code 標準のフッターの PR バッジとは別の場所に表示されるため、両方が並んで見える。標準のバッジは同じセッションで PR を切り替えると更新されないことがあるが、こちらは毎回いまのブランチの PR を表示する
 - GitHub 以外 (GitLab など) のリモートには対応しない
 
 ## 表示内容
@@ -209,7 +210,7 @@ my-project | feature/login ↑1 | #12 ✓ ✎ | my-session
 | `↑N↓M` | リモート追跡ブランチとの差。`↑` が push 待ち、`↓` が pull 待ち。同期済みなら出ない |
 | `*` | リモート追跡ブランチが無い (青) / detached HEAD (無色) |
 | `3+13-5` | 作業ツリーの変更 (ファイル数 / 追加行 / 削除行)。未追跡ファイルを含む。変更が無ければ出ない |
-| `#12 ✓ ✎` | PR の番号･CI･コメントの有無 (`pr` トークンを書いたときだけ) |
+| `∙ #12✓ ✎` | PR の番号･CI･コメントの有無 (`PR_STATUS=1` のときだけ) |
 | セッション名 | 設定されているときだけ表示。40 文字を超えると `…` で省略 |
 | `✻ モデル名` | モデル別の色で表示。13 文字を超えると `…` で省略 |
 | effort | 推論強度 (`low` / `medium` / `high` / `xhigh` / `max`)。対応しないモデルでは出ない |
@@ -267,7 +268,7 @@ my-project
 | コンテキスト使用率 | 70% 以上で黄、80% 以上でオレンジ、90% 以上で赤の点滅 |
 | レートリミット残量 | 40% 以下で黄、15% 以下でオレンジ、5% 以下で赤の点滅 |
 | ブランチ列 | `↑` 青、`↓` 黄、追加行 緑、削除行 赤 |
-| PR 番号 | approved 緑、pending 黄、changes requested 赤、draft 灰、merged 紫 + 取り消し線、closed 灰 + 取り消し線 |
+| PR 番号 | 下線付き。approved 緑、pending 黄、changes requested 赤、draft 灰、merged 紫 + 取り消し線、closed 灰 + 取り消し線 |
 | PR の CI | `✓` 緑、`✗` 赤、`●` 黄 |
 
 ## 更新とアンインストール
@@ -330,7 +331,7 @@ Linux では `statusline-linux.sh` をコピーする。
 
 ### PR が表示されない
 
-- `LAYOUT_LINE1` に `pr` を書いているか確認する
+- `PR_STATUS=1` になっているか、`LAYOUT_LINE1` に `branch` があるか確認する
 - `gh auth status` で認証済みか、リポジトリで `gh pr view` が PR を表示できるか確認する。リモートが複数あるときは `gh repo set-default` を実行する
 - ブランチを push していない、または push 先のブランチに PR が無いときは表示されない。マージ済み･クローズ済みの PR は、ローカルの HEAD がその PR の最後のコミットと一致するときだけ表示する
 - 取得に失敗し続けると、最後に成功してから 30 分で表示が消える
@@ -343,8 +344,8 @@ Linux では `statusline-linux.sh` をコピーする。
 ## プライバシーとセキュリティ
 
 - `~/.claude/statusline.conf` はシェルスクリプトとして読み込まれ、描画のたびに実行される。信頼できない内容を書かない
-- ネットワークにアクセスするのは、`GIT_FETCH=1` (`git fetch`) と `pr` トークン (`gh` による GitHub API への問い合わせ) を有効にしたときだけ
-- レートリミットの履歴や PR のキャッシュは `/tmp/claude-statusline-<uid>/` にパーミッション 700 で保存する。他ユーザー所有やシンボリックリンクの場合は使わず、履歴と PR の列なしで表示を続ける
+- ネットワークにアクセスするのは、`GIT_FETCH=1` (`git fetch`) と `PR_STATUS=1` (`gh` による GitHub API への問い合わせ) を有効にしたときだけ
+- レートリミットの履歴や PR のキャッシュは `/tmp/claude-statusline-<uid>/` にパーミッション 700 で保存する。他ユーザー所有やシンボリックリンクの場合は使わず、履歴と PR の状態なしで表示を続ける
 
 ## 開発者向け
 

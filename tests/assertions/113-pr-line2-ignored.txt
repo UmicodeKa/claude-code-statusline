@@ -1,4 +1,0 @@
-# pr は 1 行目専用: LAYOUT_LINE2 に書いても黙って無視する (2 行目は既定どおり)
-matches_line1: ^main$
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
-not_contains: #12
