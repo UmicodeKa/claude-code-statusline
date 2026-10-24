@@ -1,0 +1,5 @@
+# directory と session_name に ESC を含む値。制御文字は半角スペースに置き換わり、
+# 生の ESC が出ないので後続の列や 2 行目の色が変わらない。
+matches_line1: ^demo \[31m \| my \[32msession$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
+exit_code: 0

@@ -1,7 +1,7 @@
 # rate=65% (残量35), reset=1700000000 (UTC 22:13) -> 黄(warning) + chart 35% - 22:13 (★ ハイフン区切り、括弧禁止)
 # ctx=40% -> 色なし + 1 文字 spark のみ
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| \\e\[38;2;255;193;7m[▁▂▃▄▅▆▇█]{6} 35% - 22:13\\e\[0m$
-matches_line1: ^\\e\[38;2;153;153;153mstatusline-demo\\e\[0m$
+matches_line1: ^statusline-demo$
 contains: 35% - 22:13
 not_contains: (22:13)
 not_contains: 35%(

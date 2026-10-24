@@ -1,7 +1,7 @@
 # rate=30% (残量70), reset=0 -> 色なし + chart のみ
 # ctx=40% -> 色なし + 1 文字 spark のみ
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6}$
-matches_line1: ^\\e\[38;2;153;153;153mstatusline-demo\\e\[0m$
+matches_line1: ^statusline-demo$
 not_contains_line2: \e[
 not_contains_line2: %
 not_contains_line2: :
