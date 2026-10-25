@@ -9,10 +9,11 @@ macOS 版 (`statusline-macos.sh`) と Linux 版 (`statusline-linux.sh`) が同�
 | `regression.sh` | `npm run test:regression` | fixture を両スクリプトに流し、出力を assertion と突き合わせる |
 | `git-fetch-behavior.sh` | `npm run test:fetch` | `GIT_FETCH=1` のバックグラウンド fetch の挙動を検証する |
 | `pr-status-behavior.sh` | `npm run test:pr` | PR の状態表示のバックグラウンド取得の挙動と、`--jq` による変換を検証する |
+| `rate-history-behavior.sh` | `npm run test:history` | rate 履歴ファイルの書き込み (初回の埋め込み、間引き、保存件数) と、間引き間隔の丸めを検証する |
 | `e2e-preview.sh` | `npm run preview` | 実際の ANSI 色付き出力を端末に流し、目視で確認する |
 | `script-parity.sh` | `npm run test:parity` | 両スクリプトの共通ブロックの一致と、必要な記述が残っていることを静的に確かめる |
 
-`npm test` は `test:regression`、`test:fetch`、`test:pr`、`test:parity` を順に実行します。`e2e-preview.sh` は合否を判定しないため `npm test` には含まれません。
+`npm test` は `test:regression`、`test:fetch`、`test:pr`、`test:history`、`test:parity` を順に実行します。`e2e-preview.sh` は合否を判定しないため `npm test` には含まれません。
 
 ### regression.sh
 
@@ -73,10 +74,27 @@ PR の状態表示の取得も投げっぱなしの非同期処理のため、fa
 - `jq-*` は、`pr-responses/` の GraphQL 応答を fake gh に返させ、本体の `--jq` の式を本物の `jq` で評価した結果のキャッシュを確かめます。`gh` 組み込みの `--jq` は gojq なので、jq にしかない関数を使っても検出できません。
 - `no-gh` は、本体と fake git が使うコマンドだけを symlink したディレクトリを `PATH` にします。本物の `gh` は `jq` と同じディレクトリ (`/usr/bin` や `/opt/homebrew/bin`) にあることが多く、ディレクトリごと外せないためです。
 
+### rate-history-behavior.sh
+
+最新の保存値はチャート右端の現在値で隠れるため、履歴に追記したかどうかは描画出力に現れません。本スクリプトは描画の後に履歴ファイル (`<履歴ディレクトリ>/rate`) の中身を直接見ます。仕込む古い値 (`50`) と描画で渡す現在の残量 (`90`) を変えておき、末尾の行が現在の残量になったかで追記の有無を判定します。mtime は `lib/age-file.sh` でずらします。ケースは次のとおりで、両版それぞれで実行します。
+
+| ケース名 | 確かめること |
+| --- | --- |
+| `init-fill` | 空の履歴に 1 回描画すると、現在値が 20 行 (`RATE_CHART_LEN_MAX`) 書かれる |
+| `throttle` | 間隔内 (10 秒前に更新) の描画では追記しない |
+| `append-after-interval` | mtime が間隔 (480 秒) より古ければ 1 行追記する |
+| `storage-cap` | 25 行のファイルに追記すると末尾 20 行に切り詰める |
+| `poll-max-follows-chart-len` | conf の `RATE_CHART_LEN=20` と `POLL_INTERVAL_SEC=3000` で、1000 秒前の履歴に追記する (上限が 900 に丸められている) |
+| `poll-max-default:*` | conf の `POLL_INTERVAL_SEC=99999` で、2000 秒前には追記せず、3100 秒前には追記する (上限 3000) |
+| `poll-clamp-zero` | conf の `POLL_INTERVAL_SEC=0` で、30 秒前の履歴に追記しない (下限 60) |
+| `poll-invalid-default:*` | conf の `POLL_INTERVAL_SEC=abc` で、400 秒前には追記せず、500 秒前には追記する (既定 480) |
+
+conf は一時ファイルに書いて渡します。`RATE_CHART_LEN` と `POLL_INTERVAL_SEC` には env の上書き口が無いため、開発者のシェルの環境変数で結果は変わりません。
+
 ### e2e-preview.sh
 
 - 全 fixture について、入力 JSON と実出力を並べて表示します。
-- rate チャートが右肩下がりの遷移として見えるよう、fixture の現在値から 6 件のダミー履歴を作って仕込みます。
+- rate チャートが右肩下がりの遷移として見えるよう、fixture の現在値から 20 件 (本体が保存する件数) のダミー履歴を作って仕込みます。刻みは 10 で、古い側は 100 で頭打ちになります。
 - 履歴は `mktemp -d` で作った一時ディレクトリを `CLAUDE_STATUSLINE_HISTORY_DIR` に渡して隔離し、本番の `/tmp/claude-statusline-<uid>/` には触れません。一時ディレクトリはケースの表示後に削除します。
 - `--macos` / `--linux` で片方の版だけを表示できます。オプションなしでは macOS 版を表示し、bash 4.1+ が見つかれば Linux 版も表示します。
 - このスクリプトは独自の bash 探索を持ち、`flock` の有無は確認しません。
@@ -258,7 +276,7 @@ PR の状態表示の子プロセスが呼ぶ `gh api graphql ... --jq <式>` �
 - 履歴ディレクトリ: `regression.sh` / `git-fetch-behavior.sh` / `pr-status-behavior.sh` / `e2e-preview.sh` のいずれも、ケースごとに `mktemp -d` で作った一時ディレクトリを `CLAUDE_STATUSLINE_HISTORY_DIR` に渡し、終了時に削除します。本番の `/tmp/claude-statusline-<uid>/` には触れません。実 uid で作られたディレクトリなので本体の所有者チェックを通り、初回起動時の履歴書き込みも実際に動きます。
 - 設定ファイル: `CLAUDE_STATUSLINE_CONFIG` は、`config-file/` にマーカーがあるケースを除き、存在しないパスに固定します。開発者の `~/.claude/statusline.conf` を読むことはありません。すべてのハーネスが `lib/config-file.sh` を通してこの規則に従います。
 - `CLAUDE_STATUSLINE_*` の環境変数: マーカーが無いときは空文字で渡します。本体は空を未設定と同じに扱うため、conf → 既定値の順にフォールバックします。既定値を直接渡すと conf の値が常に環境変数に負け、conf の検証ができなくなるためです。`CLAUDE_STATUSLINE_COLOR_SCHEME` も空で渡し、開発者のシェルの値が混ざらないようにしています。
-- 短縮名の変数: `regression.sh` は `SHOW_MODEL_NAME` や `LAYOUT_LINE1` などの短縮名 9 つを、全ケースで既定値と異なる値にして渡します。本体は conf を読む前にこれらを `unset` するため、出力には影響しません。この `unset` が消えると全ケースが失敗するので、その回帰ガードを兼ねています。
+- 短縮名の変数: `regression.sh` は `SHOW_MODEL_NAME` や `LAYOUT_LINE1` などの短縮名 10 個を、全ケースで既定値と異なる値にして渡します。本体は conf を読む前にこれらを `unset` するため、出力には影響しません。この `unset` が消えると全ケースが失敗するので、その回帰ガードを兼ねています。
 - git / gh: 前述の fake git と fake gh を `PATH` の先頭に置きます。
 - `FORCE_HYPERLINK`: `regression.sh` と `e2e-preview.sh` は、`hyperlink-off/` にマーカーがあるケースを除き空で渡します。
 

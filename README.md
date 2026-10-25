@@ -119,6 +119,7 @@ LAYOUT_LINE1="session|directory|branch"
 | `LAYOUT_LINE2` | `model_ctx\|rate` | 2 行目の並び |
 | `GIT_FETCH` | `0` | `1` でバックグラウンド `git fetch` を有効にする |
 | `PR_STATUS` | `0` | `1` でブランチ列に PR の状態を表示する ([詳細](#pr_status1-で-pr-の状態を表示する)) |
+| `RATE_CHART_LEN` | `6` | レートリミットのチャートの文字数 (2〜20) |
 | `POLL_INTERVAL_SEC` | `480` | レートリミット履歴を記録する間隔 (秒) |
 | `GIT_FETCH_INTERVAL_SEC` | `900` | バックグラウンド `git fetch` の最小間隔 (秒) |
 
@@ -132,7 +133,7 @@ LAYOUT_LINE1="session|directory|branch"
 同じ設定を複数の場所で指定したときは、環境変数 > 設定ファイル > 既定値 の順に優先される。
 
 - 環境変数は `CLAUDE_STATUSLINE_<名前>` (例 `CLAUDE_STATUSLINE_COLOR_SCHEME=light`)。主にテストや一時的な切替向け
-- `POLL_INTERVAL_SEC` と `GIT_FETCH_INTERVAL_SEC` には環境変数が無く、設定ファイルでだけ変えられる
+- `RATE_CHART_LEN`、`POLL_INTERVAL_SEC`、`GIT_FETCH_INTERVAL_SEC` には環境変数が無く、設定ファイルでだけ変えられる
 - 設定ファイルには短縮名 (`COLOR_SCHEME`) を書く。環境変数名で書くと環境変数側の値を上書きしてしまう
 
 ### レイアウト
@@ -151,9 +152,11 @@ LAYOUT_LINE1="session|directory|branch"
 - 2 行目は並び順だけを変えられる。書かなかったトークンは末尾に補われ、常に両方が出る
 - 1 行構成へ戻す設定は無い
 
-### 間隔の範囲
+### 数値の設定の範囲
 
-`POLL_INTERVAL_SEC` は 60〜3000 秒、`GIT_FETCH_INTERVAL_SEC` は 60〜1800 秒の範囲で使う。範囲外の値 (`0` を含む) は最寄りの境界へ自動で丸められ、空･負値･数値でない値は既定値に戻る (警告は出ない)。範囲の根拠は [docs/SPEC.md](docs/SPEC.md) を参照。
+`RATE_CHART_LEN` は 2〜20 文字、`POLL_INTERVAL_SEC` は 60〜(18000 ÷ `RATE_CHART_LEN`) 秒 (既定のチャート長では 60〜3000)、`GIT_FETCH_INTERVAL_SEC` は 60〜1800 秒の範囲で使う。範囲外の値 (`0` を含む) は最寄りの境界へ自動で丸められ、空･負値･数値でない値は既定値に戻る (警告は出ない)。範囲の根拠は [docs/SPEC.md](docs/SPEC.md) を参照。
+
+`POLL_INTERVAL_SEC` の上限は、チャート全体で 5 時間のレートリミットの枠を覆う間隔。チャートを短くすると長い間隔を選べ、長くすると細かい刻みで 5 時間を覆う。
 
 ### `GIT_FETCH=1` を使うときの注意
 
@@ -214,7 +217,7 @@ my-project | feature/login ↑1 3+10-2 #12✓ 3 | my-session
 | `✻ モデル名` | モデル別の色で表示。13 文字を超えると `…` で省略 |
 | effort | 推論強度 (`low` / `medium` / `high` / `xhigh` / `max`)。対応しないモデルでは出ない |
 | コンテキスト使用率 | 1 文字のバー (`▁`〜`█`)。70% 以上で数値を併記 |
-| レートリミット | 5 時間枠の残量の推移を 6 文字のバーで表示し、右端は常に現在値。残量 40% 以下で数値を併記し、リセット時刻を添える |
+| レートリミット | 5 時間枠の残量の推移を `RATE_CHART_LEN` 文字 (既定 6) のバーで表示し、右端は常に現在値。残量 40% 以下で数値を併記し、リセット時刻を添える |
 
 - 値が無い要素は区切りごと省略する。1 行目の要素がすべて無いときは 1 行目ごと出さない
 - レートリミットの履歴はすべてのセッションで共有する

@@ -2,10 +2,11 @@
   "private": true,
   "scripts": {
     "prepare": "node scripts/setup-hooks.mjs",
-    "test": "run-s test:regression test:fetch test:pr test:parity",
+    "test": "run-s test:regression test:fetch test:pr test:history test:parity",
     "test:regression": "bash tests/regression.sh",
     "test:fetch": "bash tests/git-fetch-behavior.sh",
     "test:pr": "bash tests/pr-status-behavior.sh",
+    "test:history": "bash tests/rate-history-behavior.sh",
     "test:parity": "bash tests/script-parity.sh",
     "preview": "bash tests/e2e-preview.sh",
     "lint": "markdownlint-cli2 \"**/*.md\"",

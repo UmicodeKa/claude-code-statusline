@@ -1,0 +1,7 @@
+# conf の RATE_CHART_LEN=10 でチャートが 10 文字になる。空の履歴への初回 push は現在値 (残量70=▆) で
+# 埋めるため、10 文字すべてが同じスパークになる (保存は 20 件、読み出しは末尾 10 件)。
+# rate=30% (残量70) -> 色なし + 時刻のみ
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| ▆{10} 22:13$
+matches_line1: ^statusline-demo$
+not_contains_line2: \e[
+exit_code: 0

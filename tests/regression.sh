@@ -6,7 +6,7 @@
 #
 # 本番履歴 dir の汚染を防ぐため CLAUDE_STATUSLINE_HISTORY_DIR を mktemp で
 # 作った一時 dir に向け、実行終了後にその dir を削除する。実 uid 環境で
-# 動くので所有者チェックを pass し、初回起動時の history_push (HISTORY_LEN
+# 動くので所有者チェックを pass し、初回起動時の history_push (RATE_CHART_LEN_MAX
 # 件の現在値埋め) が動作する。結果としてチャート部にも現在値の spark 文字が
 # 出力され、フォーマットを全カラム検証できる。
 
@@ -282,7 +282,7 @@ run_case() {
   # seed があれば古い rate 履歴として仕込む。コピー直後の mtime は現在に近いため
   # statusline 内の history_push は POLL_INTERVAL_SEC 内と判定して skip する。
   # 結果、仕込んだ古い履歴がそのまま history_chart に読まれ、右端の現在値差し替え
-  # (左 5 文字 = 古い値、右端 1 文字 = 現在値) を検証できる。
+  # (左 RATE_CHART_LEN-1 文字 = 古い値、右端 1 文字 = 現在値) を検証できる。
   local seed="$SEEDS_DIR/${case_name}.txt"
   if [ -f "$seed" ]; then
     cp "$seed" "$hist_dir/rate"
@@ -362,7 +362,7 @@ run_case() {
       CLAUDE_STATUSLINE_CONFIG="$config" \
       CLAUDE_STATUSLINE_COLOR_SCHEME="" \
       SHOW_MODEL_NAME=0 COLOR_SCHEME=light GIT_FETCH=1 PR_STATUS=1 SHOW_CWD=0 \
-      POLL_INTERVAL_SEC=0 GIT_FETCH_INTERVAL_SEC=0 \
+      RATE_CHART_LEN=3 POLL_INTERVAL_SEC=0 GIT_FETCH_INTERVAL_SEC=0 \
       LAYOUT_LINE1="session" LAYOUT_LINE2="rate|model_ctx" \
       CLAUDE_STATUSLINE_SHOW_MODEL_NAME="$show_model_name" \
       CLAUDE_STATUSLINE_GIT_FETCH="$git_fetch" \

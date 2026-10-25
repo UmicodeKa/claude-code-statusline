@@ -30,7 +30,7 @@ STATUSLINE_CONFIG="${CLAUDE_STATUSLINE_CONFIG:-$HOME/.claude/statusline.conf}"
 # `/` を含まないパスを `.` に渡すと $PATH から探索されるため、カレント相対に固定する。
 case "$STATUSLINE_CONFIG" in */*) ;; *) STATUSLINE_CONFIG="./$STATUSLINE_CONFIG" ;; esac
 # conf で設定できる変数の一覧。unset と \r の除去の両方でこの配列を使う (一覧を 1 か所に保つ)。
-STATUSLINE_CONF_VARS=(SHOW_MODEL_NAME COLOR_SCHEME GIT_FETCH PR_STATUS SHOW_CWD POLL_INTERVAL_SEC \
+STATUSLINE_CONF_VARS=(SHOW_MODEL_NAME COLOR_SCHEME GIT_FETCH PR_STATUS SHOW_CWD RATE_CHART_LEN POLL_INTERVAL_SEC \
   GIT_FETCH_INTERVAL_SEC LAYOUT_LINE1 LAYOUT_LINE2)
 unset "${STATUSLINE_CONF_VARS[@]}"
 if [ -f "$STATUSLINE_CONFIG" ] && [ -r "$STATUSLINE_CONFIG" ]; then
@@ -85,14 +85,17 @@ LAYOUT_LINE2="${CLAUDE_STATUSLINE_LAYOUT_LINE2:-${LAYOUT_LINE2:-model_ctx|rate}}
 
 # 数値の設定 (conf のみで変える。env の上書き口は持たない)。既定値と範囲は後方の「間引き定数」の
 # clamp_int の呼び出しにだけ置く (既定値が 2 か所にあると、空の値と不正な値で戻る先が食い違いうるため)。
-#   POLL_INTERVAL_SEC:      履歴サンプリング間隔 (秒)。この秒数未満の連続呼び出しは skip (既定 480、60〜3000)
+#   RATE_CHART_LEN:         rate チャートの文字数 (既定 6、2〜20)。右端 1 文字が現在値、左が履歴の遷移
+#   POLL_INTERVAL_SEC:      履歴サンプリング間隔 (秒)。この秒数未満の連続呼び出しは skip
+#                           (既定 480、60〜18000/RATE_CHART_LEN。既定のチャート長では 3000)
 #   GIT_FETCH_INTERVAL_SEC: git fetch の最小間隔 (秒)。この間隔未満の連続呼び出しは fetch を skip (既定 900、60〜1800)
+# RATE_CHART_LEN は POLL_INTERVAL_SEC の上限を決め、全セッション共通の履歴ファイルの間引きに効く。
+# セッションごとに変えられると最も短い間隔のセッションが追記を支配するため、env の口を付けない。
 
 # === 内部定数 (変更しない。出力フォーマット/排他制御/レンジガードに直結する実装値) ===
 
-# スパークラインの 8 階調とチャートのサンプル数。出力フォーマットの一部。
+# スパークラインの 8 階調。出力フォーマットの一部。
 SPARKS=('▁' '▂' '▃' '▄' '▅' '▆' '▇' '█')   # 8階調
-HISTORY_LEN=6                               # チャートに表示する履歴サンプル数
 
 # 未追跡の行数取得 (diff --no-index) を行う上限件数。超過分はファイル数のみ数える。
 UNTRACKED_DIFF_LIMIT=50
@@ -120,24 +123,29 @@ case "$PR_TIMEOUT_SEC" in ''|0*|*[!0-9]*|????*) PR_TIMEOUT_SEC=60 ;; esac
 LOCK_TIMEOUT_SEC=2
 
 # --- 間引き定数の推奨レンジ ---
-# POLL_INTERVAL_SEC / GIT_FETCH_INTERVAL_SEC は env 上書き口を持たず、conf (または上の定数の直接編集) で変える運用。
+# RATE_CHART_LEN / POLL_INTERVAL_SEC / GIT_FETCH_INTERVAL_SEC は env 上書き口を持たず、conf (または上の定数の直接編集) で変える運用。
 # 秒数比較は算術式なので 0 / 負値 / 非数値を入れても構文エラーにならず、間引きが静かに無効化される
-# (描画のたびに git fetch が多重起動する / rate 履歴が毎回更新され HISTORY_LEN 件のチャートが傾向を示さなくなる)。
+# (描画のたびに git fetch が多重起動する / rate 履歴が毎回更新されチャートが傾向を示さなくなる)。
 # 逆に極端に大きい値は機能を事実上無効化するが警告も出ない。どちらもユーザーが気付けないため、
 # 範囲外は安全側へ丸めて描画は継続する (HISTORY_DIR の安全性チェックと同じ「無効値ならフォールバックして表示は続ける」方針)。
 #
 # レンジの根拠:
+#   RATE_CHART_LEN 2..20
+#     下限: 履歴 1 文字 + 現在値 1 文字。1 だと現在値だけになり推移を表さない
+#     上限: 2 行目が最も長くなる組み合わせでも 80 桁の端末に収まる長さ。履歴ファイルに残す件数も兼ねる
 #   GIT_FETCH_INTERVAL_SEC 60..1800
 #     下限: statusline は数秒〜十数秒間隔で呼ばれ得るため、60 未満では間引きが実質機能せず fetch が頻発する
 #     上限: 30 分を超えると ↓behind 自動最新化の意味が薄れ、手動 fetch と大差なくなる
-#   POLL_INTERVAL_SEC 60..3000
+#   POLL_INTERVAL_SEC 60..(18000 / RATE_CHART_LEN)
 #     下限: 同上 (呼び出し頻度に近づくと間引きが無意味になる)
-#     上限: rate limit は 5 時間 (18000 秒) ウィンドウで HISTORY_LEN=6 サンプルなので、
-#           18000/6=3000 を超えるとウィンドウをカバーしきれずチャートが傾向を示さなくなる
+#     上限: rate limit は 5 時間 (18000 秒) ウィンドウなので、チャート全体 (RATE_CHART_LEN サンプル) で
+#           ウィンドウを覆う間隔を上限にする。超えるとウィンドウをカバーしきれずチャートが傾向を示さなくなる
 #
-# 下記 4 つの MIN/MAX とその直後の clamp 処理はレンジガードそのもの。変更しない。
+# 下記の MIN/MAX とその直後の clamp 処理はレンジガードそのもの。変更しない。
+RATE_CHART_LEN_MIN=2
+RATE_CHART_LEN_MAX=20          # 2 行目が 80 桁に収まる長さ。履歴ファイルに残す件数も兼ねる
+RATE_WINDOW_SEC=18000          # 5 時間のレートリミットの窓
 POLL_INTERVAL_MIN_SEC=60
-POLL_INTERVAL_MAX_SEC=3000
 GIT_FETCH_INTERVAL_MIN_SEC=60
 GIT_FETCH_INTERVAL_MAX_SEC=1800
 
@@ -162,6 +170,10 @@ clamp_int() {
   printf -v "$1" '%s' "$_ci_value"
 }
 
+clamp_int RATE_CHART_LEN 6 "$RATE_CHART_LEN_MIN" "$RATE_CHART_LEN_MAX"
+# チャート全体 (RATE_CHART_LEN サンプル) で 5 時間の窓を覆う間隔を上限にする。既定の 6 なら 3000。
+# 丸めた後の RATE_CHART_LEN を使うので、RATE_CHART_LEN の clamp より後に置く (順序を入れ替えない)。
+POLL_INTERVAL_MAX_SEC=$((RATE_WINDOW_SEC / RATE_CHART_LEN))
 clamp_int POLL_INTERVAL_SEC 480 "$POLL_INTERVAL_MIN_SEC" "$POLL_INTERVAL_MAX_SEC"
 clamp_int GIT_FETCH_INTERVAL_SEC 900 "$GIT_FETCH_INTERVAL_MIN_SEC" "$GIT_FETCH_INTERVAL_MAX_SEC"
 
@@ -313,10 +325,12 @@ set_remaining() {
   printf -v "$1" '%s' "$((100 - _sr_used))"
 }
 
-# 履歴ファイルに値を append し、末尾 HISTORY_LEN 件だけ残す。
+# 履歴ファイルに値を append し、末尾 RATE_CHART_LEN_MAX 件だけ残す (表示長ではなく上限の件数で保存する)。
 # 値が空なら何もしない (起動直後に履歴を汚さない)。
-# 履歴がまだ無いファイルへの初回 push は現在値で HISTORY_LEN 件埋める。
+# 履歴がまだ無いファイルへの初回 push は現在値で RATE_CHART_LEN_MAX 件埋める。
 # 「ずっとその値だった」という見た目になり、初回表示でドットが並ぶのを避ける。
+# 保存件数を表示長 (RATE_CHART_LEN) と分けるのは、チャートを伸ばしたときに保存済みの履歴をすぐ表示に
+# 使うためと、別の conf を読むセッションが共通の履歴ファイルを自分の表示長で切り詰めないため。
 #
 # 並行性: rate 用ファイルは全セッション共通のため、複数の statusline が同時に
 # このパスへ突入しうる。ロック取得失敗時はその回をスキップ — statusline は
@@ -336,9 +350,9 @@ history_push() {
 
   if [ ! -s "$file" ]; then
     local i
-    for ((i = 0; i < HISTORY_LEN; i++)); do
-      printf '%s\n' "$value" >> "$file"
-    done
+    for ((i = 0; i < RATE_CHART_LEN_MAX; i++)); do
+      printf '%s\n' "$value"
+    done >> "$file"
   else
     # 直前の更新から POLL_INTERVAL_SEC 経っていなければ skip。
     # statusline は高頻度に呼ばれるため、サンプル間隔を一定に保つ。
@@ -354,7 +368,7 @@ history_push() {
     printf '%s\n' "$value" >> "$file"
     local tmp
     tmp=$(mktemp "${file}.XXXXXX") || { exec {fd}>&-; return; }
-    if tail -n "$HISTORY_LEN" "$file" > "$tmp"; then
+    if tail -n "$RATE_CHART_LEN_MAX" "$file" > "$tmp"; then
       mv "$tmp" "$file"
     else
       rm -- "$tmp"
@@ -364,9 +378,9 @@ history_push() {
 }
 
 # 履歴ファイルから各値を spark 文字に変換して連結する。
-# サンプル数が HISTORY_LEN に満たない場合は左側を中点 (·) でパディング。
+# 末尾 RATE_CHART_LEN 件だけを使い、RATE_CHART_LEN 件に満たない場合は左側を中点 (·) でパディング。
 # `history_push` の trim が失敗してファイルが膨らんでも出力長が崩れないよう、
-# `tail -n HISTORY_LEN` で末尾だけ読む。
+# `tail -n RATE_CHART_LEN` で末尾だけ読む。
 history_chart() {
   local file=$1
   local out=""
@@ -378,9 +392,9 @@ history_chart() {
       spark_of spark "$v"
       out+=$spark
       count=$((count + 1))
-    done < <(tail -n "$HISTORY_LEN" "$file" 2>/dev/null)
+    done < <(tail -n "$RATE_CHART_LEN" "$file" 2>/dev/null)
   fi
-  local pad=$((HISTORY_LEN - count))
+  local pad=$((RATE_CHART_LEN - count))
   local i
   local prefix=""
   for ((i = 0; i < pad; i++)); do
@@ -1304,13 +1318,13 @@ fi
 # チャート右端 1 文字は履歴サンプリング間隔 (POLL_INTERVAL_SEC) と独立に常に現在値を描く。
 # history_push は 480 秒間引きするため、リセットで残量が戻った直後はチャートが古い値の
 # まま据え置かれる。右端だけ現在値 spark に差し替えて最新残量を即時反映する。
-# (左 HISTORY_LEN-1 文字は履歴の遷移、右端 1 文字だけが現在値)
+# (左 RATE_CHART_LEN-1 文字は履歴の遷移、右端 1 文字だけが現在値)
 # rate_chart は history_chart /dev/null で必ず非空なので、rate_remaining の有無だけで分岐する。
 # ${var:0:N} は LC_ALL=C.UTF-8 固定下で文字数換算になり、spark の 3 バイト文字でも先頭
-# HISTORY_LEN-1 文字を正しく切り出せる (truncate_label と同じロケール前提)。
+# RATE_CHART_LEN-1 文字を正しく切り出せる (truncate_label と同じロケール前提)。
 if [ -n "$rate_remaining" ]; then
   spark_of rate_now_spark "$rate_remaining"
-  rate_chart="${rate_chart:0:$((HISTORY_LEN - 1))}${rate_now_spark}"
+  rate_chart="${rate_chart:0:$((RATE_CHART_LEN - 1))}${rate_now_spark}"
 fi
 
 # cwd から git ブランチ名を取得する。空文字 / git 外 / git 未インストール時は空のまま。

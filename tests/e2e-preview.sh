@@ -111,7 +111,8 @@ print_header() {
   printf '\n\033[1;36m==== %s ====\033[0m\n' "$1"
 }
 
-# 現在値 (0-100) から 6 件の履歴系列を組み立て、改行区切りで標準出力に流す。
+# 現在値 (0-100) から 20 件 (本体が履歴ファイルに残す件数) の履歴系列を組み立て、改行区切りで標準出力に流す。
+# 古い側は 100 / 0 で頭打ちになるので、RATE_CHART_LEN を伸ばしたケースでも左端まで遷移が並ぶ。
 # trend=down: 最新値が最小、古いほど高い (rate 残量用)。
 # 値が空の場合は何も出さない (statusline 側で履歴ファイル無しと同等に扱われる)。
 build_history_lines() {
@@ -119,7 +120,7 @@ build_history_lines() {
   local trend=$2
   local step=10
   [ -z "$current" ] && return
-  awk -v cur="$current" -v trend="$trend" -v step="$step" -v len=6 '
+  awk -v cur="$current" -v trend="$trend" -v step="$step" -v len=20 '
     BEGIN {
       for (i = 0; i < len; i++) {
         # 古い → 新しいの順に len 行出力。新しい (末尾) を current に揃える。
@@ -139,7 +140,7 @@ build_history_lines() {
 
 # fixture からダミー rate 履歴ファイルを hist_dir に書き込む。
 # 仕込んだ後に statusline が呼ばれると POLL_INTERVAL_SEC=480 内のため
-# history_push は skip され、history_chart はこの 6 件をそのまま読む。
+# history_push は skip され、history_chart はこの 20 件の末尾 RATE_CHART_LEN 件をそのまま読む。
 # ctx は履歴を持たないため、seeding は rate だけで十分。
 seed_history() {
   local fixture=$1 hist_dir=$2

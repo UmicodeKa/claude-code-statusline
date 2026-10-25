@@ -1,0 +1,5 @@
+# disable-history/ で履歴を無効化し、conf の RATE_CHART_LEN=10 で描く。
+# 土台のパディングも RATE_CHART_LEN 文字になり、左 9 文字が ·、右端 1 文字が現在値 (残量70=▆)。
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| ·········▆ 22:13$
+matches_line1: ^statusline-demo$
+exit_code: 0

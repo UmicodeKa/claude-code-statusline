@@ -18,7 +18,7 @@ macOS 版 (`statusline-macos.sh`) と Linux 版 (`statusline-linux.sh`) は同�
 1. `export LC_ALL=C.UTF-8` でロケールを固定する
 2. 設定ファイル (`~/.claude/statusline.conf`) を読み込む
 3. カスタマイズ設定を env > conf > 既定値 の順で決める
-4. 内部定数 (`SPARKS` / `HISTORY_LEN` / `UNTRACKED_DIFF_LIMIT`) を定義し、間引き間隔を clamp する
+4. 内部定数 (`SPARKS` / `UNTRACKED_DIFF_LIMIT` など) を定義し、数値の設定 (`RATE_CHART_LEN` と間引き間隔) を clamp する
 5. カラースキーム (`COLOR_*`) を定義する
 6. 依存コマンドを確認し、履歴ディレクトリを安全に用意する
 7. 入力 JSON を `jq` 1 回で読み取る
@@ -121,12 +121,12 @@ effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の�
 
 ### rate チャートの土台と右端の現在値
 
-rate チャートは `HISTORY_LEN` (6) 文字で、左 5 文字が履歴、右端 1 文字が現在値です。
+rate チャートは `RATE_CHART_LEN` (既定 6) 文字で、左 `RATE_CHART_LEN − 1` 文字が履歴、右端 1 文字が現在値です。
 
 - `rate_chart` はまず `history_chart /dev/null` (履歴なしのパディング `······`) で初期化し、`HISTORY_DIR` が有効なときだけ実際の履歴で上書きします
 - そのうえで、残量 (`rate_remaining`) があれば右端 1 文字を `spark_of` の現在値に差し替えます。`rate_chart` は土台のおかげで常に空でないため、分岐条件は `rate_remaining` の有無だけです
 - 履歴の追記は `POLL_INTERVAL_SEC` (既定 480 秒) で間引かれるので、差し替えが無いとリセット直後でも右端が古い値のまま残ります
-- `${rate_chart:0:5}` の切り出しは、`LC_ALL=C.UTF-8` で文字数換算になることが前提です (スパーク文字は 3 バイト)
+- `${rate_chart:0:$((RATE_CHART_LEN - 1))}` の切り出しは、`LC_ALL=C.UTF-8` で文字数換算になることが前提です (スパーク文字は 3 バイト)
 
 ### スパークと残量の計算を fork せずに行う
 
@@ -141,8 +141,12 @@ rate チャートは `HISTORY_LEN` (6) 文字で、左 5 文字が履歴、右�
 ### 履歴ファイルと排他制御
 
 - 履歴は rate だけが持ちます。rate は 5 時間ウィンドウのアカウント単位の値で全セッション共通なので、`${HISTORY_DIR}/rate` の 1 ファイルに集約します。ctx は現在値の 1 文字だけを描くため履歴を持ちません
-- 空の履歴ファイルへの初回追記では、現在値を `HISTORY_LEN` 件書き込みます。初回表示で `·` が並ぶのを避けるためです
-- 追記後は `tail -n HISTORY_LEN` を一時ファイルへ書いて `mv` で置き換えます。読み出し側も `tail -n HISTORY_LEN` で末尾だけを読むので、切り詰めに失敗してファイルが伸びても表示幅は崩れません
+- 保存する件数は表示長 (`RATE_CHART_LEN`) ではなく、その上限の `RATE_CHART_LEN_MAX` (20) 件で固定します
+  - チャート長を伸ばしたとき、保存済みの履歴がすぐ表示に出ます。表示長で切り詰めると、伸ばした直後は `·` が並びます
+  - 履歴ファイルは全セッション共通なので、`CLAUDE_STATUSLINE_CONFIG` で別の conf を読むセッションがあっても、短いチャートのセッションが長いチャートのセッションの履歴を切り詰めません
+  - 以前の 6 件のファイルはそのまま読めるため、移行処理は要りません
+- 空の履歴ファイルへの初回追記では、現在値を `RATE_CHART_LEN_MAX` 件書き込みます。初回表示で `·` が並ぶのを避けるためです
+- 追記後は `tail -n RATE_CHART_LEN_MAX` を一時ファイルへ書いて `mv` で置き換えます。読み出し側は `tail -n RATE_CHART_LEN` で末尾だけを読むので、切り詰めに失敗してファイルが伸びても表示幅は崩れません
 - 複数の statusline が同時に書き込むことがあるため、追記はロックの中で行います。ロック待ちは `LOCK_TIMEOUT_SEC` (2 秒) までで、取れなければその回の追記を飛ばします。statusline は頻繁に呼ばれるので、次の呼び出しで反映されます
 
 ### 入力 JSON の読み取り
@@ -255,14 +259,15 @@ head のブランチ名とオーナーを push 先 (`@{push}`) から決める�
 - 箇所: 冒頭の｢ユーザー設定ファイルの読み込み｣ブロック
 - 何をしているか:
   - 内部定数と clamp より前、カスタマイズ設定の直前で conf を読む
-  - 読み込み前に短縮名の 9 変数 (`SHOW_MODEL_NAME` / `COLOR_SCHEME` / `GIT_FETCH` / `PR_STATUS` / `SHOW_CWD` / `POLL_INTERVAL_SEC` / `GIT_FETCH_INTERVAL_SEC` / `LAYOUT_LINE1` / `LAYOUT_LINE2`) を `unset` する。一覧は配列 `STATUSLINE_CONF_VARS` の 1 か所に置き、`unset` と `\r` の除去の両方で使う
+  - 読み込み前に短縮名の 10 変数 (`SHOW_MODEL_NAME` / `COLOR_SCHEME` / `GIT_FETCH` / `PR_STATUS` / `SHOW_CWD` / `RATE_CHART_LEN` / `POLL_INTERVAL_SEC` / `GIT_FETCH_INTERVAL_SEC` / `LAYOUT_LINE1` / `LAYOUT_LINE2`) を `unset` する
+  - 10 変数の一覧は配列 `STATUSLINE_CONF_VARS` の 1 か所に置き、`unset` と `\r` の除去の両方で使う
   - `[ -f ] && [ -r ]` を満たすときだけ `.` で読み、読めなければ黙って既定値で続ける
   - `/` を含まないパスには `./` を前置する
-  - 読み込み直後に 9 変数の末尾の `\r` を取り除く (`printf -v` と間接展開 `${!name%$'\r'}` で書き戻す)
-  - 各設定は `${CLAUDE_STATUSLINE_X:-${X:-既定値}}` で読み、env > conf > 既定値 の順にする。env 口の無い数値の設定 (間引き間隔) は既定値を `clamp_int` の引数にだけ持ち、空の値も既定値に戻す
+  - 読み込み直後に 10 変数の末尾の `\r` を取り除く (`printf -v` と間接展開 `${!name%$'\r'}` で書き戻す)
+  - 各設定は `${CLAUDE_STATUSLINE_X:-${X:-既定値}}` で読み、env > conf > 既定値 の順にする。env 口の無い数値の設定 (`RATE_CHART_LEN` と間引き間隔) は既定値を `clamp_int` の引数にだけ持ち、空の値も既定値に戻す
 - 外すと何が起きるか:
   - 読み込みを clamp より後へ移すと、conf の不正な間引き間隔が丸められず間引きが無効になる
-  - 内部定数より後へ移すと、conf で `HISTORY_LEN` などを変えられ、出力の形が変わる
+  - 内部定数より後へ移すと、conf で `RATE_CHART_LEN_MAX` などの内部定数を変えられ、保存件数やレンジガードが崩れる
   - `unset` を外すと、外の環境にある同名の変数が conf の代わりに効いてしまう
   - `-r` だけで判定すると、ディレクトリを `.` してエラーが出る
   - `./` を付けないと、`.` が `$PATH` からファイルを探し、`[ -f ]` で確認したものとは別のファイルを読むことがある
@@ -278,10 +283,12 @@ conf はシェルスクリプトとして読み込みます。JSON や YAML に�
 
 ### 間引き間隔の clamp
 
-- 箇所: `POLL_INTERVAL_MIN/MAX_SEC` / `GIT_FETCH_INTERVAL_MIN/MAX_SEC` と、直後の `clamp_int` (`clamp_int <変数名> <既定値> <下限> <上限>`) とその呼び出し
+- 箇所: `RATE_CHART_LEN_MIN/MAX` / `RATE_WINDOW_SEC` / `POLL_INTERVAL_MIN_SEC` / `GIT_FETCH_INTERVAL_MIN/MAX_SEC` と、直後の `clamp_int` (`clamp_int <変数名> <既定値> <下限> <上限>`) とその呼び出し
 - 何をしているか:
-  - `POLL_INTERVAL_SEC` を 60〜3000、`GIT_FETCH_INTERVAL_SEC` を 60〜1800 に丸める
-  - 非数値･空･負値は既定値 (480 / 900) に戻す。既定値はこの呼び出しの引数だけに置く
+  - `RATE_CHART_LEN` を 2〜20、`POLL_INTERVAL_SEC` を 60〜(18000 ÷ `RATE_CHART_LEN`)、`GIT_FETCH_INTERVAL_SEC` を 60〜1800 に丸める
+  - `POLL_INTERVAL_SEC` の上限 `POLL_INTERVAL_MAX_SEC` は、丸めた後の `RATE_CHART_LEN` から `RATE_WINDOW_SEC / RATE_CHART_LEN` で求める。チャート全体で 5 時間の窓を覆う間隔で、既定のチャート長 6 では従来と同じ 3000。上限 20 でも 900 で、下限 60 を下回らない (範囲が逆転しない)
+  - 呼び出しは `RATE_CHART_LEN` → `POLL_INTERVAL_MAX_SEC` の計算 → `POLL_INTERVAL_SEC` の順に置く
+  - 非数値･空･負値は既定値 (6 / 480 / 900) に戻す。既定値はこの呼び出しの引数だけに置く
   - 9 桁以上は比較せずに上限へ丸める
   - 先頭の 0 は `10#` で 10 進数に直す (`08` → `8`)
   - command substitution を使わず、`printf -v` で変数へ直接書き戻す
@@ -290,7 +297,12 @@ conf はシェルスクリプトとして読み込みます。JSON や YAML に�
   - 9 桁以上の判定を外すと、整数範囲を超える値で `[ -lt ]` がエラー終了 (status 2) し、丸めを素通りする
   - 比較を `[[ ]]` に替えると、`[[ ]]` は値を算術式として評価するため、`a[$(cmd)]` のような conf の値の中のコマンドを実行しうる。`[ ]` は整数でなければエラーで終わるだけなので、検証 (`case`) の後でも `[ ]` を使う
   - 既定値を settings ブロックの `${X:-既定値}` と 2 か所に書くと、片方だけ変えたときに空の値と不正な値で戻る先が食い違う
-- 守っているテスト: `clamp-zero-interval` (git-fetch-behavior)、`82-config-invalid-values`、`85-config-huge-interval`、`tests/script-parity.sh` の `block:interval-clamp`
+  - `10#` の正規化を外すと、`RATE_CHART_LEN=08` が `$(( ))` や `for (( ))` で `value too great for base` のエラーになる (`POLL_INTERVAL_SEC` などは `[ ]` でしか比較しないので、正規化しなくても出力は変わらない)
+  - 順序を入れ替えて `RATE_CHART_LEN` の clamp より前に上限を求めると、丸める前の値 (`0` や `abc`) で割り算をしてエラーになるか、範囲外のチャート長に合わせた上限になる
+- 守っているテスト:
+  - 挙動: `clamp-zero-interval` (git-fetch-behavior)、`poll-max-follows-chart-len` / `poll-max-default` / `poll-clamp-zero` / `poll-invalid-default` (rate-history-behavior)
+  - 出力: `82-config-invalid-values`、`85-config-huge-interval`、`128-rate-chart-len-clamp-zero`〜`134-rate-chart-len-crlf`
+  - 両版の一致: `tests/script-parity.sh` の `block:interval-clamp`
 
 既定値はレンジ内にあるため、clamp は既定の出力を変えません。丸めは警告を出さずに行い、描画を続けます (履歴ディレクトリの安全性チェックと同じ｢無効値ならフォールバックして表示は続ける｣方針です)。
 
@@ -430,10 +442,10 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 
 ### rate チャートの土台と右端差し替え
 
-- 箇所: main の `rate_chart=$(history_chart /dev/null)` と `spark_of rate_now_spark "$rate_remaining"` と `rate_chart="${rate_chart:0:$((HISTORY_LEN - 1))}${rate_now_spark}"`
+- 箇所: main の `rate_chart=$(history_chart /dev/null)` と `spark_of rate_now_spark "$rate_remaining"` と `rate_chart="${rate_chart:0:$((RATE_CHART_LEN - 1))}${rate_now_spark}"`
 - 何をしているか: [rate チャートの土台と右端の現在値](#rate-チャートの土台と右端の現在値) を参照
 - 外すと何が起きるか: 差し替えを外すと、右端も間引かれた古い値になり、リセット直後の残量が反映されない。土台の初期化を `HISTORY_DIR` の分岐より後に移すか外すと、履歴が無効なときに `rate_chart` が空になり、右端が描かれない
-- 守っているテスト: `47-rate-rightmost-live` (seed で古い履歴を仕込む)、`48-rate-rightmost-no-history` (履歴を無効化する)
+- 守っているテスト: `47-rate-rightmost-live` / `126-rate-chart-len-seed-pad` (seed で古い履歴を仕込む)、`48-rate-rightmost-no-history` / `127-rate-chart-len-no-history` (履歴を無効化する)
 
 ### 色定義ブロックの両版一致
 
