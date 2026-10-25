@@ -44,7 +44,7 @@ Linux 版はステップ 1 の前に bash 4.1+ ゲートを置き、ステップ
 
 macOS 版で `flock` を使わないのは、macOS に標準で入っておらず、無い環境では黙って失敗するためです。代わりに POSIX で原子性が保証されている `mkdir` でロックを取り、`LOCK_TIMEOUT_SEC` × 5 秒 (既定 10 秒) より古いロックディレクトリは stale とみなして削除します。Linux 版の `flock` はプロセス終了時に自動で解放されるため、stale 処理は持ちません。
 
-これ以外のブロック (設定の読み込み、カスタマイズ設定、clamp、カラースキーム、PR の状態表示の定数と共通部分、レイアウトの組み立て) は両版で一字一句同じに保ちます。PR の状態表示で両版が違うのは、ロックを取る `maybe_pr_refresh` だけです。`tests/script-parity.sh` がこれらのブロックを抜き出して比較します。
+これ以外のブロック (設定の読み込み、カスタマイズ設定、clamp、カラースキーム、PR の状態表示の定数と共通部分、スパークと残量の計算、履歴の読み出し、色付けと整形、レイアウトの組み立て) は両版で一字一句同じに保ちます。履歴まわりで両版が違うのは、ロックを取る `history_push` だけです。PR の状態表示で両版が違うのは、ロックを取る `maybe_pr_refresh` だけです。`tests/script-parity.sh` がこれらのブロックを抜き出して比較します。
 
 ## 実装上の仕組み
 
@@ -54,7 +54,7 @@ macOS 版で `flock` を使わないのは、macOS に標準で入っておら�
 
 - `paint` は effect 名を見て `static` か `rainbow` に振り分けるだけのディスパッチャです
 - `static <text> <color>` は単色で囲んで末尾に `\033[0m` を付けます。color が空のときは文字列を末尾改行付きで素通しします
-- 色を決める関数 (`model_color` / `effort_color` / `ctx_color` / `rate_color`) は `"static <ansi>"` / `"static"` / `"rainbow"` という effect 指定の文字列を返し、呼び出し側はそれをクォートせずに展開して `paint` に渡します
+- 色を決める関数 (`model_color` / `effort_color` / `ctx_color` / `limit_color`) は `"static <ansi>"` / `"static"` / `"rainbow"` という effect 指定の文字列を返し、呼び出し側はそれをクォートせずに展開して `paint` に渡します
 
 新しいエフェクトを足すときは `paint` に分岐を 1 つ追加すれば済みます。個別の経路から `static` を直接呼ぶ形に戻すと、エフェクトの追加箇所が分散します。
 
@@ -124,9 +124,19 @@ effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の�
 rate チャートは `HISTORY_LEN` (6) 文字で、左 5 文字が履歴、右端 1 文字が現在値です。
 
 - `rate_chart` はまず `history_chart /dev/null` (履歴なしのパディング `······`) で初期化し、`HISTORY_DIR` が有効なときだけ実際の履歴で上書きします
-- そのうえで、残量 (`rate_remaining`) があれば右端 1 文字を `spark_single` の現在値に差し替えます。`rate_chart` は土台のおかげで常に空でないため、分岐条件は `rate_remaining` の有無だけです
+- そのうえで、残量 (`rate_remaining`) があれば右端 1 文字を `spark_of` の現在値に差し替えます。`rate_chart` は土台のおかげで常に空でないため、分岐条件は `rate_remaining` の有無だけです
 - 履歴の追記は `POLL_INTERVAL_SEC` (既定 480 秒) で間引かれるので、差し替えが無いとリセット直後でも右端が古い値のまま残ります
 - `${rate_chart:0:5}` の切り出しは、`LC_ALL=C.UTF-8` で文字数換算になることが前提です (スパーク文字は 3 バイト)
+
+### スパークと残量の計算を fork せずに行う
+
+スパーク文字 (`spark_of`)、使用率の丸め (`round_int`)、残量の計算 (`set_remaining`) は、結果を `printf -v` で呼び出し側の変数に書き込みます。`$(...)` で受けると呼ぶたびに fork が 1 つ増え、rate のチャートは文字数ぶん呼ぶためです。
+
+- `spark_of` は、整数の値を bash の算術式 `(8p + 50) / 100` で段に直し、`awk` を起動しません。`awk` を使うのは小数 (ctx の使用率) と 9 桁以上の値だけです。rate の履歴と残量は常に整数なので、チャートの文字数によらずスパークのための `awk` は ctx の分だけになります
+- 整数 p では、`awk` の `int(p / 100 × 8 + 0.5)` と算術式 `(8p + 50) / 100` が一致します。どちらも 0 に向かって切り捨てるので負の値でも同じで、`8p + 50` は 4 で割ると 2 余り 100 の倍数にならないため、浮動小数点の誤差で段が変わる境目もありません
+- 先頭の 0 は `10#` で 10 進数に直します。算術式は `08` を 8 進数として読もうとしてエラーになるためです
+- 書き込み先の変数名を受け取る関数のローカル変数には、関数ごとの接頭辞 (`_so_` / `_sr_` / `_ci_`) を付けます。bash の変数は動的スコープなので、呼び出し側と同じ名前のローカル変数があると、`printf -v` は呼び出し側ではなくローカルに書き込みます
+- `eval` は使いません。`printf -v` なら値に記号が入っていてもコードとして実行されません
 
 ### 履歴ファイルと排他制御
 
@@ -245,11 +255,11 @@ head のブランチ名とオーナーを push 先 (`@{push}`) から決める�
 - 箇所: 冒頭の｢ユーザー設定ファイルの読み込み｣ブロック
 - 何をしているか:
   - 内部定数と clamp より前、カスタマイズ設定の直前で conf を読む
-  - 読み込み前に短縮名の 9 変数 (`SHOW_MODEL_NAME` / `COLOR_SCHEME` / `GIT_FETCH` / `PR_STATUS` / `SHOW_CWD` / `POLL_INTERVAL_SEC` / `GIT_FETCH_INTERVAL_SEC` / `LAYOUT_LINE1` / `LAYOUT_LINE2`) を `unset` する
+  - 読み込み前に短縮名の 9 変数 (`SHOW_MODEL_NAME` / `COLOR_SCHEME` / `GIT_FETCH` / `PR_STATUS` / `SHOW_CWD` / `POLL_INTERVAL_SEC` / `GIT_FETCH_INTERVAL_SEC` / `LAYOUT_LINE1` / `LAYOUT_LINE2`) を `unset` する。一覧は配列 `STATUSLINE_CONF_VARS` の 1 か所に置き、`unset` と `\r` の除去の両方で使う
   - `[ -f ] && [ -r ]` を満たすときだけ `.` で読み、読めなければ黙って既定値で続ける
   - `/` を含まないパスには `./` を前置する
-  - 読み込み直後に 9 変数の末尾の `\r` を取り除く
-  - 各設定は `${CLAUDE_STATUSLINE_X:-${X:-既定値}}` で読み、env > conf > 既定値 の順にする。env 口の無い間引き間隔は `${X:-既定値}` で読む
+  - 読み込み直後に 9 変数の末尾の `\r` を取り除く (`printf -v` と間接展開 `${!name%$'\r'}` で書き戻す)
+  - 各設定は `${CLAUDE_STATUSLINE_X:-${X:-既定値}}` で読み、env > conf > 既定値 の順にする。env 口の無い数値の設定 (間引き間隔) は既定値を `clamp_int` の引数にだけ持ち、空の値も既定値に戻す
 - 外すと何が起きるか:
   - 読み込みを clamp より後へ移すと、conf の不正な間引き間隔が丸められず間引きが無効になる
   - 内部定数より後へ移すと、conf で `HISTORY_LEN` などを変えられ、出力の形が変わる
@@ -268,15 +278,18 @@ conf はシェルスクリプトとして読み込みます。JSON や YAML に�
 
 ### 間引き間隔の clamp
 
-- 箇所: `POLL_INTERVAL_MIN/MAX_SEC` / `GIT_FETCH_INTERVAL_MIN/MAX_SEC` と直後の `case` と `[ -lt ]` / `[ -gt ]`
+- 箇所: `POLL_INTERVAL_MIN/MAX_SEC` / `GIT_FETCH_INTERVAL_MIN/MAX_SEC` と、直後の `clamp_int` (`clamp_int <変数名> <既定値> <下限> <上限>`) とその呼び出し
 - 何をしているか:
   - `POLL_INTERVAL_SEC` を 60〜3000、`GIT_FETCH_INTERVAL_SEC` を 60〜1800 に丸める
-  - 非数値･空･負値は既定値 (480 / 900) に戻す
+  - 非数値･空･負値は既定値 (480 / 900) に戻す。既定値はこの呼び出しの引数だけに置く
   - 9 桁以上は比較せずに上限へ丸める
-  - command substitution を使わずに変数へ直接代入する
+  - 先頭の 0 は `10#` で 10 進数に直す (`08` → `8`)
+  - command substitution を使わず、`printf -v` で変数へ直接書き戻す
 - 外すと何が起きるか:
   - 間引きの比較は算術式なので、`0` や負値でも構文エラーにならず、間引きが無効になる。`GIT_FETCH=1` では描画のたびに `git fetch` が起動し、rate 履歴は毎回更新されてチャートが傾向を示さなくなる
   - 9 桁以上の判定を外すと、整数範囲を超える値で `[ -lt ]` がエラー終了 (status 2) し、丸めを素通りする
+  - 比較を `[[ ]]` に替えると、`[[ ]]` は値を算術式として評価するため、`a[$(cmd)]` のような conf の値の中のコマンドを実行しうる。`[ ]` は整数でなければエラーで終わるだけなので、検証 (`case`) の後でも `[ ]` を使う
+  - 既定値を settings ブロックの `${X:-既定値}` と 2 か所に書くと、片方だけ変えたときに空の値と不正な値で戻る先が食い違う
 - 守っているテスト: `clamp-zero-interval` (git-fetch-behavior)、`82-config-invalid-values`、`85-config-huge-interval`、`tests/script-parity.sh` の `block:interval-clamp`
 
 既定値はレンジ内にあるため、clamp は既定の出力を変えません。丸めは警告を出さずに行い、描画を続けます (履歴ディレクトリの安全性チェックと同じ｢無効値ならフォールバックして表示は続ける｣方針です)。
@@ -396,7 +409,7 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 
 ### rate のハイフン区切り
 
-- 箇所: `format_rate`
+- 箇所: `format_limit`
 - 何をしているか: 色が付く残量のとき `chart NN% - HH:MM` とスペース･ハイフン･スペースで区切る。括弧は使わない
 - 外すと何が起きるか: 表記が SPEC (` - ` 区切り、括弧なし) と食い違い、`02-rate-warning-with-reset` の `not_contains: (22:13)` などが失敗する
 - 守っているテスト: `02-rate-warning-with-reset` (`not_contains: (22:13)`)、`03-rate-warning-no-reset`、`05-rate-danger`、`06-rate-critical`、`24`〜`29` の境界ケース
@@ -405,7 +418,7 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 
 - 箇所: `build_layout "${LAYOUT_LINE2}|model_ctx|rate" "|model_ctx|rate|" 1`
 - 何をしているか: 2 行目は値が空でも列を落とさない。書かれなかったトークンは末尾に補う
-- 外すと何が起きるか: 第 3 引数を `0` にすると｢2 行目は常に出す｣が成り立たなくなる。ただし `format_rate` と `model_ctx` は常に空でない値を返すので、今のテストは通ったまま不変条件だけが失われる
+- 外すと何が起きるか: 第 3 引数を `0` にすると｢2 行目は常に出す｣が成り立たなくなる。ただし `format_limit` と `model_ctx` は常に空でない値を返すので、今のテストは通ったまま不変条件だけが失われる
 - 守っているテスト: 補完は `89-layout-line2-reorder`、`93-layout-line2-partial`、`91-layout-unknown-token`。空でも積むこと自体はテストなし
 
 ### 1 行目の省略と改行の位置
@@ -417,7 +430,7 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 
 ### rate チャートの土台と右端差し替え
 
-- 箇所: main の `rate_chart=$(history_chart /dev/null)` と `rate_chart="${rate_chart:0:$((HISTORY_LEN - 1))}$(spark_single "$rate_remaining")"`
+- 箇所: main の `rate_chart=$(history_chart /dev/null)` と `spark_of rate_now_spark "$rate_remaining"` と `rate_chart="${rate_chart:0:$((HISTORY_LEN - 1))}${rate_now_spark}"`
 - 何をしているか: [rate チャートの土台と右端の現在値](#rate-チャートの土台と右端の現在値) を参照
 - 外すと何が起きるか: 差し替えを外すと、右端も間引かれた古い値になり、リセット直後の残量が反映されない。土台の初期化を `HISTORY_DIR` の分岐より後に移すか外すと、履歴が無効なときに `rate_chart` が空になり、右端が描かれない
 - 守っているテスト: `47-rate-rightmost-live` (seed で古い履歴を仕込む)、`48-rate-rightmost-no-history` (履歴を無効化する)
@@ -431,7 +444,7 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 
 ### 点滅属性
 
-- 箇所: `rate_color` / `ctx_color` の致命段 (`printf 'static \033[5m%s' "$COLOR_error"`)
+- 箇所: `limit_color` / `ctx_color` の致命段 (`printf 'static \033[5m%s' "$COLOR_error"`)
 - 何をしているか: [rate / ctx の 3 階調と点滅](#rate--ctx-の-3-階調と点滅) を参照
 - 外すと何が起きるか: 致命段と危険段が色だけで区別されることになり、見た目の段差が小さくなる
 - 守っているテスト: `06-rate-critical`、`10-ctx-critical`、`23-ctx-boundary-90`、`29-rate-boundary-remaining-5`
