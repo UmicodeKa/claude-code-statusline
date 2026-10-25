@@ -2,6 +2,6 @@
 # branch=feature/improve-awesome-statusline は 34 文字 > 25 文字 -> 先頭 24 文字 + … でトリム
 # 期待: 1 行目が "<directory> | feature/improve-awesome-…"
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
-matches_line1: ^improve-awesome-statusli… \| feature/improve-awesome-…$
+matches_line1: ^improve-awesome-statusli… \| feature/improve-awesome-… ·$
 contains: feature/improve-awesome-…
 not_contains: feature/improve-awesome-statusline

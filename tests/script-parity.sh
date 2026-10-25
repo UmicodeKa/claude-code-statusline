@@ -104,16 +104,32 @@ main() {
   check_block settings '# === カスタマイズ設定' '# === 内部定数'
   check_block interval-clamp '# --- 間引き定数の推奨レンジ ---' '# --- カラースキーム ---'
   check_block color-scheme '# --- カラースキーム ---' 'esac'
+  # PR の状態表示。ロックの取り方が違う maybe_pr_refresh を除き、定数・キャッシュの読み書き・
+  # 子プロセスの起動と本体・描画は両版で同じ。branch 列の組み立てから呼ばれるので layout の比較も守る。
+  check_block pr-constants '# PR の状態表示の再取得間隔' '# --- PR の状態表示の内部定数ここまで ---'
+  check_block pr-common '# --- PR の状態表示 ---' '# maybe_pr_refresh:'
+  check_block layout '# レイアウトのトークンを描画済み文字列に引く' '# 配列を区切り文字で結合する'
 
   # ロケール固定はトリムの文字数換算に効くため冒頭 (先頭 20 行) にあることまで見る。
   check_static locale '1,20p' 'export LC_ALL=C.UTF-8'
-  # バックグラウンド fetch の認証プロンプト封じ。4 つで 1 セット (1 つ欠けても TUI に漏れる)。
-  check_static fetch-no-prompt:GIT_TERMINAL_PROMPT '1,$p' 'GIT_TERMINAL_PROMPT=0'
-  check_static fetch-no-prompt:GIT_ASKPASS '1,$p' 'GIT_ASKPASS=/bin/true'
-  check_static fetch-no-prompt:SSH_ASKPASS '1,$p' 'SSH_ASKPASS=/bin/true'
-  check_static fetch-no-prompt:SSH_ASKPASS_REQUIRE '1,$p' 'SSH_ASKPASS_REQUIRE=force'
+  # バックグラウンドの子プロセスの認証プロンプト封じ。4 つで 1 セット (1 つ欠けても TUI に漏れる)。
+  # fetch と pr の両方の子プロセスで要るので、関数の範囲ごとに確かめる。
+  local fn var
+  for fn in maybe_git_fetch pr_spawn_refresh; do
+    for var in GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/true SSH_ASKPASS=/bin/true SSH_ASKPASS_REQUIRE=force; do
+      check_static "no-prompt:$fn:${var%%=*}" "/^${fn}() {/,/^}/p" "$var"
+    done
+  done
   # fetch 子プロセスの fd 付け替え。外すと描画が fetch 完了まで待たされる。
-  check_static fetch-fd-redirect '1,$p' '>/dev/null 2>&1 </dev/null'
+  check_static fetch-fd-redirect '/^maybe_git_fetch() {/,/^}/p' '>/dev/null 2>&1 </dev/null'
+  # PR の状態表示の子プロセス。gh のプロンプトと更新通知を封じる 3 つと、出力や問い合わせ先を
+  # 変えてしまう 3 つの除去。fd の付け替えは外すと描画が gh の完了まで待たされる。
+  local pr_spawn='/^pr_spawn_refresh() {/,/^}/p'
+  check_static pr-gh-env:GH_PROMPT_DISABLED "$pr_spawn" 'GH_PROMPT_DISABLED=1'
+  check_static pr-gh-env:GH_NO_UPDATE_NOTIFIER "$pr_spawn" 'GH_NO_UPDATE_NOTIFIER=1'
+  check_static pr-gh-env:GH_NO_EXTENSION_UPDATE_NOTIFIER "$pr_spawn" 'GH_NO_EXTENSION_UPDATE_NOTIFIER=1'
+  check_static pr-gh-env:unset "$pr_spawn" 'unset GH_REPO GH_FORCE_TTY CLICOLOR_FORCE'
+  check_static pr-fd-redirect "$pr_spawn" 'pr_refresh_child "$cwd" "$branch" "$cache" "$inflight" >/dev/null 2>&1 </dev/null &'
   check_no_echo
 
   printf '\n'

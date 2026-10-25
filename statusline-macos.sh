@@ -19,7 +19,7 @@ export LC_ALL=C.UTF-8
 STATUSLINE_CONFIG="${CLAUDE_STATUSLINE_CONFIG:-$HOME/.claude/statusline.conf}"
 # `/` を含まないパスを `.` に渡すと $PATH から探索されるため、カレント相対に固定する。
 case "$STATUSLINE_CONFIG" in */*) ;; *) STATUSLINE_CONFIG="./$STATUSLINE_CONFIG" ;; esac
-unset SHOW_MODEL_NAME COLOR_SCHEME GIT_FETCH SHOW_CWD POLL_INTERVAL_SEC GIT_FETCH_INTERVAL_SEC \
+unset SHOW_MODEL_NAME COLOR_SCHEME GIT_FETCH PR_STATUS SHOW_CWD POLL_INTERVAL_SEC GIT_FETCH_INTERVAL_SEC \
   LAYOUT_LINE1 LAYOUT_LINE2
 if [ -f "$STATUSLINE_CONFIG" ] && [ -r "$STATUSLINE_CONFIG" ]; then
   # shellcheck source=/dev/null
@@ -28,6 +28,7 @@ if [ -f "$STATUSLINE_CONFIG" ] && [ -r "$STATUSLINE_CONFIG" ]; then
   SHOW_MODEL_NAME="${SHOW_MODEL_NAME%$'\r'}"
   COLOR_SCHEME="${COLOR_SCHEME%$'\r'}"
   GIT_FETCH="${GIT_FETCH%$'\r'}"
+  PR_STATUS="${PR_STATUS%$'\r'}"
   SHOW_CWD="${SHOW_CWD%$'\r'}"
   POLL_INTERVAL_SEC="${POLL_INTERVAL_SEC%$'\r'}"
   GIT_FETCH_INTERVAL_SEC="${GIT_FETCH_INTERVAL_SEC%$'\r'}"
@@ -53,6 +54,12 @@ COLOR_SCHEME="${CLAUDE_STATUSLINE_COLOR_SCHEME:-${COLOR_SCHEME:-dark}}"
 # ↓behind を自動最新化する。描画自体はローカル完結のまま (ネットワーク I/O を持ち込まない)。
 # env CLAUDE_STATUSLINE_GIT_FETCH でも上書き可。
 GIT_FETCH="${CLAUDE_STATUSLINE_GIT_FETCH:-${GIT_FETCH:-0}}"
+
+# PR の状態表示のオプトイン設定。既定 0=無効。
+# 1 のとき、branch 列の末尾 (diff の右) に、現在のブランチに紐付く GitHub の PR の状態を半角スペース区切りで出す。
+# 取得は gh で行い、描画経路とは分離した投げっぱなし子プロセスに任せる (gh のインストールと gh auth login が必要)。
+# env CLAUDE_STATUSLINE_PR_STATUS でも上書き可。
+PR_STATUS="${CLAUDE_STATUSLINE_PR_STATUS:-${PR_STATUS:-0}}"
 
 # 1 行目のカレントディレクトリ表示の ON/OFF。既定 1=表示。
 # 0 にすると directory 列だけが消え、2 行構成 (branch 列は 1 行目に残る) は維持する。
@@ -83,6 +90,25 @@ HISTORY_LEN=6                               # チャートに表示する履歴�
 
 # 未追跡の行数取得 (diff --no-index) を行う上限件数。超過分はファイル数のみ数える。
 UNTRACKED_DIFF_LIMIT=50
+
+# PR の状態表示の再取得間隔 (秒)。conf からは変えられない (この位置は conf の読み込みより後)。
+#   FAST: CI が実行中、またはローカルの HEAD が PR の head と違う (push 直後や push 前)
+#   SLOW: open で CI が完了している / PR がない / 前回の試行が失敗した / キャッシュがない
+#   DONE: merged / closed
+PR_INTERVAL_FAST_SEC=30
+PR_INTERVAL_SLOW_SEC=300
+PR_INTERVAL_DONE_SEC=900
+# 最後に取得に成功してからこの秒数を超えたキャッシュは表示しない。最長の間隔 (DONE) の 2 倍にして、
+# 取得が正常なのに再取得の直前に期限切れになって表示がちらつくのを避ける。
+PR_STALE_SEC=1800
+# 取得の実行中を示す .inflight をこの秒数より古ければ、子プロセスが異常終了した跡として消す。
+# 打ち切り (PR_TIMEOUT_SEC) より長くしておき、動いている取得の印は消さない。
+PR_INFLIGHT_STALE_SEC=90
+# gh 1 回の打ち切り (秒)。CLAUDE_STATUSLINE_TEST_PR_TIMEOUT_SEC はテストで短くするための口。
+PR_TIMEOUT_SEC="${CLAUDE_STATUSLINE_TEST_PR_TIMEOUT_SEC:-60}"
+# 0 / 先頭が 0 (算術式で 8 進数と解釈される) / 非数値 / 4 桁以上は既定値に戻す。
+case "$PR_TIMEOUT_SEC" in ''|0*|*[!0-9]*|????*) PR_TIMEOUT_SEC=60 ;; esac
+# --- PR の状態表示の内部定数ここまで ---
 
 # --- 間引き定数の推奨レンジ ---
 # POLL_INTERVAL_SEC / GIT_FETCH_INTERVAL_SEC は env 上書き口を持たず、conf (または上の定数の直接編集) で変える運用。
@@ -513,7 +539,7 @@ truncate_label() {
 #       未追跡が UNTRACKED_DIFF_LIMIT 件を超えた分は diff を呼ばずファイル数のみ数える
 #       (大量未追跡時に describe ごとの fork で描画が遅延するのを防ぐ)。
 #   gitignore 対象は git status/git diff が元々除外する。
-#   ファイル数 0 かつ追加 0 かつ削除 0 (クリーン)、または HEAD 無し/git 失敗時は空文字列を返す。
+#   ファイル数 0 かつ追加 0 かつ削除 0 (クリーン)、または HEAD 無し/git 失敗時は無色の · (U+00B7) を返す。
 #   ファイル数は変更があれば常に表示する。+0/-0 はその側を省略する。
 #   ファイル数は意図的に text (dark 純白 / light 純黒) で塗る。デフォルトの前景色ではなく COLOR_SCHEME に応じた固定色。
 git_diff_stat() {
@@ -548,7 +574,7 @@ git_diff_stat() {
     [ -n "$n" ] && add=$((add + n))
   done < <(git -C "$repo" status -z 2>/dev/null)
 
-  [ "$files" = "0" ] && [ "$add" = "0" ] && [ "$del" = "0" ] && return
+  [ "$files" = "0" ] && [ "$add" = "0" ] && [ "$del" = "0" ] && { printf '%s' '·'; return; }
 
   # ファイル数 (text=dark 純白 / light 純黒) → +add (success=緑) → -del (error=赤) を区切りなしで詰める。
   # COLOR_* は既に実 ESC 化済みなので $(printf ...) でラップせずそのまま static へ渡す。
@@ -685,6 +711,390 @@ maybe_git_fetch() {
       git -C "$repo" fetch --quiet >/dev/null 2>&1 </dev/null & )
 }
 
+# --- PR の状態表示 ---
+# PR_STATUS=1 のときだけ、現在のブランチに紐付く GitHub の PR を
+# `#<番号>[<CI記号>][ <件数>]` で表示する。情報はバックグラウンドの子プロセスが gh api graphql で
+# 取得してキャッシュに書き、描画はキャッシュを読むだけにする (gh も追加の git も描画経路に入れない)。
+# stdin の pr フィールドは、同じセッションで PR を切り替えても更新されないため使わない。
+#
+# ファイル (<key> は「cwd + 改行 + ローカルのブランチ名」の cksum):
+#   ${HISTORY_DIR}/pr-<key>           キャッシュ。子プロセスが取得に成功したときだけ置き換える
+#   ${HISTORY_DIR}/pr-<key>.marker    空ファイル。親が書き、mtime が最後に取得を試みた時刻になる
+#   ${HISTORY_DIR}/pr-<key>.inflight  ディレクトリ。子プロセスが取得している間だけ存在する
+# キャッシュとマーカーを分けるのは、マーカーの書き方 (`true > file`) がファイルを空にするため。
+#
+# キャッシュはタブ区切りの 1 行。PR がないときは fetched_at だけを書く。
+#   <fetched_at>\t<number>\t<state>\t<review>\t<ci>\t<comments>\t<head_matches>\t<url>
+#   fetched_at:   取得を始めた時刻 (epoch 秒)。期限切れの判定と、古い結果での上書きの防止に使う
+#   state:        open / draft / merged / closed
+#   review:       approved / pending / changes_requested (open / draft 以外では空)
+#   ci:           pass / fail / pending / 空 (チェックが 1 つもない)
+#   comments:     コメントの件数 (0 以上の整数)
+#   head_matches: 1 / 0 (ローカルの HEAD が PR の head と一致するか。再取得の間隔に使う)
+
+# 1 回で取る GraphQL。必要なのは件数と集約値だけなので、コメントやレビューの本文は取らない。
+# repository.owner は、push 先が分からないときに head のオーナーとして使う。
+# totalCommentsCount は GitHub が数えたコメントの件数 (会話のコメント、コードの行へのコメント、
+# 本文付きのレビュー) で、PR 一覧の吹き出しの数字と同じ値。種類ごとの totalCount を足すと、
+# reviewThreads はスレッドの数なので返信を数えられない。
+PR_QUERY='query($owner: String!, $repo: String!, $head: String!) {
+  repository(owner: $owner, name: $repo) {
+    owner { login }
+    pullRequests(headRefName: $head, first: 10, orderBy: {field: CREATED_AT, direction: DESC}) {
+      nodes {
+        number url state isDraft headRefOid
+        headRepositoryOwner { login }
+        reviewDecision
+        latestReviews(first: 20) { nodes { state } }
+        totalCommentsCount
+        commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+      }
+    }
+  }
+}'
+
+# gh --jq に渡す変換。候補の選び方と状態の決め方をここで済ませ、キャッシュの fetched_at 以降の
+# 1 行 (PR がなければ "none") を出す。--jq は --arg を受け付けないため、ローカルの HEAD と
+# head のオーナーは環境変数で渡して $ENV で読む (値を式に文字列として埋め込まない)。
+#   候補: headRepositoryOwner が head のオーナーと一致するもの (大文字小文字は区別しない)。
+#         他人の fork の同名ブランチから出た PR を拾わないため
+#   選択: OPEN の最新 → なければ headRefOid がローカルの HEAD と一致する MERGED / CLOSED の最新
+#   review: reviewDecision はレビュー必須でないリポジトリでは常に null なので、
+#           null のときは latestReviews から決める
+#   ci: statusCheckRollup.state (PR 画面のチェック表示と同じ集約値) をそのまま使う
+#   comments: totalCommentsCount をそのまま使う。null は 0 とする
+PR_JQ='.data.repository as $r
+| (($ENV.HEAD_OWNER // "") | if . == "" then ($r.owner.login // "") else . end | ascii_downcase) as $owner
+| [$r.pullRequests.nodes[] | select(((.headRepositoryOwner.login // "") | ascii_downcase) == $owner)] as $c
+| (([$c[] | select(.state == "OPEN")] | first)
+   // ([$c[] | select(.state != "OPEN" and .headRefOid == $ENV.LOCAL_HEAD)] | first)) as $p
+| if $p == null then "none" else
+    (if $p.state == "OPEN" then (if $p.isDraft then "draft" else "open" end)
+     elif $p.state == "MERGED" then "merged"
+     elif $p.state == "CLOSED" then "closed"
+     else "" end) as $state
+  | (if $p.state != "OPEN" then ""
+     elif $p.reviewDecision == "APPROVED" then "approved"
+     elif $p.reviewDecision == "CHANGES_REQUESTED" then "changes_requested"
+     elif $p.reviewDecision == "REVIEW_REQUIRED" then "pending"
+     elif any($p.latestReviews.nodes[]?; .state == "CHANGES_REQUESTED") then "changes_requested"
+     elif any($p.latestReviews.nodes[]?; .state == "APPROVED") then "approved"
+     else "pending" end) as $review
+  | (($p.commits.nodes[0].commit.statusCheckRollup.state // "")
+     | if . == "SUCCESS" then "pass"
+       elif . == "FAILURE" or . == "ERROR" then "fail"
+       elif . == "PENDING" or . == "EXPECTED" then "pending"
+       else "" end) as $ci
+  | (($p.totalCommentsCount // 0) | tostring) as $comments
+  | (if $p.headRefOid == $ENV.LOCAL_HEAD then "1" else "0" end) as $head_matches
+  | [($p.number | tostring), $state, $review, $ci, $comments, $head_matches, ($p.url // "")]
+  | join("\t")
+  end'
+
+# $1 が先頭に 0 のない 9 桁以内の正の整数なら 0 を返す (PR の番号とコメントの件数の検証)。
+# 値が 0 のときも偽を返すので、コメントが 0 件なら件数がないものとして扱われる。
+pr_is_positive_int() {
+  case "$1" in ''|0*|*[!0-9]*|??????????*) return 1 ;; esac
+}
+
+# キャッシュを読み、pr_fetched / pr_state / pr_number / pr_review / pr_ci / pr_comments /
+# pr_head_matches / pr_url に入れる。PR がないキャッシュは pr_state=none にする。
+# 読めない、または形が壊れている (fetched_at か number か state が不正、フィールド数が違う) ときは
+# 1 を返し、キャッシュがないものとして扱わせる。
+# それ以外のフィールドは信用せず、想定外の値はそのフィールドがないものとして扱う。
+# comments は 1 件以上のときだけ pr_comments に入れる。
+# url は https:// で始まり、残りが URL に使う ASCII の英数字と記号だけのときに残す (OSC 8 に
+# 埋め込むため)。許す文字を列挙するのは、[[:cntrl:]] などの文字クラスや A-Z の範囲が、どの文字を
+# 含むかを OS のロケール実装ごとに変え、両版で結果が食い違いうるため。
+# 描画経路で呼ぶので、組み込みの read とパラメータ展開だけで済ませる (fork しない)。
+pr_cache_load() {
+  local file=$1 line="" rest
+  local url_bad='*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~:/?#=&+@%-]*'
+  local -a f=()
+  pr_fetched="" pr_state="" pr_number="" pr_review="" pr_ci="" pr_comments="" pr_head_matches="" pr_url=""
+  [ -f "$file" ] || return 1
+  { IFS= read -r line; } 2>/dev/null < "$file"
+  [ -n "$line" ] || return 1
+  # タブは IFS の空白文字で、read で分けると連続するタブ (空のフィールド) が 1 つに潰れるため、
+  # パラメータ展開で 1 つずつ切り出す。
+  rest="${line}"$'\t'
+  while [ -n "$rest" ]; do
+    f+=("${rest%%$'\t'*}")
+    rest="${rest#*$'\t'}"
+  done
+  # 先頭が 0 の値 (0 単独は除く) は $((...)) で 8 進数と解釈され、08 などで算術エラーになるため弾く。
+  case "${f[0]}" in ''|0?*|*[!0-9]*|?????????????*) return 1 ;; esac
+  if [ "${#f[@]}" -eq 1 ]; then
+    pr_fetched=${f[0]}
+    pr_state=none
+    return 0
+  fi
+  [ "${#f[@]}" -eq 8 ] || return 1
+  pr_is_positive_int "${f[1]}" || return 1
+  case "${f[2]}" in open|draft|merged|closed) ;; *) return 1 ;; esac
+  pr_fetched=${f[0]}
+  pr_number=${f[1]}
+  pr_state=${f[2]}
+  case "${f[3]}" in approved|pending|changes_requested) pr_review=${f[3]} ;; esac
+  case "${f[4]}" in pass|fail|pending) pr_ci=${f[4]} ;; esac
+  pr_is_positive_int "${f[5]}" && pr_comments=${f[5]}
+  [ "${f[6]}" = "1" ] && pr_head_matches=1
+  case "${f[7]}" in
+    https://$url_bad) ;;
+    https://?*) pr_url=${f[7]} ;;
+  esac
+  return 0
+}
+
+# 読み込んだキャッシュから PR の状態表示の値を組み立てて pr_str に入れる。PR がなければ空。
+#   #<番号>: 状態の色で塗り、下線 (SGR 4) を付ける。merged / closed は取り消し線 (SGR 9) も重ねる。
+#            url があり FORCE_HYPERLINK=0 でなければ、ここだけを OSC 8 で PR へのリンクにする
+#   CI 記号: open / draft のときだけ、#<番号> に詰めて続ける
+#   件数:    open / draft でコメントが 1 件以上のときだけ、半角スペースを挟んで続ける。
+#            詰めると、CI 記号がないときに番号と続けて読めてしまう (#12 と 3 で #123)
+# OSC 8 のエスケープ列を含むので、truncate_label や ${#var} の幅計算には渡さない。
+format_pr() {
+  pr_str=""
+  local color="" deco=4 num
+  case "$pr_state" in
+    open)
+      case "$pr_review" in
+        approved)          color=$COLOR_success ;;
+        changes_requested) color=$COLOR_error ;;
+        *)                 color=$COLOR_permission ;;
+      esac
+      ;;
+    draft)  ;;
+    merged) color=$COLOR_merged; deco='4;9' ;;
+    closed) deco='4;9' ;;
+    *) return ;;
+  esac
+  num=$'\033['"${deco}m${color}#${pr_number}"$'\033[0m'
+  if [ -n "$pr_url" ] && [ "${FORCE_HYPERLINK-}" != "0" ]; then
+    num=$'\033]8;;'"${pr_url}"$'\a'"${num}"$'\033]8;;\a'
+  fi
+  pr_str=$num
+  case "$pr_state" in
+    open|draft)
+      case "$pr_ci" in
+        pass)    pr_str="${pr_str}${COLOR_success}✓"$'\033[0m' ;;
+        fail)    pr_str="${pr_str}${COLOR_error}✗"$'\033[0m' ;;
+        pending) pr_str="${pr_str}${COLOR_warning}●"$'\033[0m' ;;
+      esac
+      [ -n "$pr_comments" ] && pr_str="${pr_str} ${pr_comments}"
+      ;;
+  esac
+}
+
+# 読み込んだキャッシュから、次の取得までの間隔を pr_interval に入れる ($(...) を挟まないため)。
+# $1 はマーカーの mtime。キャッシュがない (pr_state が空) か、fetched_at がマーカーより古い
+# (最後の試行が失敗した、または実行中) ときは SLOW にする。
+pr_refresh_interval() {
+  local marker_mtime=$1
+  pr_interval=$PR_INTERVAL_SLOW_SEC
+  [ -n "$pr_state" ] || return
+  [ "$pr_fetched" -lt "$marker_mtime" ] && return
+  case "$pr_state" in
+    merged|closed) pr_interval=$PR_INTERVAL_DONE_SEC ;;
+    open|draft)
+      if [ "$pr_ci" = "pending" ] || [ "$pr_head_matches" != "1" ]; then
+        pr_interval=$PR_INTERVAL_FAST_SEC
+      fi
+      ;;
+  esac
+}
+
+# マーカー $1 の mtime から見て再取得の間隔が過ぎていれば 0 を返す。マーカーがなければ 0。
+#   $2 現在時刻。間隔は読み込んだキャッシュから pr_refresh_interval で決める
+pr_refresh_due() {
+  local marker=$1 now=$2 mtime
+  [ -f "$marker" ] || return 0
+  mtime=$(file_mtime "$marker")
+  [ -z "$mtime" ] && mtime=0
+  pr_refresh_interval "$mtime"
+  [ $((now - mtime)) -ge "$pr_interval" ]
+}
+
+# 前の取得がまだ動いていれば 0 を返す。PR_INFLIGHT_STALE_SEC より古い .inflight ($1) は
+# 子プロセスが異常終了した跡として消し、1 を返す。$2 は現在時刻。
+pr_inflight_busy() {
+  local inflight=$1 now=$2 mtime
+  [ -d "$inflight" ] || return 1
+  mtime=$(file_mtime "$inflight")
+  [ -z "$mtime" ] && mtime=0
+  [ $((now - mtime)) -le "$PR_INFLIGHT_STALE_SEC" ] && return 0
+  rmdir "$inflight" 2>/dev/null
+  return 1
+}
+
+# 取得の子プロセスを投げっぱなしで起動する。引数は pr_refresh_child と同じ。
+# ロックを解放した後に呼ぶ。fd 0/1/2 を /dev/null に付け替え、描画をブロックさせない。
+# GH_REPO は cwd ではなくそのリポジトリを問い合わせさせ、GH_FORCE_TTY / CLICOLOR_FORCE は
+# 出力を端末向けの書式や色付きにして TSV を壊すので外す。GH_TOKEN / GITHUB_TOKEN / GH_HOST /
+# GH_ENTERPRISE_TOKEN はユーザーが選んだ認証方法と接続先なので残す。
+# git 用の 4 つは maybe_git_fetch と同じ理由で設定する (子プロセスも git を呼ぶ)。
+pr_spawn_refresh() {
+  local cwd=$1 branch=$2 cache=$3 inflight=$4
+  ( unset GH_REPO GH_FORCE_TTY CLICOLOR_FORCE
+    export GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 GH_NO_EXTENSION_UPDATE_NOTIFIER=1
+    export GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/true \
+      SSH_ASKPASS=/bin/true SSH_ASKPASS_REQUIRE=force
+    pr_refresh_child "$cwd" "$branch" "$cache" "$inflight" >/dev/null 2>&1 </dev/null & )
+}
+
+# PR の状態表示の値を pr_str に入れ、必要ならバックグラウンドで取得を起動する。layout_token が
+# branch 列を組み立てるときだけ呼び、PR_STATUS=1 でなければ何もしない。PR_STATUS=0 か、
+# LAYOUT_LINE1 に branch が無ければ gh も date も cksum も起動しない。
+# キャッシュを先に読んでから起動するので、今回の描画は起動した取得の結果を待たない。
+# キーは毎回「今の cwd とブランチ」から作るため、ブランチの切り替えや /clear で別の PR が残らない。
+# fetched_at が現在より未来のキャッシュ (時計が戻った後など) は期限切れと同じく表示しない。
+pr_token() {
+  pr_str=""
+  [ "$PR_STATUS" = "1" ] || return
+  [ -n "$branch" ] && [ "$branch_detached" != "1" ] && [ -n "$HISTORY_DIR" ] || return
+  command -v gh >/dev/null 2>&1 || return
+  local key cache now age
+  key=$(printf '%s\n%s' "$cwd" "$branch" | cksum)
+  cache="${HISTORY_DIR}/pr-${key%% *}"
+  now=$(date +%s)
+  if pr_cache_load "$cache"; then
+    age=$((now - pr_fetched))
+    [ "$age" -ge 0 ] && [ "$age" -le "$PR_STALE_SEC" ] && format_pr
+  fi
+  maybe_pr_refresh "$cwd" "$branch" "$cache" "$now"
+}
+
+# 子プロセスの入口。pr_spawn_refresh の ( ... & ) の中で呼ぶ (描画は待たない)。
+#   $1 cwd / $2 ローカルのブランチ名 / $3 キャッシュのパス / $4 .inflight のパス
+# .inflight は mkdir の原子性で取り合い、作れなければ (ほかの子プロセスが先に作った) 何もしない。
+# 後始末は trap ではなく呼び出しの後で行う。bash 3.2 では & で起動したサブシェルに張った
+# EXIT の trap が走らないため。kill などで rmdir まで届かなかった印は PR_INFLIGHT_STALE_SEC で消える。
+# スリープなどで止まっている間に親が印を古いものとして消し、次の子が作り直していることがあるので、
+# mtime が作ったときと同じ (自分の印) ときだけ消す。
+pr_refresh_child() {
+  local inflight=$4 created
+  mkdir "$inflight" 2>/dev/null || return
+  created=$(file_mtime "$inflight")
+  pr_refresh_run "$1" "$2" "$3"
+  [ "$(file_mtime "$inflight")" = "$created" ] && rmdir "$inflight" 2>/dev/null
+}
+
+# 子プロセスの本体。head を決めて gh を 1 回だけ呼び、成功したらキャッシュを置き換える。
+# head のブランチ名とオーナーは push 先 (@{push}) から決める。ローカル名で探すと、
+# push 先の名前が違うブランチ (gh pr checkout の <owner>-<branch> など) で PR が見つからない。
+# push 先が分からない (まだ push していない) ときは、ローカル名と base リポジトリのオーナーを使う。
+# 失敗 (gh の非ゼロ終了、打ち切り、想定外の出力) のときはキャッシュを書き換えない。
+pr_refresh_run() {
+  local cwd=$1 branch=$2 cache=$3
+  local started head push remote url path head_branch=$branch head_owner=""
+  started=$(date +%s)
+  # gh は {owner} / {repo} をカレントディレクトリのリポジトリから決めるので cd する。
+  cd "$cwd" 2>/dev/null || return
+  head=$(git -C "$cwd" rev-parse HEAD 2>/dev/null) || return
+  [ -n "$head" ] || return
+  if push=$(git -C "$cwd" rev-parse --abbrev-ref '@{push}' 2>/dev/null); then
+    case "$push" in
+      ?*/?*)
+        remote=${push%%/*}
+        head_branch=${push#*/}
+        # URL からオーナーを取り出す。git@host:owner/repo.git / https://host/owner/repo(.git) /
+        # ssh://git@host/owner/repo の 3 形式に対応する。取れなければ base のオーナーを使う。
+        # --push で pushurl を優先する (fetch は upstream、push は fork の remote でも push 先を取る)。
+        if url=$(git -C "$cwd" remote get-url --push "$remote" 2>/dev/null); then
+          case "$url" in
+            *://*) path=${url#*://}; path=${path#*/} ;;
+            *:*)   path=${url#*:} ;;
+            *)     path="" ;;
+          esac
+          case "$path" in ?*/?*) head_owner=${path%%/*} ;; esac
+        fi
+        ;;
+    esac
+  fi
+
+  local tmp
+  tmp=$(mktemp "${cache}.tmp.XXXXXX") || return
+  # head は -f (文字列のまま) で渡す。-F だと 123 / true / null などのブランチ名が数値や真偽値に
+  # 変換されて String! 型の変数とずれ、@ で始まる名前はファイルとして読まれる。
+  LOCAL_HEAD=$head HEAD_OWNER=$head_owner \
+    gh api graphql -f query="$PR_QUERY" -F owner='{owner}' -F repo='{repo}' \
+      -f head="$head_branch" --jq "$PR_JQ" >"$tmp" 2>/dev/null </dev/null &
+  # macOS には timeout(1) がないため、gh をさらにバックグラウンドで起動して見張り、
+  # PR_TIMEOUT_SEC を過ぎたら kill する。ネットワークが詰まっても gh が溜まらない。
+  # sleep の回数はスリープ中に進まないので、壁時計の SECONDS でも打ち切る (印の stale 判定と揃える)。
+  # TERM で終わらなければ 1 秒後に KILL する (wait が gh を待ち続けないように)。
+  local gh_pid=$! waited=0 rc=0 deadline=$((SECONDS + PR_TIMEOUT_SEC))
+  while kill -0 "$gh_pid" 2>/dev/null; do
+    if [ "$waited" -ge $((PR_TIMEOUT_SEC * 5)) ] || [ "$SECONDS" -gt "$deadline" ]; then
+      kill "$gh_pid" 2>/dev/null
+      sleep 1
+      kill -9 "$gh_pid" 2>/dev/null
+      break
+    fi
+    sleep 0.2
+    waited=$((waited + 1))
+  done
+  wait "$gh_pid" || rc=$?
+
+  local out="" line=""
+  [ "$rc" -eq 0 ] && out=$(cat "$tmp" 2>/dev/null)
+  case "$out" in
+    *$'\n'*) ;;
+    none) line=$started ;;
+    [1-9]*$'\t'*) line="${started}"$'\t'"${out}" ;;
+  esac
+  if [ -z "$line" ]; then
+    rm -- "$tmp" 2>/dev/null
+    return
+  fi
+
+  # 自分より後に始まった取得の結果が既にあれば、古い結果で上書きしない。現在より未来の
+  # fetched_at (時計が戻った後など) は後から始まった取得のものではないので上書きする。
+  # 子プロセスの中なので、pr_cache_load が描画用の変数を書き換えても描画には影響しない。
+  local finished
+  finished=$(date +%s)
+  if pr_cache_load "$cache" && [ "$pr_fetched" -gt "$started" ] \
+     && [ "$pr_fetched" -le "$finished" ]; then
+    rm -- "$tmp" 2>/dev/null
+    return
+  fi
+  # 一時ファイルに書いてから mv で置き換え、描画が書きかけのファイルを読まないようにする。
+  if printf '%s\n' "$line" >"$tmp"; then
+    mv -- "$tmp" "$cache" 2>/dev/null || rm -- "$tmp" 2>/dev/null
+  else
+    rm -- "$tmp" 2>/dev/null
+  fi
+}
+
+# maybe_pr_refresh: 前回の試行から間隔が過ぎていれば、バックグラウンドで取得を起動する。
+#   $1 cwd / $2 ローカルのブランチ名 / $3 キャッシュのパス / $4 現在時刻
+# 前提 (ブランチがある、HISTORY_DIR が有効、gh がある) は呼び出し側の pr_token で確かめる。
+# 今回の描画は待たず、結果は次回以降の描画に反映される。maybe_git_fetch と同じ約束事を守る:
+#   - ロック取得 → 間隔の再確認 → マーカー更新 → ロック解放 → 子プロセス起動、の順に行う
+#   - マーカーを書けなければ子プロセスを起動しない (間引きの基点が残らず描画ごとに起動するため)
+#   - fd の付け替えとプロンプトを封じる環境変数は pr_spawn_refresh にまとめてある
+# 両版で違うのはロックの取り方だけ。
+maybe_pr_refresh() {
+  local cwd=$1 branch=$2 cache=$3 now=$4
+  local marker="${cache}.marker" inflight="${cache}.inflight"
+  pr_refresh_due "$marker" "$now" || return
+  pr_inflight_busy "$inflight" "$now" && return
+
+  local lockdir="${marker}.lockd"
+  acquire_lock "$lockdir" || return
+
+  # ロック取得までの待機中に他プロセスが起動済みかもしれないので間隔を再確認する。
+  # マーカーの書き込み失敗時の扱いとリダイレクトの書き方は maybe_git_fetch と同じ。
+  if ! pr_refresh_due "$marker" "$now" || ! { true > "$marker"; } 2>/dev/null; then
+    release_lock "$lockdir"
+    return
+  fi
+
+  # marker 更新 → unlock → 子プロセス起動 の順を入れ替えない (Linux 版と共通)。
+  release_lock "$lockdir"
+  pr_spawn_refresh "$cwd" "$branch" "$cache" "$inflight"
+}
+
 # レートリミット残量の文字列を組み立てる (履歴チャート版)
 # 第3引数 chart は呼び出し側で構築済みの履歴チャート (残量ベース、HISTORY_LEN 文字)
 format_rate() {
@@ -758,7 +1168,7 @@ format_ctx() {
 
 # レイアウトのトークンを描画済み文字列に引く。値は token_value に返す (呼び出し側で $(...) を
 # 挟まないため。branch/session のトリムは従来どおり truncate_label の command substitution を伴う)。
-# トークン内部の区切り (branch の ab/diff 前のスペース、model_ctx の ∙/スペース) は
+# トークン内部の区切り (branch の ab/diff/PR 前のスペース、model_ctx の ∙/スペース) は
 # トークン間の " | " とは別ルールなので、ここで組み立て済みの 1 塊として返す。
 layout_token() {
   token_value=""
@@ -766,7 +1176,8 @@ layout_token() {
     directory) token_value="$dir_field" ;;
     branch)
       if [ -n "$branch" ]; then
-        token_value="$(truncate_label 25 "$branch")${ab_str:+ $ab_str}${diff_str:+ $diff_str}"
+        pr_token
+        token_value="$(truncate_label 25 "$branch")${ab_str:+ $ab_str}${diff_str:+ $diff_str}${pr_str:+ $pr_str}"
       fi
       ;;
     session)

@@ -1,0 +1,65 @@
+{
+  "data": {
+    "repository": {
+      "owner": {
+        "login": "my-org"
+      },
+      "pullRequests": {
+        "nodes": [
+          {
+            "number": 31,
+            "url": "https://github.com/my-org/my-project/pull/31",
+            "state": "OPEN",
+            "isDraft": false,
+            "headRefOid": "ffffffffffffffffffffffffffffffffffffffff",
+            "headRepositoryOwner": {
+              "login": "stranger"
+            },
+            "reviewDecision": null,
+            "latestReviews": {
+              "nodes": []
+            },
+            "totalCommentsCount": 0,
+            "commits": {
+              "nodes": [
+                {
+                  "commit": {
+                    "statusCheckRollup": {
+                      "state": "SUCCESS"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "number": 12,
+            "url": "https://github.com/my-org/my-project/pull/12",
+            "state": "MERGED",
+            "isDraft": false,
+            "headRefOid": "0123456789abcdef0123456789abcdef01234567",
+            "headRepositoryOwner": {
+              "login": "Me"
+            },
+            "reviewDecision": null,
+            "latestReviews": {
+              "nodes": []
+            },
+            "totalCommentsCount": 0,
+            "commits": {
+              "nodes": [
+                {
+                  "commit": {
+                    "statusCheckRollup": {
+                      "state": "SUCCESS"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

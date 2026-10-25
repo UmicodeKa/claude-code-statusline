@@ -1,0 +1,2 @@
+# review / ci / comments / url が想定外: それぞれ無いものとして扱う (permission の色、CI 記号なし、件数なし、リンクなし)
+matches_line1: ^main · \\e\[4m\\e\[38;2;177;185;249m#12\\e\[0m$

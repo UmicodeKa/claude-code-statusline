@@ -1,0 +1,46 @@
+{
+  "data": {
+    "repository": {
+      "owner": {
+        "login": "my-org"
+      },
+      "pullRequests": {
+        "nodes": [
+          {
+            "number": 12,
+            "url": "https://github.com/my-org/my-project/pull/12",
+            "state": "OPEN",
+            "isDraft": false,
+            "headRefOid": "fedcba9876543210fedcba9876543210fedcba98",
+            "headRepositoryOwner": {
+              "login": "my-org"
+            },
+            "reviewDecision": null,
+            "latestReviews": {
+              "nodes": [
+                {
+                  "state": "APPROVED"
+                },
+                {
+                  "state": "CHANGES_REQUESTED"
+                }
+              ]
+            },
+            "totalCommentsCount": 14,
+            "commits": {
+              "nodes": [
+                {
+                  "commit": {
+                    "statusCheckRollup": {
+                      "state": "FAILURE"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

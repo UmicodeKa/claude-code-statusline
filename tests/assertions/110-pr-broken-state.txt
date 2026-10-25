@@ -1,0 +1,2 @@
+# state が想定外の値 (壊れている): 列ごと省略する
+matches_line1: ^main ·$
