@@ -54,7 +54,9 @@ macOS 版で `flock` を使わないのは、macOS に標準で入っておら�
 
 - `paint` は effect 名を見て `static` か `rainbow` に振り分けるだけのディスパッチャです
 - `static <text> <color>` は単色で囲んで末尾に `\033[0m` を付けます。color が空のときは文字列を末尾改行付きで素通しします
-- 色を決める関数 (`model_color` / `effort_color` / `ctx_color` / `limit_color`) は `"static <ansi>"` / `"static"` / `"rainbow"` という effect 指定の文字列を返し、呼び出し側はそれをクォートせずに展開して `paint` に渡します
+- 色を決める関数 (`model_color` / `effort_color` / `ctx_color` / `limit_color`) は `"static <ansi>"` / `"static"` / `"rainbow"` という effect 指定の文字列を `printf -v` で第 1 引数の変数に入れ、呼び出し側はそれをクォートせずに展開して `paint` に渡します
+  - `$(...)` で受けないので fork しません
+  - 無色は `"static"` だけなので、色が付くかは `"static"` との比較で判定します
 
 新しいエフェクトを足すときは `paint` に分岐を 1 つ追加すれば済みます。個別の経路から `static` を直接呼ぶ形に戻すと、エフェクトの追加箇所が分散します。
 
@@ -112,7 +114,8 @@ effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の�
     - `pr_str` は同じ case 節で直前に呼ぶ `pr_token` が設定する。連結を `pr_token` より前に移すと PR が出なくなる
 - `model` と `ctx` を別トークンに分けないのは、トークン間の区切りが組み合わせごとに変わり、実装とテストの両方が複雑になるためです
 - `build_layout` の第 3 引数で｢空の値を積むか｣を切り替えます。1 行目は `0` (空なら列ごと省略)、2 行目は `1` (空でも積む)
-- 2 行目は走査対象の末尾に既定の全トークン (`|model_ctx|rate|weekly`) を足し、書かれなかったトークンを既定順で補います。これにより `✻` を含む `model_ctx` は消せません。以前の既定値 `model_ctx|rate` を写した conf でも、`weekly` は末尾に補われます
+- 2 行目は走査対象の末尾に既定の全トークン (`LAYOUT_LINE2_TOKENS`、`model_ctx|rate|weekly`) を足し、書かれなかったトークンを既定順で補います。これにより `✻` を含む `model_ctx` は消せません。以前の既定値 `model_ctx|rate` を写した conf でも、`weekly` は末尾に補われます
+- 各行のトークンの一覧 (`LAYOUT_LINE1_TOKENS` / `LAYOUT_LINE2_TOKENS`) は、既定値、補完、有効なトークンの判定に共通で使います。トークンを足すときは 1 か所だけを直します
 - 未知のトークンは黙って無視し、重複は最初の 1 回だけ採ります。前後の空白 (タブを含む) はパラメータ展開で除去し、`tr` や `awk` は使いません
 - トークンから値への対応は連想配列ではなく `case` で引き、値はグローバル変数 `token_value` で返します。macOS の `/bin/bash` 3.2 には連想配列が無く、`$(...)` で受けると fork が増えるためです
   - 例外として、branch / session のトリムは `truncate_branch` / `truncate_label` の command substitution を伴います
@@ -130,7 +133,7 @@ rate チャートは `RATE_CHART_LEN` (既定 6) 文字で、左 `RATE_CHART_LEN
 
 ### スパークと残量の計算を fork せずに行う
 
-スパーク文字 (`spark_of`)、使用率の丸め (`round_int`)、残量の計算 (`set_remaining`) は、結果を `printf -v` で呼び出し側の変数に書き込みます。`$(...)` で受けると呼ぶたびに fork が 1 つ増え、rate のチャートは文字数ぶん呼ぶためです。
+スパーク文字 (`spark_of`)、使用率の丸め (`round_int`)、残量の計算 (`set_remaining`)、色の決定 (`*_color`) は、結果を `printf -v` で呼び出し側の変数に書き込みます。`$(...)` で受けると呼ぶたびに fork が 1 つ増え、rate のチャートは文字数ぶん呼ぶためです。
 
 - `spark_of` は、整数の値を bash の算術式 `(8p + 50) / 100` で段に直し、`awk` を起動しません。`awk` を使うのは小数 (ctx の使用率) と 9 桁以上の値だけです。rate の履歴と残量は常に整数なので、チャートの文字数によらずスパークのための `awk` は ctx の分だけになります
 - 整数 p では、`awk` の `int(p / 100 × 8 + 0.5)` と算術式 `(8p + 50) / 100` が一致します。どちらも 0 に向かって切り捨てるので負の値でも同じで、`8p + 50` は 4 で割ると 2 余り 100 の倍数にならないため、浮動小数点の誤差で段が変わる境目もありません
@@ -156,8 +159,12 @@ rate チャートは `RATE_CHART_LEN` (既定 6) 文字で、左 `RATE_CHART_LEN
 - `%a` は `LC_ALL=C.UTF-8` の下で評価されるため、利用者のロケールによらず `Sun`〜`Sat` の英語の略称になります
 - 使用率が欠落しても `· --` で列を残します。ctx (`· --`) や rate (`<チャート> --`) と同じく、｢2 行目は空でも積む｣を保つためです
 - 描画コスト
-  - 増える: weekly の分として、描画ごとに command substitution が 3 つ (`format_limit` と、その中の `limit_color` / `format_reset_time`) と `date` の起動が 1 つ。`resets_at` が無いときは `format_reset_time` を呼ばない
-  - 減る: `round_int` / `spark_of` への置き換えで、`$(printf ...)` が 3 つ、rate のチャート (`RATE_CHART_LEN` 文字) と右端の現在値の分の command substitution と `awk`、ctx のスパークを包む command substitution が 1 つ
+  - 増える: weekly の分として、描画ごとに command substitution が 2 つ (`format_limit` と、その中の `format_reset_time`) と `date` の起動が 1 つ。`resets_at` が無いときは `format_reset_time` を呼ばない
+  - 減る: `round_int` / `spark_of` / `*_color` を `printf -v` で返す形にしたことで、次が減る
+    - `$(printf ...)` が 3 つ
+    - rate のチャート (`RATE_CHART_LEN` 文字) と右端の現在値の分の command substitution と `awk`
+    - ctx のスパークを包む command substitution が 1 つ
+    - 色の決定 (`model_color` / `effort_color` / `ctx_color` / rate の `limit_color`) の command substitution が 4 つ
   - 既定のチャート長 6 では、全体として以前より fork が減ります
 
 ### 入力 JSON の読み取り
@@ -439,7 +446,7 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 
 ### 2 行目のトークンは空でも積む
 
-- 箇所: `build_layout "${LAYOUT_LINE2}|model_ctx|rate|weekly" "|model_ctx|rate|weekly|" 1`
+- 箇所: `build_layout "${LAYOUT_LINE2}|${LAYOUT_LINE2_TOKENS}" "|${LAYOUT_LINE2_TOKENS}|" 1`
 - 何をしているか: 2 行目は値が空でも列を落とさない。書かれなかったトークンは末尾に補う
 - 外すと何が起きるか: 第 3 引数を `0` にすると｢2 行目は常に出す｣が成り立たなくなる。ただし `format_limit` と `model_ctx` は常に空でない値を返す (使用率が欠落しても `<チャート> --` / `· --`) ので、今のテストは通ったまま不変条件だけが失われる
 - 守っているテスト: 補完は `89-layout-line2-reorder`、`93-layout-line2-partial`、`91-layout-unknown-token`、`145-layout-line2-weekly-first`。weekly の欠落時に列が残ることは `143-weekly-missing`。空でも積むこと自体はテストなし

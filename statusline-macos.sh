@@ -70,15 +70,18 @@ SHOW_CWD="${CLAUDE_STATUSLINE_SHOW_CWD:-${SHOW_CWD:-1}}"
 # 未知のトークンは黙って無視する。空文字は既定値扱い (1 行目を消したいときは none 等の未知トークンを書く)。
 # SHOW_CWD=0 は 1 行目から directory を外すのと等価 (directory トークンが空を返す)。
 # env CLAUDE_STATUSLINE_LAYOUT_LINE1 / CLAUDE_STATUSLINE_LAYOUT_LINE2 でも上書き可。
-LAYOUT_LINE1="${CLAUDE_STATUSLINE_LAYOUT_LINE1:-${LAYOUT_LINE1:-directory|branch|session}}"
-LAYOUT_LINE2="${CLAUDE_STATUSLINE_LAYOUT_LINE2:-${LAYOUT_LINE2:-model_ctx|rate|weekly}}"
+# 各行で使えるトークンの一覧 (既定の並びを兼ねる)。既定値、2 行目の補完、有効なトークンの判定は
+# この 1 か所から組み立てる (トークンを足すときにここだけ直せば済むように)。
+LAYOUT_LINE1_TOKENS="directory|branch|session"
+LAYOUT_LINE2_TOKENS="model_ctx|rate|weekly"
+LAYOUT_LINE1="${CLAUDE_STATUSLINE_LAYOUT_LINE1:-${LAYOUT_LINE1:-$LAYOUT_LINE1_TOKENS}}"
+LAYOUT_LINE2="${CLAUDE_STATUSLINE_LAYOUT_LINE2:-${LAYOUT_LINE2:-$LAYOUT_LINE2_TOKENS}}"
 
 # 数値の設定 (conf のみで変える。env の上書き口は持たない)。既定値と範囲は後方の「間引き定数」の
-# clamp_int の呼び出しにだけ置く (既定値が 2 か所にあると、空の値と不正な値で戻る先が食い違いうるため)。
-#   RATE_CHART_LEN:         rate チャートの文字数 (既定 6、2〜20)。右端 1 文字が現在値、左が履歴の遷移
-#   POLL_INTERVAL_SEC:      履歴サンプリング間隔 (秒)。この秒数未満の連続呼び出しは skip
-#                           (既定 480、60〜18000/RATE_CHART_LEN。既定のチャート長では 3000)
-#   GIT_FETCH_INTERVAL_SEC: git fetch の最小間隔 (秒)。この間隔未満の連続呼び出しは fetch を skip (既定 900、60〜1800)
+# clamp_int の呼び出しと MIN/MAX 定数にだけ置き、ここには書かない (2 か所にあると食い違いうるため)。
+#   RATE_CHART_LEN:         rate チャートの文字数。右端 1 文字が現在値、左が履歴の遷移
+#   POLL_INTERVAL_SEC:      履歴サンプリング間隔 (秒)。この秒数未満の連続呼び出しは skip。上限は RATE_CHART_LEN で決まる
+#   GIT_FETCH_INTERVAL_SEC: git fetch の最小間隔 (秒)。この間隔未満の連続呼び出しは fetch を skip
 # RATE_CHART_LEN は POLL_INTERVAL_SEC の上限を決め、全セッション共通の履歴ファイルの間引きに効く。
 # セッションごとに変えられると最も短い間隔のセッションが追記を支配するため、env の口を付けない。
 
@@ -450,8 +453,8 @@ history_chart() {
 
 # 色付けは 3 段構成: paint (エフェクトディスパッチャ) → static / rainbow (プリミティブ)。
 # 全色付け経路 (model / rate / weekly / ctx / diff) は paint を経由する。色決定関数
-# (model_color / limit_color / ctx_color) は "static <ansi>" / "rainbow" のような
-# effect 名を返し、それを paint の <effect> [arg] にそのまま展開して渡す。
+# (model_color / effort_color / limit_color / ctx_color) は "static <ansi>" / "rainbow" のような
+# effect 名を変数に入れ、それを paint の <effect> [arg] にそのまま展開して渡す。
 # 将来エフェクトが増えても paint に 1 ブランチ足すだけで済む。
 
 # static: 文字列を単色で囲む。color が空なら素通し。
@@ -512,57 +515,57 @@ paint() {
   esac
 }
 
-# レートリミットの残量に応じた paint の effect 指定 (static <ansi> / static) を返す (rate と weekly で共有)。
+# 色を決める関数 (*_color <変数名> <値>) は、paint の effect 指定を printf -v で第 1 引数の変数に入れる
+# (spark_of と同じく $(...) で受けないので fork しない)。値は第 2 引数をそのまま使い、ローカル変数を持たない。
+# 無色は "static" だけ。呼び出し側は "static" と比べて色が付くかを判定できる。
+
+# レートリミットの残量に応じた paint の effect 指定 (static <ansi> / static) を入れる (rate と weekly で共有)。
 # 警戒→危険→致命の 3 段を公式パレットで階調化: 40% 以下=warning (黄), 15% 以下=claude (橙),
 # 5% 以下=error (赤) + 点滅 (\033[5m)。点滅は色ではなく属性なので公式色に重ねて残す。
 limit_color() {
-  local remaining=$1
-  if   [ "$remaining" -le 5 ];  then printf 'static \033[5m%s' "$COLOR_error"
-  elif [ "$remaining" -le 15 ]; then printf 'static %s' "$COLOR_claude"
-  elif [ "$remaining" -le 40 ]; then printf 'static %s' "$COLOR_warning"
-  else                               printf 'static'
+  if   [ "$2" -le 5 ];  then printf -v "$1" 'static \033[5m%s' "$COLOR_error"
+  elif [ "$2" -le 15 ]; then printf -v "$1" 'static %s' "$COLOR_claude"
+  elif [ "$2" -le 40 ]; then printf -v "$1" 'static %s' "$COLOR_warning"
+  else                       printf -v "$1" 'static'
   fi
 }
 
-# モデル名に応じた ✻ + モデル名の paint の effect 指定を返す。
+# モデル名に応じた ✻ + モデル名の paint の effect 指定を入れる。
 # 公式テーマのセマンティック色を流用: Fable→autoAccept (紫), Opus→claude (ブランドのオレンジ),
 # Haiku→subagent_cyan (シアン), Sonnet 等→無色。
 # Fable はバージョン非依存に *Fable* 部分一致で判定し、*Opus* より前に置く。
 model_color() {
-  local model=$1
-  case "$model" in
-    *Fable*) printf 'static %s' "$COLOR_autoAccept" ;;
-    *Opus*)  printf 'static %s' "$COLOR_claude" ;;
-    *Haiku*) printf 'static %s' "$COLOR_subagent_cyan" ;;
-    *)       printf 'static' ;;
+  case "$2" in
+    *Fable*) printf -v "$1" 'static %s' "$COLOR_autoAccept" ;;
+    *Opus*)  printf -v "$1" 'static %s' "$COLOR_claude" ;;
+    *Haiku*) printf -v "$1" 'static %s' "$COLOR_subagent_cyan" ;;
+    *)       printf -v "$1" 'static' ;;
   esac
 }
 
-# reasoning effort (推論強度) に応じた paint の effect 指定を返す。model とは別色で塗る。
+# reasoning effort (推論強度) に応じた paint の effect 指定を入れる。model とは別色で塗る。
 # low/medium/high/xhigh は単色、max は rainbow (RAINBOW_PALETTE で 1 文字ずつ着色)。
 # ultracode は JSON 入力上 xhigh と区別できないため専用色は持たない (xhigh と同一)。
 # *) は想定外 level でも無色で素通しする保険。空文字は呼び出し側でガード済み。
 effort_color() {
-  local level=$1
-  case "$level" in
-    low)    printf 'static %s' "$COLOR_warning" ;;
-    medium) printf 'static %s' "$COLOR_success" ;;
-    high)   printf 'static %s' "$COLOR_permission" ;;
-    xhigh)  printf 'static %s' "$COLOR_autoAccept" ;;
-    max)    printf 'rainbow' ;;
-    *)      printf 'static' ;;
+  case "$2" in
+    low)    printf -v "$1" 'static %s' "$COLOR_warning" ;;
+    medium) printf -v "$1" 'static %s' "$COLOR_success" ;;
+    high)   printf -v "$1" 'static %s' "$COLOR_permission" ;;
+    xhigh)  printf -v "$1" 'static %s' "$COLOR_autoAccept" ;;
+    max)    printf -v "$1" 'rainbow' ;;
+    *)      printf -v "$1" 'static' ;;
   esac
 }
 
-# 使用率に応じた paint の effect 指定 (static <ansi> / static) を返す。
+# 使用率に応じた paint の effect 指定 (static <ansi> / static) を入れる。
 # 警戒→危険→致命の 3 段を公式パレットで階調化: 70% 以上=warning (黄), 80% 以上=claude (橙),
 # 90% 以上=error (赤) + 点滅 (\033[5m)。点滅は色ではなく属性なので公式色に重ねて残す。
 ctx_color() {
-  local used=$1
-  if   [ "$used" -ge 90 ]; then printf 'static \033[5m%s' "$COLOR_error"
-  elif [ "$used" -ge 80 ]; then printf 'static %s' "$COLOR_claude"
-  elif [ "$used" -ge 70 ]; then printf 'static %s' "$COLOR_warning"
-  else                          printf 'static'
+  if   [ "$2" -ge 90 ]; then printf -v "$1" 'static \033[5m%s' "$COLOR_error"
+  elif [ "$2" -ge 80 ]; then printf -v "$1" 'static %s' "$COLOR_claude"
+  elif [ "$2" -ge 70 ]; then printf -v "$1" 'static %s' "$COLOR_warning"
+  else                       printf -v "$1" 'static'
   fi
 }
 
@@ -1182,12 +1185,10 @@ format_limit() {
 
   [ -z "$remaining" ] && { printf '%s\n' "${chart} --"; return; }
 
-  # limit_color は paint の effect 指定 ("static <ansi>" / "static") を返す。
-  # 色付き分岐は ANSI コードを伴うとき (= "static " の後ろに値があるとき) だけ。
-  local color_spec ansi
-  color_spec=$(limit_color "$remaining")
-  ansi=${color_spec#static}
-  ansi=${ansi# }
+  # limit_color は paint の effect 指定 ("static <ansi>" / "static") を入れる。
+  # 色付き分岐は ANSI コードを伴うとき (= 無色の "static" でないとき) だけ。
+  local color_spec
+  limit_color color_spec "$remaining"
 
   # 数値は色が付くとき (= 残量が減ってきたとき) だけ表示する。
   # 区切りのハイフンも数値側に組み込む: デフォルトは `chart HH:MM`、
@@ -1198,7 +1199,7 @@ format_limit() {
   fi
 
   local body
-  if [ -n "$ansi" ]; then
+  if [ "$color_spec" != static ]; then
     if [ -n "$time_str" ]; then
       body="${chart} ${remaining}% - ${time_str}"
     else
@@ -1225,13 +1226,11 @@ format_ctx() {
   spark_of spark "$ctx_pct"
   round_int ctx_int "$ctx_pct"
 
-  # ctx_color は paint の effect 指定 ("static <ansi>" / "static") を返す。
-  # 色付き分岐は ANSI コードを伴うときだけ。
-  local color_spec ansi
-  color_spec=$(ctx_color "$ctx_int")
-  ansi=${color_spec#static}
-  ansi=${ansi# }
-  if [ -n "$ansi" ]; then
+  # ctx_color は paint の effect 指定 ("static <ansi>" / "static") を入れる。
+  # 色付き分岐は ANSI コードを伴うとき (= 無色の "static" でないとき) だけ。
+  local color_spec
+  ctx_color color_spec "$ctx_int"
+  if [ "$color_spec" != static ]; then
     paint "${spark} ${ctx_int}%" $color_spec
   else
     printf '%s\n' "$spark"
@@ -1407,11 +1406,11 @@ spark_of weekly_spark "$weekly_remaining"
 weekly_str=$(format_limit "$weekly_remaining" "$weekly_reset" "$weekly_spark" '%a')
 
 # ✻ (+ トリム後モデル名) をモデル色で塗る。色判定はトリム前の全長で行う。
-# model_color は paint の effect 指定 (Fable/Opus/Haiku→static <ansi>, 他→static) を返す。
+# model_color は paint の effect 指定 (Fable/Opus/Haiku→static <ansi>, 他→static) を model_effect に入れる。
 # 全モデルが単色 (無色含む)。無色 (Sonnet) でも $(...) で末尾改行が
 # 除去されるため後続の連結で出力は崩れない。
 # SHOW_MODEL_NAME=0 のときは ✻ 単体を model 色で塗る (記号の色でモデルを判別するため常に残す)。
-model_effect=$(model_color "$model_str")
+model_color model_effect "$model_str"
 if [ "$SHOW_MODEL_NAME" = "1" ]; then
   model_field=$(paint "✻ $(truncate_label 13 "$model_str")" $model_effect)
 else
@@ -1427,7 +1426,7 @@ fi
 # effort 語句のみ effort_effect で塗る (∙ は塗らない。max でも ∙ は rainbow 循環に入らない)。
 # 連結は変数展開のみ。effort_field は $(...) で改行除去済みのため static 無色時の末尾改行は混入しない。
 if [ -n "$effort" ]; then
-  effort_effect=$(effort_color "$effort")
+  effort_color effort_effect "$effort"
   effort_field=$(paint "$effort" $effort_effect)
   if [ "$SHOW_MODEL_NAME" = "1" ]; then
     model_field="${model_field}∙${effort_field}"
@@ -1461,7 +1460,7 @@ fi
 # model_ctx は model と ctx をスペース 1 個で結合した 1 トークン (両者の間にパイプは出さない)。
 # 2 行目は常に出力するため、値が空でも要素を落とさず無条件に積む (空なら省略は 1 行目のみ)。
 # 末尾に既定の全トークンを足して走査し、書かれなかったトークンを既定順で補う (✻ を消せないようにする)。
-build_layout "${LAYOUT_LINE2}|model_ctx|rate|weekly" "|model_ctx|rate|weekly|" 1
+build_layout "${LAYOUT_LINE2}|${LAYOUT_LINE2_TOKENS}" "|${LAYOUT_LINE2_TOKENS}|" 1
 parts=("${layout_parts[@]}")
 
 # 1 行目の列順: LAYOUT_LINE1 (既定 directory? → branch? → session?)
@@ -1469,7 +1468,7 @@ parts=("${layout_parts[@]}")
 # 値が空のトークンと未知のトークンは列ごと省略する (区切りも出さない)。
 # 全部空のときは改行そのものを出さない (空行が statusline の高さを 1 行占有するため)。
 # 改行は 1 行目の**末尾**に置く (2 行目の先頭に置くと、1 行目が無いとき先頭に空行が出る)。
-build_layout "$LAYOUT_LINE1" "|directory|branch|session|" 0
+build_layout "$LAYOUT_LINE1" "|${LAYOUT_LINE1_TOKENS}|" 0
 line1_parts=("${layout_parts[@]}")
 
 # " | " で結合
