@@ -1,0 +1,8 @@
+# conf の RATE_CHART_LEN=0 は下限 2 に丸められ、チャートは 2 文字になる。
+# 範囲外や不正な値でもエラーを出さずに描画を続ける (算術エラーや [ ] の整数エラーが出力に混ざらない)。
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{2} 22:13 \| · --$
+matches_line1: ^statusline-demo$
+not_contains: integer
+not_contains: base
+not_contains: syntax
+exit_code: 0

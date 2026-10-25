@@ -1,6 +1,6 @@
 # effort フィールド欠落 (非対応モデル) -> effort もその前のスペースも一切出さない。
 # 出力は既存の effort 非対応ケースと完全同一構造 (✻ Sonnet 4.6 のみ、effort 部なし)。
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
 matches_line1: ^statusline-demo$
 not_contains_line2: \e[38;2;
 not_contains: low

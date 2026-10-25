@@ -1,5 +1,5 @@
 # rate=60% (残量 40 ジャスト) -> 黄(warning) + chart 40% - 22:13
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| \\e\[38;2;255;193;7m[▁▂▃▄▅▆▇█]{6} 40% - 22:13\\e\[0m$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| \\e\[38;2;255;193;7m[▁▂▃▄▅▆▇█]{12} 40% - 22:13\\e\[0m \| · --$
 matches_line1: ^statusline-demo$
 contains: \e[38;2;255;193;7m
 contains: 40% - 22:13

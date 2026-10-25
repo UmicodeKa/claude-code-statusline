@@ -37,12 +37,13 @@ CI は Linux 版のみを実行します。macOS 版の変更はローカルの 
 - 描画経路 (`git_ahead_behind` など) に同期 `git fetch` や追加の `git` / `gh` 呼び出しを足すと、ネットワーク I/O や fork が増えて描画が遅くなる。([詳細](docs/DESIGN.md#描画経路にネットワーク-io-と余分な-git-呼び出しを入れない))
 - 2 行目のトークンは値が空でも積む (`build_layout` の第 3 引数 `1`)。空なら省く扱いにすると｢2 行目は常に出力する｣が崩れるが、既存ケースでは表面化しない。([詳細](docs/DESIGN.md#2-行目のトークンは空でも積む))
 - 設定ファイルの読み込み位置は、内部定数と clamp ブロックより前。後ろに移すと conf の不正値が丸められず、内部定数も conf で書き換えられるようになる。([詳細](docs/DESIGN.md#設定ファイルの読み込みブロック))
+- clamp の順序は `RATE_CHART_LEN` → `POLL_INTERVAL_MAX_SEC` の計算 → `POLL_INTERVAL_SEC`。`POLL_INTERVAL_SEC` の上限は丸めた後のチャート長から決まるため、入れ替えると丸める前の値で上限を求めてしまう。([詳細](docs/DESIGN.md#間引き間隔の-clamp))
 - `HISTORY_DIR` の安全性チェック (symlink、所有 uid、mode 700): 外すと `/tmp` 上で他ユーザーが用意したディレクトリやリンクに書き込みうる。([詳細](docs/DESIGN.md#履歴ディレクトリの安全性チェック))
 - 色定義ブロック (`_fg` と `case "$COLOR_SCHEME"`) は両スクリプトで同一に保つ。`npm test` は実行できる側のスクリプトだけを検証するため、ドリフトは `tests/script-parity.sh` で検出する。([詳細](docs/DESIGN.md#色定義ブロックの両版一致))
 - 冒頭の `export LC_ALL=C.UTF-8`: 外すと `${#var}` がバイト数換算になり、トリム位置が変わる。([詳細](docs/DESIGN.md#ロケール固定))
 - 値の出力は `printf '%s'` を使い、`echo` は使わない。`echo` は値が `-n` や `-e` のとき出力が変わる。([詳細](docs/DESIGN.md#printf-s-の統一))
 - Linux 版冒頭の bash 4.1+ チェック: named fd (`exec {fd}>...`) を使うため、外すと古い bash でパースエラーになる。([詳細](docs/DESIGN.md#linux-版の-bash-41-ゲート))
-- rate 表示の区切りはハイフン (`chart NN% - HH:MM`) で、括弧は使わない。([詳細](docs/DESIGN.md#rate-のハイフン区切り))
+- rate 表示の区切りはハイフン (`chart NN% - HH:MM`) で、括弧は使わない。weekly (`spark NN% - Mon`) も同じ `format_limit` で組み立てる。([詳細](docs/DESIGN.md#rate-のハイフン区切り))
 
 ## 公開リポジトリとしての注意
 
@@ -57,7 +58,7 @@ CI は Linux 版のみを実行します。macOS 版の変更はローカルの 
 
 | コマンド | 内容 |
 | --- | --- |
-| `npm test` | 回帰テスト (`tests/regression.sh`) 、fetch 挙動テスト (`tests/git-fetch-behavior.sh`)、PR 取得の挙動テスト (`tests/pr-status-behavior.sh`)、両版の静的一致チェック (`tests/script-parity.sh`) |
+| `npm test` | 回帰テスト (`tests/regression.sh`) 、fetch 挙動テスト (`tests/git-fetch-behavior.sh`)、PR 取得の挙動テスト (`tests/pr-status-behavior.sh`)、rate 履歴の挙動テスト (`tests/rate-history-behavior.sh`)、両版の静的一致チェック (`tests/script-parity.sh`) |
 | `npm run preview` | ANSI 色付きの実出力を端末に表示する (`tests/e2e-preview.sh`) |
 | `npm run check` | Markdown の整形チェックと markdownlint |
 | `npm run fix` | Markdown の整形と markdownlint の自動修正 |

@@ -1,4 +1,4 @@
 # git 外 (branch なし) -> 1 行目は directory のみ (区切り " | " を出さない)
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
 matches_line1: ^my-workspace$
 not_contains:  | my-workspace

@@ -19,21 +19,18 @@ export LC_ALL=C.UTF-8
 STATUSLINE_CONFIG="${CLAUDE_STATUSLINE_CONFIG:-$HOME/.claude/statusline.conf}"
 # `/` を含まないパスを `.` に渡すと $PATH から探索されるため、カレント相対に固定する。
 case "$STATUSLINE_CONFIG" in */*) ;; *) STATUSLINE_CONFIG="./$STATUSLINE_CONFIG" ;; esac
-unset SHOW_MODEL_NAME COLOR_SCHEME GIT_FETCH PR_STATUS SHOW_CWD POLL_INTERVAL_SEC GIT_FETCH_INTERVAL_SEC \
-  LAYOUT_LINE1 LAYOUT_LINE2
+# conf で設定できる変数の一覧。unset と \r の除去の両方でこの配列を使う (一覧を 1 か所に保つ)。
+STATUSLINE_CONF_VARS=(SHOW_MODEL_NAME COLOR_SCHEME GIT_FETCH PR_STATUS SHOW_CWD RATE_CHART_LEN POLL_INTERVAL_SEC \
+  GIT_FETCH_INTERVAL_SEC LAYOUT_LINE1 LAYOUT_LINE2)
+unset "${STATUSLINE_CONF_VARS[@]}"
 if [ -f "$STATUSLINE_CONFIG" ] && [ -r "$STATUSLINE_CONFIG" ]; then
   # shellcheck source=/dev/null
   . "$STATUSLINE_CONFIG"
   # CRLF 改行で保存された conf は値の末尾に \r が残り、黙って既定値扱いになるため剥がす。
-  SHOW_MODEL_NAME="${SHOW_MODEL_NAME%$'\r'}"
-  COLOR_SCHEME="${COLOR_SCHEME%$'\r'}"
-  GIT_FETCH="${GIT_FETCH%$'\r'}"
-  PR_STATUS="${PR_STATUS%$'\r'}"
-  SHOW_CWD="${SHOW_CWD%$'\r'}"
-  POLL_INTERVAL_SEC="${POLL_INTERVAL_SEC%$'\r'}"
-  GIT_FETCH_INTERVAL_SEC="${GIT_FETCH_INTERVAL_SEC%$'\r'}"
-  LAYOUT_LINE1="${LAYOUT_LINE1%$'\r'}"
-  LAYOUT_LINE2="${LAYOUT_LINE2%$'\r'}"
+  # 書き戻しは printf -v で行う (eval を使わないので、値に記号が入っていてもコードとして実行されない)。
+  for _conf_var in "${STATUSLINE_CONF_VARS[@]}"; do
+    printf -v "$_conf_var" '%s' "${!_conf_var%$'\r'}"
+  done
 fi
 
 # === カスタマイズ設定 (~/.claude/statusline.conf で上書きする。一部は env 変数でも上書き可) ===
@@ -69,24 +66,29 @@ SHOW_CWD="${CLAUDE_STATUSLINE_SHOW_CWD:-${SHOW_CWD:-1}}"
 
 # 表示要素の並び。トークンを `|` で区切って並べる (前後の空白は無視)。
 # 1 行目: directory / branch / session。値が空のトークンは列ごと省略し、全て空なら 1 行目ごと出さない。
-# 2 行目: model_ctx / rate。並び順だけを変えられる (書かなかったトークンは既定順で末尾に補い、常に両方出す)。
+# 2 行目: model_ctx / rate / weekly。並び順だけを変えられる (書かなかったトークンは既定順で末尾に補い、常に 3 つとも出す)。
 # 未知のトークンは黙って無視する。空文字は既定値扱い (1 行目を消したいときは none 等の未知トークンを書く)。
 # SHOW_CWD=0 は 1 行目から directory を外すのと等価 (directory トークンが空を返す)。
 # env CLAUDE_STATUSLINE_LAYOUT_LINE1 / CLAUDE_STATUSLINE_LAYOUT_LINE2 でも上書き可。
-LAYOUT_LINE1="${CLAUDE_STATUSLINE_LAYOUT_LINE1:-${LAYOUT_LINE1:-directory|branch|session}}"
-LAYOUT_LINE2="${CLAUDE_STATUSLINE_LAYOUT_LINE2:-${LAYOUT_LINE2:-model_ctx|rate}}"
+# 各行で使えるトークンの一覧 (既定の並びを兼ねる)。既定値、2 行目の補完、有効なトークンの判定は
+# この 1 か所から組み立てる。トークンを足すときは、この一覧と layout_token の case の両方を直す。
+LAYOUT_LINE1_TOKENS="directory|branch|session"
+LAYOUT_LINE2_TOKENS="model_ctx|rate|weekly"
+LAYOUT_LINE1="${CLAUDE_STATUSLINE_LAYOUT_LINE1:-${LAYOUT_LINE1:-$LAYOUT_LINE1_TOKENS}}"
+LAYOUT_LINE2="${CLAUDE_STATUSLINE_LAYOUT_LINE2:-${LAYOUT_LINE2:-$LAYOUT_LINE2_TOKENS}}"
 
-# 履歴サンプリング間隔 (秒)。推奨レンジ (60〜3000) は後方の「間引き定数」参照。
-POLL_INTERVAL_SEC="${POLL_INTERVAL_SEC:-480}"            # この秒数未満の連続呼び出しは skip
-
-# git fetch の最小間隔 (秒)。推奨レンジ (60〜1800) は後方の「間引き定数」参照。
-GIT_FETCH_INTERVAL_SEC="${GIT_FETCH_INTERVAL_SEC:-900}"  # この間隔未満の連続呼び出しは fetch を skip
+# 数値の設定 (conf のみで変える。env の上書き口は持たない)。既定値と範囲は後方の「間引き定数」の
+# clamp_int の呼び出しと MIN/MAX 定数にだけ置き、ここには書かない (2 か所にあると食い違いうるため)。
+#   RATE_CHART_LEN:         rate チャートの文字数。右端 1 文字が現在値、左が履歴の遷移
+#   POLL_INTERVAL_SEC:      履歴サンプリング間隔 (秒)。この秒数未満の連続呼び出しは skip。上限は RATE_CHART_LEN で決まる
+#   GIT_FETCH_INTERVAL_SEC: git fetch の最小間隔 (秒)。この間隔未満の連続呼び出しは fetch を skip
+# RATE_CHART_LEN は POLL_INTERVAL_SEC の上限を決め、全セッション共通の履歴ファイルの間引きに効く。
+# セッションごとに変えられると最も短い間隔のセッションが追記を支配するため、env の口を付けない。
 
 # === 内部定数 (変更しない。出力フォーマット/排他制御/レンジガードに直結する実装値) ===
 
-# スパークラインの 8 階調とチャートのサンプル数。出力フォーマットの一部。
+# スパークラインの 8 階調。出力フォーマットの一部。
 SPARKS=('▁' '▂' '▃' '▄' '▅' '▆' '▇' '█')   # 8階調
-HISTORY_LEN=6                               # チャートに表示する履歴サンプル数
 
 # 未追跡の行数取得 (diff --no-index) を行う上限件数。超過分はファイル数のみ数える。
 UNTRACKED_DIFF_LIMIT=50
@@ -111,37 +113,59 @@ case "$PR_TIMEOUT_SEC" in ''|0*|*[!0-9]*|????*) PR_TIMEOUT_SEC=60 ;; esac
 # --- PR の状態表示の内部定数ここまで ---
 
 # --- 間引き定数の推奨レンジ ---
-# POLL_INTERVAL_SEC / GIT_FETCH_INTERVAL_SEC は env 上書き口を持たず、conf (または上の定数の直接編集) で変える運用。
+# RATE_CHART_LEN / POLL_INTERVAL_SEC / GIT_FETCH_INTERVAL_SEC は env 上書き口を持たず、conf (または上の定数の直接編集) で変える運用。
 # 秒数比較は算術式なので 0 / 負値 / 非数値を入れても構文エラーにならず、間引きが静かに無効化される
-# (描画のたびに git fetch が多重起動する / rate 履歴が毎回更新され HISTORY_LEN 件のチャートが傾向を示さなくなる)。
+# (描画のたびに git fetch が多重起動する / rate 履歴が毎回更新されチャートが傾向を示さなくなる)。
 # 逆に極端に大きい値は機能を事実上無効化するが警告も出ない。どちらもユーザーが気付けないため、
 # 範囲外は安全側へ丸めて描画は継続する (HISTORY_DIR の安全性チェックと同じ「無効値ならフォールバックして表示は続ける」方針)。
 #
 # レンジの根拠:
+#   RATE_CHART_LEN 2..20
+#     下限: 履歴 1 文字 + 現在値 1 文字。1 だと現在値だけになり推移を表さない
+#     上限: 2 行目が最も長くなる組み合わせ (58 + RATE_CHART_LEN 桁) でも 80 桁の端末に収まる長さ。履歴ファイルに残す件数も兼ねる
 #   GIT_FETCH_INTERVAL_SEC 60..1800
 #     下限: statusline は数秒〜十数秒間隔で呼ばれ得るため、60 未満では間引きが実質機能せず fetch が頻発する
 #     上限: 30 分を超えると ↓behind 自動最新化の意味が薄れ、手動 fetch と大差なくなる
-#   POLL_INTERVAL_SEC 60..3000
+#   POLL_INTERVAL_SEC 60..(18000 / RATE_CHART_LEN)
 #     下限: 同上 (呼び出し頻度に近づくと間引きが無意味になる)
-#     上限: rate limit は 5 時間 (18000 秒) ウィンドウで HISTORY_LEN=6 サンプルなので、
-#           18000/6=3000 を超えるとウィンドウをカバーしきれずチャートが傾向を示さなくなる
+#     上限: rate limit は 5 時間 (18000 秒) ウィンドウなので、チャート全体 (RATE_CHART_LEN サンプル) で
+#           ウィンドウを覆う間隔を上限にする。超えるとウィンドウをカバーしきれずチャートが傾向を示さなくなる
 #
-# 下記 4 つの MIN/MAX とその直後の clamp 処理はレンジガードそのもの。変更しない。
+# 下記の MIN/MAX とその直後の clamp 処理はレンジガードそのもの。変更しない。
+RATE_CHART_LEN_MIN=2
+RATE_CHART_LEN_MAX=20          # 2 行目が 80 桁に収まる長さ。履歴ファイルに残す件数も兼ねる
+RATE_WINDOW_SEC=18000          # 5 時間のレートリミットの窓
 POLL_INTERVAL_MIN_SEC=60
-POLL_INTERVAL_MAX_SEC=3000
 GIT_FETCH_INTERVAL_MIN_SEC=60
 GIT_FETCH_INTERVAL_MAX_SEC=1800
 
-# 非数値・空・負値 (先頭の `-` が非数字として弾かれる) は既定値へ、範囲外は最寄りの境界へ丸める。
-# 9 桁以上は上限へ直接丸める (整数範囲を超える桁数だと `[ -lt ]` がエラー終了し丸めが素通りするため)。
-# command substitution を使わず変数へ直接代入する (fork を増やさないため)。
-case "$POLL_INTERVAL_SEC" in ''|*[!0-9]*) POLL_INTERVAL_SEC=480 ;; ?????????*) POLL_INTERVAL_SEC=$POLL_INTERVAL_MAX_SEC ;; esac
-[ "$POLL_INTERVAL_SEC" -lt "$POLL_INTERVAL_MIN_SEC" ] && POLL_INTERVAL_SEC=$POLL_INTERVAL_MIN_SEC
-[ "$POLL_INTERVAL_SEC" -gt "$POLL_INTERVAL_MAX_SEC" ] && POLL_INTERVAL_SEC=$POLL_INTERVAL_MAX_SEC
+# clamp_int <変数名> <既定値> <下限> <上限>
+# 変数の値を整数として検証し、範囲内に丸めて書き戻す。command substitution を使わない (fork しない)。
+#   空・数字以外を含む (負値の `-` を含む) → 既定値
+#   9 桁以上 → 上限 (整数範囲を超える桁数だと `[ -lt ]` がエラー終了し、丸めを素通りするため比較しない)
+#   先頭の 0 は 10# で 10 進数に直す (算術式では 8 進数として扱われ、08 や 09 はエラーになるため)
+# 検証は case で済ませてから比較する。[[ ]] や $(( )) は値を算術式として評価し、`a[$(cmd)]` のような
+# 値の中のコマンドを実行しうるため、検証前の値を通さない。[ ] は整数でなければエラーで終わるだけ。
+# 書き戻しは printf -v で行う。bash の変数は動的スコープなので、ローカル変数は呼び出し側の変数名と
+# 衝突しないよう関数ごとの接頭辞 (_ci_) を付ける。
+clamp_int() {
+  local _ci_value=${!1}
+  case "$_ci_value" in
+    ''|*[!0-9]*) _ci_value=$2 ;;
+    ?????????*)  _ci_value=$4 ;;
+    *)           _ci_value=$((10#$_ci_value)) ;;
+  esac
+  [ "$_ci_value" -lt "$3" ] && _ci_value=$3
+  [ "$_ci_value" -gt "$4" ] && _ci_value=$4
+  printf -v "$1" '%s' "$_ci_value"
+}
 
-case "$GIT_FETCH_INTERVAL_SEC" in ''|*[!0-9]*) GIT_FETCH_INTERVAL_SEC=900 ;; ?????????*) GIT_FETCH_INTERVAL_SEC=$GIT_FETCH_INTERVAL_MAX_SEC ;; esac
-[ "$GIT_FETCH_INTERVAL_SEC" -lt "$GIT_FETCH_INTERVAL_MIN_SEC" ] && GIT_FETCH_INTERVAL_SEC=$GIT_FETCH_INTERVAL_MIN_SEC
-[ "$GIT_FETCH_INTERVAL_SEC" -gt "$GIT_FETCH_INTERVAL_MAX_SEC" ] && GIT_FETCH_INTERVAL_SEC=$GIT_FETCH_INTERVAL_MAX_SEC
+clamp_int RATE_CHART_LEN 12 "$RATE_CHART_LEN_MIN" "$RATE_CHART_LEN_MAX"
+# チャート全体 (RATE_CHART_LEN サンプル) で 5 時間の窓を覆う間隔を上限にする。
+# 丸めた後の RATE_CHART_LEN を使うので、RATE_CHART_LEN の clamp より後に置く (順序を入れ替えない)。
+POLL_INTERVAL_MAX_SEC=$((RATE_WINDOW_SEC / RATE_CHART_LEN))
+clamp_int POLL_INTERVAL_SEC 300 "$POLL_INTERVAL_MIN_SEC" "$POLL_INTERVAL_MAX_SEC"
+clamp_int GIT_FETCH_INTERVAL_SEC 900 "$GIT_FETCH_INTERVAL_MIN_SEC" "$GIT_FETCH_INTERVAL_MAX_SEC"
 
 # --- カラースキーム ---
 # 以下の COLOR_* は Claude Code の light/dark テーマの配色に合わせた RGB 値。値を変更しない。
@@ -215,13 +239,13 @@ fi
 # 回帰テストが本番履歴を汚さずに済むよう CLAUDE_STATUSLINE_HISTORY_DIR で上書き可能にする。
 HISTORY_DIR="${CLAUDE_STATUSLINE_HISTORY_DIR:-/tmp/claude-statusline-$(id -u)}"
 
-# レートリミットのリセット時刻を HH:MM 形式に変換する
+# format_reset_time <epoch> <書式>: レートリミットのリセット時刻を date の書式 (%H:%M など) で整形する
 # macOS (BSD date) を先に試し、失敗したら GNU date を使う。
 # Linux で stderr に毎回エラーを出さないよう順序を OS で切り替える。
 case "$(uname -s)" in
   Darwin|*BSD)
     format_reset_time() {
-      date -r "$1" '+%H:%M' 2>/dev/null
+      date -r "$1" "+$2" 2>/dev/null
     }
     file_mtime() {
       stat -f %m "$1" 2>/dev/null
@@ -235,7 +259,7 @@ case "$(uname -s)" in
     ;;
   *)
     format_reset_time() {
-      date -d "@$1" '+%H:%M' 2>/dev/null
+      date -d "@$1" "+$2" 2>/dev/null
     }
     file_mtime() {
       stat -c %Y "$1" 2>/dev/null
@@ -273,24 +297,55 @@ else
   fi
 fi
 
-# 0-100 の使用率を 1文字の縦棒 (▁..█ の8階調) に変換する
-spark_single() {
-  local pct=$1
-  [ -z "$pct" ] && { printf '%s\n' "·"; return; }
-  local idx
-  idx=$(awk -v p="$pct" 'BEGIN {
-    i = int((p/100.0) * 8 + 0.5)
-    if (i < 1) i = 1
-    if (i > 8) i = 8
-    printf "%d", i - 1
-  }')
-  printf '%s\n' "${SPARKS[$idx]}"
+# spark_of <変数名> <0-100 の値>
+# 値を ▁..█ の 8 階調の 1 文字にして変数に入れる。値が空なら · にする。
+# 段は int(p / 100 × 8 + 0.5) を 1..8 に収めた値。整数は bash の算術式 (8p + 50) / 100 で求め (fork しない)、
+# 小数 (ctx の使用率) と 9 桁以上の値だけ awk で求める。整数では両者が一致する: どちらも 0 に向かって
+# 切り捨て、8p + 50 は 100 の倍数にならないので浮動小数点の誤差で段が変わる境目もない。
+# 書き込み先を受け取る関数なので、ローカル変数は接頭辞 (_so_) で呼び出し側の変数名と分ける。
+spark_of() {
+  local _so_abs=${2#-} _so_i
+  if [ -z "$2" ]; then
+    printf -v "$1" '%s' '·'
+    return
+  fi
+  case "$_so_abs" in
+    ''|*[!0-9]*|?????????*)
+      _so_i=$(awk -v p="$2" 'BEGIN { printf "%d", int((p / 100.0) * 8 + 0.5) }') ;;
+    *)
+      _so_i=$((10#$_so_abs))
+      [ "$_so_abs" != "$2" ] && _so_i=$((-_so_i))
+      _so_i=$(((_so_i * 8 + 50) / 100)) ;;
+  esac
+  [ "$_so_i" -lt 1 ] && _so_i=1
+  [ "$_so_i" -gt 8 ] && _so_i=8
+  printf -v "$1" '%s' "${SPARKS[_so_i - 1]}"
 }
 
-# 履歴ファイルに値を append し、末尾 HISTORY_LEN 件だけ残す。
+# round_int <変数名> <値>
+# 小数を含む値を整数に丸めて変数に入れる (printf '%.0f' の丸め)。$(printf ...) と違い fork しない。
+round_int() {
+  printf -v "$1" '%.0f' "$2"
+}
+
+# set_remaining <変数名> <使用率>
+# 使用率 (0-100、小数可) を整数に丸めた残量 (100 - 使用率) を変数に入れる。使用率が空なら空にする。
+set_remaining() {
+  local _sr_used
+  if [ -z "$2" ]; then
+    printf -v "$1" '%s' ''
+    return
+  fi
+  round_int _sr_used "$2"
+  printf -v "$1" '%s' "$((100 - _sr_used))"
+}
+
+# 履歴ファイルに値を append し、末尾 RATE_CHART_LEN_MAX 件だけ残す (表示長ではなく上限の件数で保存する)。
 # 値が空なら何もしない (起動直後に履歴を汚さない)。
-# 履歴がまだ無いファイルへの初回 push は現在値で HISTORY_LEN 件埋める。
+# 履歴がまだ無いファイルへの初回 push は現在値で RATE_CHART_LEN_MAX 件埋める。
 # 「ずっとその値だった」という見た目になり、初回表示でドットが並ぶのを避ける。
+# 保存件数を表示長 (RATE_CHART_LEN) と分けるのは、チャートを伸ばしたときに保存済みの履歴をすぐ表示に
+# 使うためと、別の conf を読むセッションが共通の履歴ファイルを自分の表示長で切り詰めないため。
 #
 # 並行性: rate 用ファイルは全セッション共通のため、複数の statusline が同時に
 # このパスへ突入しうる。`flock(1)` は macOS に標準で無く、無いと黙って
@@ -343,9 +398,9 @@ history_push() {
 
   if [ ! -s "$file" ]; then
     local i
-    for ((i = 0; i < HISTORY_LEN; i++)); do
-      printf '%s\n' "$value" >> "$file"
-    done
+    for ((i = 0; i < RATE_CHART_LEN_MAX; i++)); do
+      printf '%s\n' "$value"
+    done >> "$file"
   else
     # 直前の更新から POLL_INTERVAL_SEC 経っていなければ skip。
     # statusline は高頻度に呼ばれるため、サンプル間隔を一定に保つ。
@@ -361,7 +416,7 @@ history_push() {
     printf '%s\n' "$value" >> "$file"
     local tmp
     tmp=$(mktemp "${file}.XXXXXX") || { release_lock "$lockdir"; return; }
-    if tail -n "$HISTORY_LEN" "$file" > "$tmp"; then
+    if tail -n "$RATE_CHART_LEN_MAX" "$file" > "$tmp"; then
       mv "$tmp" "$file"
     else
       rm -f "$tmp"
@@ -371,22 +426,23 @@ history_push() {
 }
 
 # 履歴ファイルから各値を spark 文字に変換して連結する。
-# サンプル数が HISTORY_LEN に満たない場合は左側を中点 (·) でパディング。
+# 末尾 RATE_CHART_LEN 件だけを使い、RATE_CHART_LEN 件に満たない場合は左側を中点 (·) でパディング。
 # `history_push` の trim が失敗してファイルが膨らんでも出力長が崩れないよう、
-# `tail -n HISTORY_LEN` で末尾だけ読む。
+# `tail -n RATE_CHART_LEN` で末尾だけ読む。
 history_chart() {
   local file=$1
   local out=""
   local count=0
   if [ -f "$file" ]; then
-    local v
+    local v spark
     while IFS= read -r v; do
       [ -z "$v" ] && continue
-      out+=$(spark_single "$v")
+      spark_of spark "$v"
+      out+=$spark
       count=$((count + 1))
-    done < <(tail -n "$HISTORY_LEN" "$file" 2>/dev/null)
+    done < <(tail -n "$RATE_CHART_LEN" "$file" 2>/dev/null)
   fi
-  local pad=$((HISTORY_LEN - count))
+  local pad=$((RATE_CHART_LEN - count))
   local i
   local prefix=""
   for ((i = 0; i < pad; i++)); do
@@ -396,9 +452,9 @@ history_chart() {
 }
 
 # 色付けは 3 段構成: paint (エフェクトディスパッチャ) → static / rainbow (プリミティブ)。
-# 全色付け経路 (model / rate / ctx / diff) は paint を経由する。色決定関数
-# (model_color / rate_color / ctx_color) は "static <ansi>" / "rainbow" のような
-# effect 名を返し、それを paint の <effect> [arg] にそのまま展開して渡す。
+# 全色付け経路 (model / rate / weekly / ctx / diff) は paint を経由する。色決定関数
+# (model_color / effort_color / limit_color / ctx_color) は "static <ansi>" / "rainbow" のような
+# effect 名を変数に入れ、それを paint の <effect> [arg] にそのまま展開して渡す。
 # 将来エフェクトが増えても paint に 1 ブランチ足すだけで済む。
 
 # static: 文字列を単色で囲む。color が空なら素通し。
@@ -459,57 +515,57 @@ paint() {
   esac
 }
 
-# 残量に応じた paint の effect 指定 (static <ansi> / static) を返す。
+# 色を決める関数 (*_color <変数名> <値>) は、paint の effect 指定を printf -v で第 1 引数の変数に入れる
+# (spark_of と同じく $(...) で受けないので fork しない)。値は第 2 引数をそのまま使い、ローカル変数を持たない。
+# 無色は "static" だけ。呼び出し側は "static" と比べて色が付くかを判定できる。
+
+# レートリミットの残量に応じた paint の effect 指定 (static <ansi> / static) を入れる (rate と weekly で共有)。
 # 警戒→危険→致命の 3 段を公式パレットで階調化: 40% 以下=warning (黄), 15% 以下=claude (橙),
 # 5% 以下=error (赤) + 点滅 (\033[5m)。点滅は色ではなく属性なので公式色に重ねて残す。
-rate_color() {
-  local remaining=$1
-  if   [ "$remaining" -le 5 ];  then printf 'static \033[5m%s' "$COLOR_error"
-  elif [ "$remaining" -le 15 ]; then printf 'static %s' "$COLOR_claude"
-  elif [ "$remaining" -le 40 ]; then printf 'static %s' "$COLOR_warning"
-  else                               printf 'static'
+limit_color() {
+  if   [ "$2" -le 5 ];  then printf -v "$1" 'static \033[5m%s' "$COLOR_error"
+  elif [ "$2" -le 15 ]; then printf -v "$1" 'static %s' "$COLOR_claude"
+  elif [ "$2" -le 40 ]; then printf -v "$1" 'static %s' "$COLOR_warning"
+  else                       printf -v "$1" 'static'
   fi
 }
 
-# モデル名に応じた ✻ + モデル名の paint の effect 指定を返す。
+# モデル名に応じた ✻ + モデル名の paint の effect 指定を入れる。
 # 公式テーマのセマンティック色を流用: Fable→autoAccept (紫), Opus→claude (ブランドのオレンジ),
 # Haiku→subagent_cyan (シアン), Sonnet 等→無色。
 # Fable はバージョン非依存に *Fable* 部分一致で判定し、*Opus* より前に置く。
 model_color() {
-  local model=$1
-  case "$model" in
-    *Fable*) printf 'static %s' "$COLOR_autoAccept" ;;
-    *Opus*)  printf 'static %s' "$COLOR_claude" ;;
-    *Haiku*) printf 'static %s' "$COLOR_subagent_cyan" ;;
-    *)       printf 'static' ;;
+  case "$2" in
+    *Fable*) printf -v "$1" 'static %s' "$COLOR_autoAccept" ;;
+    *Opus*)  printf -v "$1" 'static %s' "$COLOR_claude" ;;
+    *Haiku*) printf -v "$1" 'static %s' "$COLOR_subagent_cyan" ;;
+    *)       printf -v "$1" 'static' ;;
   esac
 }
 
-# reasoning effort (推論強度) に応じた paint の effect 指定を返す。model とは別色で塗る。
+# reasoning effort (推論強度) に応じた paint の effect 指定を入れる。model とは別色で塗る。
 # low/medium/high/xhigh は単色、max は rainbow (RAINBOW_PALETTE で 1 文字ずつ着色)。
 # ultracode は JSON 入力上 xhigh と区別できないため専用色は持たない (xhigh と同一)。
 # *) は想定外 level でも無色で素通しする保険。空文字は呼び出し側でガード済み。
 effort_color() {
-  local level=$1
-  case "$level" in
-    low)    printf 'static %s' "$COLOR_warning" ;;
-    medium) printf 'static %s' "$COLOR_success" ;;
-    high)   printf 'static %s' "$COLOR_permission" ;;
-    xhigh)  printf 'static %s' "$COLOR_autoAccept" ;;
-    max)    printf 'rainbow' ;;
-    *)      printf 'static' ;;
+  case "$2" in
+    low)    printf -v "$1" 'static %s' "$COLOR_warning" ;;
+    medium) printf -v "$1" 'static %s' "$COLOR_success" ;;
+    high)   printf -v "$1" 'static %s' "$COLOR_permission" ;;
+    xhigh)  printf -v "$1" 'static %s' "$COLOR_autoAccept" ;;
+    max)    printf -v "$1" 'rainbow' ;;
+    *)      printf -v "$1" 'static' ;;
   esac
 }
 
-# 使用率に応じた paint の effect 指定 (static <ansi> / static) を返す。
+# 使用率に応じた paint の effect 指定 (static <ansi> / static) を入れる。
 # 警戒→危険→致命の 3 段を公式パレットで階調化: 70% 以上=warning (黄), 80% 以上=claude (橙),
 # 90% 以上=error (赤) + 点滅 (\033[5m)。点滅は色ではなく属性なので公式色に重ねて残す。
 ctx_color() {
-  local used=$1
-  if   [ "$used" -ge 90 ]; then printf 'static \033[5m%s' "$COLOR_error"
-  elif [ "$used" -ge 80 ]; then printf 'static %s' "$COLOR_claude"
-  elif [ "$used" -ge 70 ]; then printf 'static %s' "$COLOR_warning"
-  else                          printf 'static'
+  if   [ "$2" -ge 90 ]; then printf -v "$1" 'static \033[5m%s' "$COLOR_error"
+  elif [ "$2" -ge 80 ]; then printf -v "$1" 'static %s' "$COLOR_claude"
+  elif [ "$2" -ge 70 ]; then printf -v "$1" 'static %s' "$COLOR_warning"
+  else                       printf -v "$1" 'static'
   fi
 }
 
@@ -1116,36 +1172,34 @@ maybe_pr_refresh() {
   pr_spawn_refresh "$cwd" "$branch" "$cache" "$inflight"
 }
 
-# レートリミット残量の文字列を組み立てる (履歴チャート版)
-# 第3引数 chart は呼び出し側で構築済みの履歴チャート (残量ベース、HISTORY_LEN 文字)
-format_rate() {
-  local rate_pct=$1
-  local rate_reset=${2:-0}
-  local chart=${3:-$(history_chart /dev/null)}
+# レートリミット残量の文字列を組み立てる
+#   format_limit <残量> <リセット epoch> <チャート> <時刻の書式>
+#   残量: set_remaining で計算済みの整数 (空なら `<チャート> --`)。ここでは丸め直さない
+#   チャート: 呼び出し側で組み立て済みのスパーク列 (rate は履歴チャート、weekly は現在値の 1 文字)
+#   時刻の書式: format_reset_time に渡す date の書式 (rate は %H:%M、weekly は曜日の %a)
+format_limit() {
+  local remaining=$1
+  local reset=${2:-0}
+  local chart=$3
+  local time_format=$4
 
-  [ -z "$rate_pct" ] && { printf '%s\n' "${chart} --"; return; }
+  [ -z "$remaining" ] && { printf '%s\n' "${chart} --"; return; }
 
-  local rate_int
-  rate_int=$(printf '%.0f' "$rate_pct")
-  local remaining=$((100 - rate_int))
-
-  # rate_color は paint の effect 指定 ("static <ansi>" / "static") を返す。
-  # 色付き分岐は ANSI コードを伴うとき (= "static " の後ろに値があるとき) だけ。
-  local color_spec ansi
-  color_spec=$(rate_color "$remaining")
-  ansi=${color_spec#static}
-  ansi=${ansi# }
+  # limit_color は paint の effect 指定 ("static <ansi>" / "static") を入れる。
+  # 色付き分岐は ANSI コードを伴うとき (= 無色の "static" でないとき) だけ。
+  local color_spec
+  limit_color color_spec "$remaining"
 
   # 数値は色が付くとき (= 残量が減ってきたとき) だけ表示する。
   # 区切りのハイフンも数値側に組み込む: デフォルトは `chart HH:MM`、
   # 警戒域に入ると `chart NN% - HH:MM` のように数値とハイフンが挿入される。
   local time_str=""
-  if [ -n "$rate_reset" ] && [ "$rate_reset" -gt 0 ] 2>/dev/null; then
-    time_str=$(format_reset_time "$rate_reset")
+  if [ -n "$reset" ] && [ "$reset" -gt 0 ] 2>/dev/null; then
+    time_str=$(format_reset_time "$reset" "$time_format")
   fi
 
   local body
-  if [ -n "$ansi" ]; then
+  if [ "$color_spec" != static ]; then
     if [ -n "$time_str" ]; then
       body="${chart} ${remaining}% - ${time_str}"
     else
@@ -1168,19 +1222,15 @@ format_ctx() {
 
   [ -z "$ctx_pct" ] && { printf '%s\n' "· --"; return; }
 
-  local spark
-  spark=$(spark_single "$ctx_pct")
+  local spark ctx_int
+  spark_of spark "$ctx_pct"
+  round_int ctx_int "$ctx_pct"
 
-  local ctx_int
-  ctx_int=$(printf '%.0f' "$ctx_pct")
-
-  # ctx_color は paint の effect 指定 ("static <ansi>" / "static") を返す。
-  # 色付き分岐は ANSI コードを伴うときだけ。
-  local color_spec ansi
-  color_spec=$(ctx_color "$ctx_int")
-  ansi=${color_spec#static}
-  ansi=${ansi# }
-  if [ -n "$ansi" ]; then
+  # ctx_color は paint の effect 指定 ("static <ansi>" / "static") を入れる。
+  # 色付き分岐は ANSI コードを伴うとき (= 無色の "static" でないとき) だけ。
+  local color_spec
+  ctx_color color_spec "$ctx_int"
+  if [ "$color_spec" != static ]; then
     paint "${spark} ${ctx_int}%" $color_spec
   else
     printf '%s\n' "$spark"
@@ -1208,6 +1258,7 @@ layout_token() {
       ;;
     model_ctx) token_value="${model_field} ${ctx_str}" ;;
     rate) token_value="$rate_str" ;;
+    weekly) token_value="$weekly_str" ;;
   esac
 }
 
@@ -1253,11 +1304,11 @@ join_by() {
 input=$(cat)
 
 # jq は起動コストが高い (1 回 ~20-50ms) ため、必要なフィールドを 1 回で取り出す。
-# 1 フィールド 1 行で出力し、`read` を 7 回呼んで空フィールドも保持する。
+# 1 フィールド 1 行で出力し、`read` を 9 回呼んで空フィールドも保持する。
 # (bash 3.2 の `read -d` は IFS が非空白だと連続デリミタを圧縮するため @tsv 経路は使えない。
 #  値に改行が混入せず、ESC などの制御文字で端末の表示が崩れないよう、文字列フィールドは
 #  gsub で制御文字をすべて半角スペースに潰してから渡す。)
-# effort は必ず末尾に追加する (read 個数 = jq 出力行数。途中挿入すると既存変数の対応がズレる)。
+# 新しいフィールドは必ず末尾に追加する (read 個数 = jq 出力行数。途中挿入すると既存変数の対応がズレる)。
 {
   IFS= read -r model
   IFS= read -r ctx_pct
@@ -1266,6 +1317,8 @@ input=$(cat)
   IFS= read -r session
   IFS= read -r cwd
   IFS= read -r effort
+  IFS= read -r weekly_pct
+  IFS= read -r weekly_reset
 } <<EOF
 $(printf '%s' "$input" | jq -r '
   def safe: tostring | gsub("[[:cntrl:]]"; " ");
@@ -1275,22 +1328,20 @@ $(printf '%s' "$input" | jq -r '
   (.rate_limits.five_hour.resets_at          // 0  | tostring),
   (.session_name                             // "" | safe),
   (.workspace.current_dir                    // "" | safe),
-  (.effort.level                             // "" | safe)
+  (.effort.level                             // "" | safe),
+  (.rate_limits.seven_day.used_percentage    // "" | tostring),
+  (.rate_limits.seven_day.resets_at          // 0  | tostring)
 ')
 EOF
 
 # rate は残量を履歴に積む (チャートも数字も 100→0 に減っていく様子になる)
-rate_remaining=""
-if [ -n "$rate_pct" ]; then
-  rate_int=$(printf '%.0f' "$rate_pct")
-  rate_remaining=$((100 - rate_int))
-fi
+set_remaining rate_remaining "$rate_pct"
 
 # rate は 5 時間ウィンドウのアカウント単位の値で全セッション共通なので、
 # グローバルな 1 ファイルに集約し、セッションを跨いで観測を継続する。
 # ctx は現在値の 1 文字 spark のみで描画するため履歴は持たない。
 # 右端 = 現在値の不変条件を HISTORY_DIR の状態と独立に保つため、まず履歴なしの
-# パディング (······) を土台に置く。HISTORY_DIR が安全性チェックで無効化された
+# パディング (RATE_CHART_LEN 個の ·) を土台に置く。HISTORY_DIR が安全性チェックで無効化された
 # ケースでもこの土台が残り、右端 1 文字を現在値に差し替えられる。
 rate_chart=$(history_chart /dev/null)
 if [ -n "$HISTORY_DIR" ]; then
@@ -1300,14 +1351,15 @@ if [ -n "$HISTORY_DIR" ]; then
 fi
 
 # チャート右端 1 文字は履歴サンプリング間隔 (POLL_INTERVAL_SEC) と独立に常に現在値を描く。
-# history_push は 480 秒間引きするため、リセットで残量が戻った直後はチャートが古い値の
+# history_push は POLL_INTERVAL_SEC 秒で間引くため、リセットで残量が戻った直後はチャートが古い値の
 # まま据え置かれる。右端だけ現在値 spark に差し替えて最新残量を即時反映する。
-# (左 HISTORY_LEN-1 文字は履歴の遷移、右端 1 文字だけが現在値)
+# (左 RATE_CHART_LEN-1 文字は履歴の遷移、右端 1 文字だけが現在値)
 # rate_chart は history_chart /dev/null で必ず非空なので、rate_remaining の有無だけで分岐する。
 # ${var:0:N} は LC_ALL=C.UTF-8 固定下で文字数換算になり、spark の 3 バイト文字でも先頭
-# HISTORY_LEN-1 文字を正しく切り出せる (truncate_label と同じロケール前提)。
+# RATE_CHART_LEN-1 文字を正しく切り出せる (truncate_label と同じロケール前提)。
 if [ -n "$rate_remaining" ]; then
-  rate_chart="${rate_chart:0:$((HISTORY_LEN - 1))}$(spark_single "$rate_remaining")"
+  spark_of rate_now_spark "$rate_remaining"
+  rate_chart="${rate_chart:0:$((RATE_CHART_LEN - 1))}${rate_now_spark}"
 fi
 
 # cwd から git ブランチ名を取得する。空文字 / git 外 / git 未インストール時は空のまま。
@@ -1343,14 +1395,22 @@ fi
 
 model_str="${model:-Unknown}"
 ctx_str=$(format_ctx "$ctx_pct")
-rate_str=$(format_rate "$rate_pct" "$rate_reset" "$rate_chart")
+rate_str=$(format_limit "$rate_remaining" "$rate_reset" "$rate_chart" '%H:%M')
+
+# weekly (7 日間のレートリミット) は履歴を持たず、現在の残量を ctx と同じ 1 文字の spark で描く。
+# 色・数値・区切りの規則は rate と共有し (format_limit / limit_color)、時刻の代わりに曜日 (%a) を添える。
+# %a は LC_ALL=C.UTF-8 の下で評価されるため、利用者のロケールによらず英語の略称 (Sun..Sat) になる。
+# 使用率が欠落していれば spark_of が · を返し、format_limit が `· --` にする (列は残す)。
+set_remaining weekly_remaining "$weekly_pct"
+spark_of weekly_spark "$weekly_remaining"
+weekly_str=$(format_limit "$weekly_remaining" "$weekly_reset" "$weekly_spark" '%a')
 
 # ✻ (+ トリム後モデル名) をモデル色で塗る。色判定はトリム前の全長で行う。
-# model_color は paint の effect 指定 (Fable/Opus/Haiku→static <ansi>, 他→static) を返す。
+# model_color は paint の effect 指定 (Fable/Opus/Haiku→static <ansi>, 他→static) を model_effect に入れる。
 # 全モデルが単色 (無色含む)。無色 (Sonnet) でも $(...) で末尾改行が
 # 除去されるため後続の連結で出力は崩れない。
 # SHOW_MODEL_NAME=0 のときは ✻ 単体を model 色で塗る (記号の色でモデルを判別するため常に残す)。
-model_effect=$(model_color "$model_str")
+model_color model_effect "$model_str"
 if [ "$SHOW_MODEL_NAME" = "1" ]; then
   model_field=$(paint "✻ $(truncate_label 13 "$model_str")" $model_effect)
 else
@@ -1366,7 +1426,7 @@ fi
 # effort 語句のみ effort_effect で塗る (∙ は塗らない。max でも ∙ は rainbow 循環に入らない)。
 # 連結は変数展開のみ。effort_field は $(...) で改行除去済みのため static 無色時の末尾改行は混入しない。
 if [ -n "$effort" ]; then
-  effort_effect=$(effort_color "$effort")
+  effort_color effort_effect "$effort"
   effort_field=$(paint "$effort" $effort_effect)
   if [ "$SHOW_MODEL_NAME" = "1" ]; then
     model_field="${model_field}∙${effort_field}"
@@ -1396,11 +1456,11 @@ if [ "$SHOW_CWD" = "1" ]; then
   [ -n "$dir_name" ] && dir_field=$(truncate_label 25 "$dir_name")
 fi
 
-# 2 行目の列順: LAYOUT_LINE2 (既定 model_ctx → rate)
+# 2 行目の列順: LAYOUT_LINE2 (既定 model_ctx → rate → weekly)
 # model_ctx は model と ctx をスペース 1 個で結合した 1 トークン (両者の間にパイプは出さない)。
 # 2 行目は常に出力するため、値が空でも要素を落とさず無条件に積む (空なら省略は 1 行目のみ)。
 # 末尾に既定の全トークンを足して走査し、書かれなかったトークンを既定順で補う (✻ を消せないようにする)。
-build_layout "${LAYOUT_LINE2}|model_ctx|rate" "|model_ctx|rate|" 1
+build_layout "${LAYOUT_LINE2}|${LAYOUT_LINE2_TOKENS}" "|${LAYOUT_LINE2_TOKENS}|" 1
 parts=("${layout_parts[@]}")
 
 # 1 行目の列順: LAYOUT_LINE1 (既定 directory? → branch? → session?)
@@ -1408,7 +1468,7 @@ parts=("${layout_parts[@]}")
 # 値が空のトークンと未知のトークンは列ごと省略する (区切りも出さない)。
 # 全部空のときは改行そのものを出さない (空行が statusline の高さを 1 行占有するため)。
 # 改行は 1 行目の**末尾**に置く (2 行目の先頭に置くと、1 行目が無いとき先頭に空行が出る)。
-build_layout "$LAYOUT_LINE1" "|directory|branch|session|" 0
+build_layout "$LAYOUT_LINE1" "|${LAYOUT_LINE1_TOKENS}|" 0
 line1_parts=("${layout_parts[@]}")
 
 # " | " で結合

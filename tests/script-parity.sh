@@ -108,6 +108,10 @@ main() {
   # 子プロセスの起動と本体・描画は両版で同じ。branch 列の組み立てから呼ばれるので format-layout の比較も守る。
   check_block pr-constants '# PR の状態表示の再取得間隔' '# --- PR の状態表示の内部定数ここまで ---'
   check_block pr-common '# --- PR の状態表示 ---' '# maybe_pr_refresh:'
+  # スパークと残量の計算 (spark_of / round_int / set_remaining) と、履歴ファイルの読み出し (history_chart)。
+  # 間にある history_push はロックの取り方が違うので対象にしない。
+  check_block spark '# spark_of <変数名> <0-100 の値>' '# 履歴ファイルに値を append'
+  check_block history-chart '# 履歴ファイルから各値を spark' '# 色付けは 3 段構成'
   # 色付け・トリム・git の集計と、rate/ctx の整形からレイアウトの組み立てまで。
   # 出力を決める関数のうち OS 依存の無いもの (truncate_branch / layout_token など) をここで守る。
   check_block paint '# 色付けは 3 段構成' '# GIT_FETCH=1 のときだけ'

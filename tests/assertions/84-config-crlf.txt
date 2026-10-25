@@ -1,5 +1,5 @@
 # CRLF 改行の conf。値末尾の \r を剥がすので COLOR_SCHEME=light が効き、ctx=75% の warning が
 # light の色 (150;108;30) で塗られる (剥がさないと "light\r" が dark 扱いになり 255;193;7 で塗られる)。
-matches_line2: ^✻ Sonnet 4\.6 \\e\[38;2;150;108;30m[▁▂▃▄▅▆▇█] 75%\\e\[0m \| [▁▂▃▄▅▆▇█]{6} 22:13$
+matches_line2: ^✻ Sonnet 4\.6 \\e\[38;2;150;108;30m[▁▂▃▄▅▆▇█] 75%\\e\[0m \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
 matches_line1: ^statusline-demo$
 exit_code: 0

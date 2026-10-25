@@ -1,5 +1,5 @@
 # disable-history/ で HISTORY_DIR を無効化 (symlink override で本体の symlink ガード発動)。
-# 履歴が描けないので土台は history_chart /dev/null のパディング (·····) になり、
+# 履歴が描けないので土台は history_chart /dev/null のパディング (RATE_CHART_LEN 個の ·) になり、
 # 右端 1 文字だけ現在値 (残量10=▁) に差し替わる。
 # = HISTORY_DIR 無効でも「右端 = 常に現在値」が保たれることの検証。
 # 底上げ (rate_chart=history_chart /dev/null) を外すと rate_chart が空になり、
@@ -7,8 +7,8 @@
 #
 # rate=90% (残量10) -> 色閾値 ≤15% で橙(claude) + 数値 10% + ハイフン区切り時刻
 # ctx=40% -> 色なし + 1 文字 spark のみ
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| \\e\[38;2;215;119;87m·····▁ 10% - 22:13\\e\[0m$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| \\e\[38;2;215;119;87m···········▁ 10% - 22:13\\e\[0m \| · --$
 matches_line1: ^statusline-demo$
-contains: ·····▁
+contains: ···········▁
 not_contains: ▇
 exit_code: 0

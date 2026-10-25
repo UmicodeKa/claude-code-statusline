@@ -1,0 +1,3 @@
+# seven_day: 残量 40 (境界) -> 40% 以下に含まれるので warning (黄) と数値が付く (limit_color を rate と共有)
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| ▆{12} 22:13 \| \\e\[38;2;255;193;7m▃ 40% - Tue\\e\[0m$
+exit_code: 0

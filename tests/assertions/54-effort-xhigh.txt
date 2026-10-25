@@ -1,7 +1,7 @@
 # effort=xhigh -> ✻ Sonnet 4.6 (無色) の右に `∙` (無色、スペースなし) + 紫系 (38;2;175;135;255) 単色の "xhigh"
 # モデル名表示 ON なので `∙` 区切りで連結 (前後スペースなし)。∙ は無色 (effort 色シーケンスの外)。
 # ultracode も JSON 入力上 xhigh と同一なのでこの色になる (専用色なし)。
-matches_line2: ^✻ Sonnet 4\.6∙\\e\[38;2;175;135;255mxhigh\\e\[0m [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
+matches_line2: ^✻ Sonnet 4\.6∙\\e\[38;2;175;135;255mxhigh\\e\[0m [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
 matches_line1: ^statusline-demo$
 contains: \e[38;2;175;135;255m
 contains: ∙\e[38;2;175;135;255mxhigh

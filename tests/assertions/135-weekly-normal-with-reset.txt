@@ -1,0 +1,6 @@
+# seven_day: 使用率 30% (残量70=▆)、resets_at=1700000000 (UTC で火曜 22:13)
+# -> 40% 超なので無色、数値なし、曜日だけを添える (rate の時刻と同じ位置に曜日)
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| ▆{12} 22:13 \| ▆ Tue$
+not_contains_line2: 70%
+not_contains_line2: \e[
+exit_code: 0

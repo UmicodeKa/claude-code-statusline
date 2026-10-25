@@ -32,6 +32,8 @@ source "$TESTS_DIR/lib/is-macos-host.sh"
 source "$TESTS_DIR/lib/escape-ansi.sh"
 # shellcheck source=lib/pr-cache.sh
 source "$TESTS_DIR/lib/pr-cache.sh"
+# shellcheck source=lib/age-file.sh
+source "$TESTS_DIR/lib/age-file.sh"
 DEBIAN_BASH="$(find_debian_bash)"
 RUN_MACOS=0
 is_macos_host && RUN_MACOS=1
@@ -124,13 +126,6 @@ sentinel_count() { wc -l < "$sentinel" | tr -d ' '; }
 # main ブランチの取得が終わる (キャッシュがあり、.inflight が消える) まで最大 5 秒待つ。
 wait_fetch_done() {
   wait_until 5 '[ -s "$(cache_path main)" ] && ! compgen -G "$hist/pr-*.inflight" >/dev/null'
-}
-
-# ファイル $1 の mtime を $2 秒前にする。touch -t は macOS / GNU の両方にあり、時刻はローカル時刻で
-# 解釈される。epoch 秒からの変換は BSD date (-r) を先に試し、だめなら GNU date (-d @) を使う。
-age_file() {
-  local old=$(( $(date +%s) - $2 ))
-  touch -t "$(date -r "$old" +%Y%m%d%H%M.%S 2>/dev/null || date -d "@$old" +%Y%m%d%H%M.%S)" "$1"
 }
 
 # repo とブランチ名からキャッシュのパスを出す。

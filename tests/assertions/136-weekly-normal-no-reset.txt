@@ -1,0 +1,4 @@
+# seven_day: 使用率 29.6% (整数に丸めて 30、残量70=▆)、resets_at なし
+# -> 無色の spark だけ (曜日も数値も出さない)
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| ▆{12} 22:13 \| ▆$
+exit_code: 0

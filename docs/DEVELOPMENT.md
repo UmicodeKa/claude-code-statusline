@@ -71,7 +71,7 @@ git config commit.template .gitmessage
 
 | コマンド | 内容 |
 | --- | --- |
-| `npm test` | 回帰テスト (`tests/regression.sh`) 、バックグラウンド fetch の挙動テスト (`tests/git-fetch-behavior.sh`)、PR の状態表示の取得の挙動テスト (`tests/pr-status-behavior.sh`)、両版の静的一致チェック (`tests/script-parity.sh`) を順に実行 |
+| `npm test` | 回帰テスト (`tests/regression.sh`) 、バックグラウンド fetch の挙動テスト (`tests/git-fetch-behavior.sh`)、PR の状態表示の取得の挙動テスト (`tests/pr-status-behavior.sh`)、rate 履歴の挙動テスト (`tests/rate-history-behavior.sh`)、両版の静的一致チェック (`tests/script-parity.sh`) を順に実行 |
 | `npm run preview` | 各 fixture の実出力を ANSI 色付きのまま端末に表示 (`tests/e2e-preview.sh`)。`--macos` / `--linux` で片方だけ表示できる (`bash tests/e2e-preview.sh --linux`) |
 | `npm run check` | Markdown の整形チェックと lint を実行 |
 | `npm run fix` | Markdown の整形と lint の自動修正を実行 |
@@ -109,7 +109,7 @@ git config commit.template .gitmessage
 
 Pull Request の説明は、テンプレート (`.github/pull_request_template.md`) に沿って書きます。あわせて記載する内容は [CLAUDE.md](../CLAUDE.md) の｢変更の進め方｣を参照してください。
 
-履歴サンプリングや間引きの定数 (`HISTORY_LEN` / `POLL_INTERVAL_SEC` / `LOCK_TIMEOUT_SEC` / `GIT_FETCH_INTERVAL_SEC` の既定値や推奨レンジ) を変える場合は、先に Issue で目的を整理します。
+履歴サンプリングや間引きの定数 (`RATE_CHART_LEN` / `RATE_CHART_LEN_MAX` / `POLL_INTERVAL_SEC` / `LOCK_TIMEOUT_SEC` / `GIT_FETCH_INTERVAL_SEC` の既定値や推奨レンジ) を変える場合は、先に Issue で目的を整理します。
 
 ## ライセンス
 

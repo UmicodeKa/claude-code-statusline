@@ -1,0 +1,8 @@
+# conf の RATE_CHART_LEN=08 は 10 進数の 8 として扱われ、チャートは 8 文字になる (算術式の 8 進数エラーを出さない)。
+# 範囲外や不正な値でもエラーを出さずに描画を続ける (算術エラーや [ ] の整数エラーが出力に混ざらない)。
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{8} 22:13 \| · --$
+matches_line1: ^statusline-demo$
+not_contains: integer
+not_contains: base
+not_contains: syntax
+exit_code: 0

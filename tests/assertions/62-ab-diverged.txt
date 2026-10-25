@@ -1,5 +1,5 @@
 # ab=2,3: diverged -> ↑2 (青) ↓3 (黄) を区切りなしで詰めて併記 (ahead を先)
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
 matches_line1: ^sl-repo#branch=main;ab=2… \| main \\e\[38;2;106;155;204m↑2\\e\[0m\\e\[38;2;255;193;7m↓3\\e\[0m ·$
 contains: main \e[38;2;106;155;204m↑2\e[0m\e[38;2;255;193;7m↓3\e[0m
 not_contains: *

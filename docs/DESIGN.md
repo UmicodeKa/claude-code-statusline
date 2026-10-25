@@ -18,11 +18,11 @@ macOS 版 (`statusline-macos.sh`) と Linux 版 (`statusline-linux.sh`) は同�
 1. `export LC_ALL=C.UTF-8` でロケールを固定する
 2. 設定ファイル (`~/.claude/statusline.conf`) を読み込む
 3. カスタマイズ設定を env > conf > 既定値 の順で決める
-4. 内部定数 (`SPARKS` / `HISTORY_LEN` / `UNTRACKED_DIFF_LIMIT`) を定義し、間引き間隔を clamp する
+4. 内部定数 (`SPARKS` / `UNTRACKED_DIFF_LIMIT` など) を定義し、数値の設定 (`RATE_CHART_LEN` と間引き間隔) を clamp する
 5. カラースキーム (`COLOR_*`) を定義する
 6. 依存コマンドを確認し、履歴ディレクトリを安全に用意する
 7. 入力 JSON を `jq` 1 回で読み取る
-8. rate 履歴を更新してチャートを作る
+8. rate 履歴を更新してチャートを作り、weekly の 1 文字のスパークを求める
 9. git のブランチ、変更行数、ahead/behind を取得する (`GIT_FETCH=1` のときはここでバックグラウンド fetch を投げる)
 10. 各フィールドを着色し、レイアウトに従って 1 行目と 2 行目を組み立てて出力する (`PR_STATUS=1` で branch 列を組み立てるときだけ、PR のキャッシュを読み、必要ならバックグラウンドで取得を投げる)
 
@@ -44,17 +44,19 @@ Linux 版はステップ 1 の前に bash 4.1+ ゲートを置き、ステップ
 
 macOS 版で `flock` を使わないのは、macOS に標準で入っておらず、無い環境では黙って失敗するためです。代わりに POSIX で原子性が保証されている `mkdir` でロックを取り、`LOCK_TIMEOUT_SEC` × 5 秒 (既定 10 秒) より古いロックディレクトリは stale とみなして削除します。Linux 版の `flock` はプロセス終了時に自動で解放されるため、stale 処理は持ちません。
 
-これ以外のブロック (設定の読み込み、カスタマイズ設定、clamp、カラースキーム、PR の状態表示の定数と共通部分、レイアウトの組み立て) は両版で一字一句同じに保ちます。PR の状態表示で両版が違うのは、ロックを取る `maybe_pr_refresh` だけです。`tests/script-parity.sh` がこれらのブロックを抜き出して比較します。
+これ以外のブロック (設定の読み込み、カスタマイズ設定、clamp、カラースキーム、PR の状態表示の定数と共通部分、スパークと残量の計算、履歴の読み出し、色付けと整形、レイアウトの組み立て) は両版で一字一句同じに保ちます。履歴まわりで両版が違うのは、ロックを取る `history_push` だけです。PR の状態表示で両版が違うのは、ロックを取る `maybe_pr_refresh` だけです。`tests/script-parity.sh` がこれらのブロックを抜き出して比較します。
 
 ## 実装上の仕組み
 
 ### 色付けの 3 段構成
 
-すべての着色 (model / effort / ctx / rate / diff / ahead-behind) は `paint <text> <effect> [arg]` を経由します。
+すべての着色 (model / effort / ctx / rate / weekly / diff / ahead-behind) は `paint <text> <effect> [arg]` を経由します。
 
 - `paint` は effect 名を見て `static` か `rainbow` に振り分けるだけのディスパッチャです
 - `static <text> <color>` は単色で囲んで末尾に `\033[0m` を付けます。color が空のときは文字列を末尾改行付きで素通しします
-- 色を決める関数 (`model_color` / `effort_color` / `ctx_color` / `rate_color`) は `"static <ansi>"` / `"static"` / `"rainbow"` という effect 指定の文字列を返し、呼び出し側はそれをクォートせずに展開して `paint` に渡します
+- 色を決める関数 (`model_color` / `effort_color` / `ctx_color` / `limit_color`) は `"static <ansi>"` / `"static"` / `"rainbow"` という effect 指定の文字列を `printf -v` で第 1 引数の変数に入れ、呼び出し側はそれをクォートせずに展開して `paint` に渡します
+  - `$(...)` で受けないので fork しません
+  - 無色は `"static"` だけなので、色が付くかは `"static"` との比較で判定します
 
 新しいエフェクトを足すときは `paint` に分岐を 1 つ追加すれば済みます。個別の経路から `static` を直接呼ぶ形に戻すと、エフェクトの追加箇所が分散します。
 
@@ -90,9 +92,9 @@ effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の�
 
 色の値を各関数に直接書く形に戻すと、light/dark の切り替えと両版の一致確認が難しくなります。
 
-### rate / ctx の 3 階調と点滅
+### rate / weekly / ctx の 3 階調と点滅
 
-テーマの配色には警告系の色が `warning` (黄) と `error` (赤) の 2 段しかありません。rate と ctx では中間に `claude` (橙) を挟み、警戒 → 危険 → 致命 の 3 段にしています。致命段は `error` に点滅属性 `\033[5m` を重ねます。点滅は色ではなく属性なので、色の数を増やさずに危険段と区別できます。点滅を外して `error` 単色にすると、致命段と危険段の見た目の差が色だけになり、隣接する段と紛れやすくなります。
+テーマの配色には警告系の色が `warning` (黄) と `error` (赤) の 2 段しかありません。rate / weekly と ctx では中間に `claude` (橙) を挟み、警戒 → 危険 → 致命 の 3 段にしています。致命段は `error` に点滅属性 `\033[5m` を重ねます。点滅は色ではなく属性なので、色の数を増やさずに危険段と区別できます。点滅を外して `error` 単色にすると、致命段と危険段の見た目の差が色だけになり、隣接する段と紛れやすくなります。
 
 ### 1 行目の組み立て
 
@@ -112,7 +114,8 @@ effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の�
     - `pr_str` は同じ case 節で直前に呼ぶ `pr_token` が設定する。連結を `pr_token` より前に移すと PR が出なくなる
 - `model` と `ctx` を別トークンに分けないのは、トークン間の区切りが組み合わせごとに変わり、実装とテストの両方が複雑になるためです
 - `build_layout` の第 3 引数で｢空の値を積むか｣を切り替えます。1 行目は `0` (空なら列ごと省略)、2 行目は `1` (空でも積む)
-- 2 行目は走査対象の末尾に既定の全トークン (`|model_ctx|rate`) を足し、書かれなかったトークンを既定順で補います。これにより `✻` を含む `model_ctx` は消せません
+- 2 行目は走査対象の末尾に既定の全トークン (`LAYOUT_LINE2_TOKENS`、`model_ctx|rate|weekly`) を足し、書かれなかったトークンを既定順で補います。これにより `✻` を含む `model_ctx` は消せず、`weekly` を書かない conf でも `weekly` は末尾に補われます
+- 各行のトークンの一覧 (`LAYOUT_LINE1_TOKENS` / `LAYOUT_LINE2_TOKENS`) は、既定値、補完、有効なトークンの判定に共通で使います。トークンを足すときは、この一覧と `layout_token` の `case` の両方を直します (一覧だけに足すと、値が空の列が 2 行目に出ます)
 - 未知のトークンは黙って無視し、重複は最初の 1 回だけ採ります。前後の空白 (タブを含む) はパラメータ展開で除去し、`tr` や `awk` は使いません
 - トークンから値への対応は連想配列ではなく `case` で引き、値はグローバル変数 `token_value` で返します。macOS の `/bin/bash` 3.2 には連想配列が無く、`$(...)` で受けると fork が増えるためです
   - 例外として、branch / session のトリムは `truncate_branch` / `truncate_label` の command substitution を伴います
@@ -121,27 +124,56 @@ effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の�
 
 ### rate チャートの土台と右端の現在値
 
-rate チャートは `HISTORY_LEN` (6) 文字で、左 5 文字が履歴、右端 1 文字が現在値です。
+rate チャートは `RATE_CHART_LEN` (既定 12) 文字で、左 `RATE_CHART_LEN − 1` 文字が履歴、右端 1 文字が現在値です。
 
-- `rate_chart` はまず `history_chart /dev/null` (履歴なしのパディング `······`) で初期化し、`HISTORY_DIR` が有効なときだけ実際の履歴で上書きします
-- そのうえで、残量 (`rate_remaining`) があれば右端 1 文字を `spark_single` の現在値に差し替えます。`rate_chart` は土台のおかげで常に空でないため、分岐条件は `rate_remaining` の有無だけです
-- 履歴の追記は `POLL_INTERVAL_SEC` (既定 480 秒) で間引かれるので、差し替えが無いとリセット直後でも右端が古い値のまま残ります
-- `${rate_chart:0:5}` の切り出しは、`LC_ALL=C.UTF-8` で文字数換算になることが前提です (スパーク文字は 3 バイト)
+- `rate_chart` はまず `history_chart /dev/null` (履歴なしのパディング。`RATE_CHART_LEN` 個の `·`) で初期化し、`HISTORY_DIR` が有効なときだけ実際の履歴で上書きします
+- そのうえで、残量 (`rate_remaining`) があれば右端 1 文字を `spark_of` の現在値に差し替えます。`rate_chart` は土台のおかげで常に空でないため、分岐条件は `rate_remaining` の有無だけです
+- 履歴の追記は `POLL_INTERVAL_SEC` (既定 300 秒) で間引かれるので、差し替えが無いとリセット直後でも右端が古い値のまま残ります
+- `${rate_chart:0:$((RATE_CHART_LEN - 1))}` の切り出しは、`LC_ALL=C.UTF-8` で文字数換算になることが前提です (スパーク文字は 3 バイト)
+
+### スパークと残量の計算を fork せずに行う
+
+スパーク文字 (`spark_of`)、使用率の丸め (`round_int`)、残量の計算 (`set_remaining`)、色の決定 (`*_color`) は、結果を `printf -v` で呼び出し側の変数に書き込みます。`$(...)` で受けると呼ぶたびに fork が 1 つ増え、rate のチャートは文字数ぶん呼ぶためです。
+
+- `spark_of` は、整数の値を bash の算術式 `(8p + 50) / 100` で段に直し、`awk` を起動しません。`awk` を使うのは小数 (ctx の使用率) と 9 桁以上の値だけです。rate の履歴と残量は常に整数なので、チャートの文字数によらずスパークのための `awk` は ctx の分だけになります
+- 整数 p では、`awk` の `int(p / 100 × 8 + 0.5)` と算術式 `(8p + 50) / 100` が一致します。どちらも 0 に向かって切り捨てるので負の値でも同じで、`8p + 50` は 4 で割ると 2 余り 100 の倍数にならないため、浮動小数点の誤差で段が変わる境目もありません
+- 先頭の 0 は `10#` で 10 進数に直します。算術式は `08` を 8 進数として読もうとしてエラーになるためです
+- 書き込み先の変数名を受け取る関数のローカル変数には、関数ごとの接頭辞 (`_so_` / `_sr_` / `_ci_`) を付けます。bash の変数は動的スコープなので、呼び出し側と同じ名前のローカル変数があると、`printf -v` は呼び出し側ではなくローカルに書き込みます
+- `eval` は使いません。`printf -v` なら値に記号が入っていてもコードとして実行されません
 
 ### 履歴ファイルと排他制御
 
-- 履歴は rate だけが持ちます。rate は 5 時間ウィンドウのアカウント単位の値で全セッション共通なので、`${HISTORY_DIR}/rate` の 1 ファイルに集約します。ctx は現在値の 1 文字だけを描くため履歴を持ちません
-- 空の履歴ファイルへの初回追記では、現在値を `HISTORY_LEN` 件書き込みます。初回表示で `·` が並ぶのを避けるためです
-- 追記後は `tail -n HISTORY_LEN` を一時ファイルへ書いて `mv` で置き換えます。読み出し側も `tail -n HISTORY_LEN` で末尾だけを読むので、切り詰めに失敗してファイルが伸びても表示幅は崩れません
+- 履歴は rate だけが持ちます。rate は 5 時間ウィンドウのアカウント単位の値で全セッション共通なので、`${HISTORY_DIR}/rate` の 1 ファイルに集約します。ctx と weekly は現在値の 1 文字だけを描くため履歴を持ちません
+- 保存する件数は表示長 (`RATE_CHART_LEN`) ではなく、その上限の `RATE_CHART_LEN_MAX` (20) 件で固定します
+  - チャート長を伸ばしたとき、保存済みの履歴がすぐ表示に出ます。表示長で切り詰めると、伸ばした直後は `·` が並びます
+  - 履歴ファイルは全セッション共通なので、`CLAUDE_STATUSLINE_CONFIG` で別の conf を読むセッションがあっても、短いチャートのセッションが長いチャートのセッションの履歴を切り詰めません
+  - 保存件数より少ない履歴ファイルもそのまま読めるため、移行処理は要りません
+- 空の履歴ファイルへの初回追記では、現在値を `RATE_CHART_LEN_MAX` 件書き込みます。初回表示で `·` が並ぶのを避けるためです
+- 追記後は `tail -n RATE_CHART_LEN_MAX` を一時ファイルへ書いて `mv` で置き換えます。読み出し側は `tail -n RATE_CHART_LEN` で末尾だけを読むので、切り詰めに失敗してファイルが伸びても表示幅は崩れません
 - 複数の statusline が同時に書き込むことがあるため、追記はロックの中で行います。ロック待ちは `LOCK_TIMEOUT_SEC` (2 秒) までで、取れなければその回の追記を飛ばします。statusline は頻繁に呼ばれるので、次の呼び出しで反映されます
+
+### weekly (週間リミット)
+
+- 7 日間のレートリミットの残量を、ctx と同じ 1 文字のスパークで描きます。履歴は持ちません。5 時間用の間引き間隔で 7 日の窓を記録しても傾向を示さないためです
+- 整形は rate と同じ `format_limit` を使い、チャートの代わりに `spark_of` の 1 文字、時刻の書式の代わりに `%a` (曜日) を渡します。色の閾値 (`limit_color`)、数値を出す条件、` - ` の区切りを 2 か所に書かないためです
+- `%a` は `LC_ALL=C.UTF-8` の下で評価されるため、利用者のロケールによらず `Sun`〜`Sat` の英語の略称になります
+- 使用率が欠落しても `· --` で列を残します。ctx (`· --`) や rate (`<チャート> --`) と同じく、｢2 行目は空でも積む｣を保つためです
+- 描画コスト
+  - 増える: weekly の分として、描画ごとに command substitution が 2 つ (`format_limit` と、その中の `format_reset_time`) と `date` の起動が 1 つ。`resets_at` が無いときは `format_reset_time` を呼ばない
+  - 減る: `round_int` / `spark_of` / `*_color` を `printf -v` で返す形にしたことで、次が減る
+    - `$(printf ...)` が 3 つ
+    - rate のチャート (`RATE_CHART_LEN` 文字) と右端の現在値の分の command substitution と `awk`
+    - ctx のスパークを包む command substitution が 1 つ
+    - 色の決定 (`model_color` / `effort_color` / `ctx_color` / rate の `limit_color`) の command substitution が 4 つ
+  - チャート長によらず、増える分より減る分のほうが多い
 
 ### 入力 JSON の読み取り
 
-`jq` は 1 回の起動に数十 ms かかるため、必要な 7 フィールドを 1 回の呼び出しで 1 行ずつ出力し、`read` を 7 回呼んで受け取ります。
+`jq` は 1 回の起動に数十 ms かかるため、必要な 9 フィールドを 1 回の呼び出しで 1 行ずつ出力し、`read` を 9 回呼んで受け取ります。
 
 - 文字列フィールドは `jq` の中で改行･タブ･CR を空白に置き換えます。値に改行が混ざると行の対応がずれるためです
 - `@tsv` で 1 行にまとめる方法は使いません。bash 3.2 では IFS が非空白のとき `read` が連続する区切りを 1 つにまとめてしまい、空フィールドが失われます
-- 新しいフィールドは末尾に追加します。途中に挿入すると、既存の変数と行の対応がずれます (`effort` が最後にあるのはこのためです)
+- 新しいフィールドは末尾に追加します。途中に挿入すると、既存の変数と行の対応がずれます (`effort` の後に weekly の 2 フィールドがあるのはこのためです)
 
 ### 変更行数の集計
 
@@ -245,19 +277,20 @@ head のブランチ名とオーナーを push 先 (`@{push}`) から決める�
 - 箇所: 冒頭の｢ユーザー設定ファイルの読み込み｣ブロック
 - 何をしているか:
   - 内部定数と clamp より前、カスタマイズ設定の直前で conf を読む
-  - 読み込み前に短縮名の 9 変数 (`SHOW_MODEL_NAME` / `COLOR_SCHEME` / `GIT_FETCH` / `PR_STATUS` / `SHOW_CWD` / `POLL_INTERVAL_SEC` / `GIT_FETCH_INTERVAL_SEC` / `LAYOUT_LINE1` / `LAYOUT_LINE2`) を `unset` する
+  - 読み込み前に短縮名の 10 変数 (`SHOW_MODEL_NAME` / `COLOR_SCHEME` / `GIT_FETCH` / `PR_STATUS` / `SHOW_CWD` / `RATE_CHART_LEN` / `POLL_INTERVAL_SEC` / `GIT_FETCH_INTERVAL_SEC` / `LAYOUT_LINE1` / `LAYOUT_LINE2`) を `unset` する
+  - 10 変数の一覧は配列 `STATUSLINE_CONF_VARS` の 1 か所に置き、`unset` と `\r` の除去の両方で使う
   - `[ -f ] && [ -r ]` を満たすときだけ `.` で読み、読めなければ黙って既定値で続ける
   - `/` を含まないパスには `./` を前置する
-  - 読み込み直後に 9 変数の末尾の `\r` を取り除く
-  - 各設定は `${CLAUDE_STATUSLINE_X:-${X:-既定値}}` で読み、env > conf > 既定値 の順にする。env 口の無い間引き間隔は `${X:-既定値}` で読む
+  - 読み込み直後に 10 変数の末尾の `\r` を取り除く (`printf -v` と間接展開 `${!name%$'\r'}` で書き戻す)
+  - 各設定は `${CLAUDE_STATUSLINE_X:-${X:-既定値}}` で読み、env > conf > 既定値 の順にする。env 口の無い数値の設定 (`RATE_CHART_LEN` と間引き間隔) は既定値を `clamp_int` の引数にだけ持ち、空の値も既定値に戻す
 - 外すと何が起きるか:
   - 読み込みを clamp より後へ移すと、conf の不正な間引き間隔が丸められず間引きが無効になる
-  - 内部定数より後へ移すと、conf で `HISTORY_LEN` などを変えられ、出力の形が変わる
+  - 内部定数より後へ移すと、conf で `RATE_CHART_LEN_MAX` などの内部定数を変えられ、保存件数やレンジガードが崩れる
   - `unset` を外すと、外の環境にある同名の変数が conf の代わりに効いてしまう
   - `-r` だけで判定すると、ディレクトリを `.` してエラーが出る
   - `./` を付けないと、`.` が `$PATH` からファイルを探し、`[ -f ]` で確認したものとは別のファイルを読むことがある
   - `\r` を取り除かないと、CRLF で保存した conf の値が `light\r` のようになり、黙って既定値扱いになる
-  - 設定を `X=480` のような無条件代入に戻すと、conf の値が上書きされる
+  - 設定を `X=300` のような無条件代入にすると、conf の値が上書きされる
 - 守っているテスト:
   - `79-config-show-model-off`〜`86-config-template`、`94-config-layout`〜`96-config-layout-crlf`
   - `tests/script-parity.sh` の `block:config-load` / `block:settings`
@@ -268,16 +301,26 @@ conf はシェルスクリプトとして読み込みます。JSON や YAML に�
 
 ### 間引き間隔の clamp
 
-- 箇所: `POLL_INTERVAL_MIN/MAX_SEC` / `GIT_FETCH_INTERVAL_MIN/MAX_SEC` と直後の `case` と `[ -lt ]` / `[ -gt ]`
+- 箇所: `RATE_CHART_LEN_MIN/MAX` / `RATE_WINDOW_SEC` / `POLL_INTERVAL_MIN_SEC` / `GIT_FETCH_INTERVAL_MIN/MAX_SEC` と、直後の `clamp_int` (`clamp_int <変数名> <既定値> <下限> <上限>`) とその呼び出し
 - 何をしているか:
-  - `POLL_INTERVAL_SEC` を 60〜3000、`GIT_FETCH_INTERVAL_SEC` を 60〜1800 に丸める
-  - 非数値･空･負値は既定値 (480 / 900) に戻す
+  - `RATE_CHART_LEN` を 2〜20、`POLL_INTERVAL_SEC` を 60〜(18000 ÷ `RATE_CHART_LEN`)、`GIT_FETCH_INTERVAL_SEC` を 60〜1800 に丸める
+  - `POLL_INTERVAL_SEC` の上限 `POLL_INTERVAL_MAX_SEC` は、丸めた後の `RATE_CHART_LEN` から `RATE_WINDOW_SEC / RATE_CHART_LEN` で求める。チャート全体で 5 時間の窓を覆う間隔で、既定のチャート長 12 では 1500。上限 20 でも 900 で、下限 60 を下回らない (範囲が逆転しない)
+  - 呼び出しは `RATE_CHART_LEN` → `POLL_INTERVAL_MAX_SEC` の計算 → `POLL_INTERVAL_SEC` の順に置く
+  - 非数値･空･負値は既定値 (12 / 300 / 900) に戻す。既定値はこの呼び出しの引数だけに置く
   - 9 桁以上は比較せずに上限へ丸める
-  - command substitution を使わずに変数へ直接代入する
+  - 先頭の 0 は `10#` で 10 進数に直す (`08` → `8`)
+  - command substitution を使わず、`printf -v` で変数へ直接書き戻す
 - 外すと何が起きるか:
   - 間引きの比較は算術式なので、`0` や負値でも構文エラーにならず、間引きが無効になる。`GIT_FETCH=1` では描画のたびに `git fetch` が起動し、rate 履歴は毎回更新されてチャートが傾向を示さなくなる
   - 9 桁以上の判定を外すと、整数範囲を超える値で `[ -lt ]` がエラー終了 (status 2) し、丸めを素通りする
-- 守っているテスト: `clamp-zero-interval` (git-fetch-behavior)、`82-config-invalid-values`、`85-config-huge-interval`、`tests/script-parity.sh` の `block:interval-clamp`
+  - 比較を `[[ ]]` に替えると、`[[ ]]` は値を算術式として評価するため、`a[$(cmd)]` のような conf の値の中のコマンドを実行しうる。`[ ]` は整数でなければエラーで終わるだけなので、検証 (`case`) の後でも `[ ]` を使う
+  - 既定値を settings ブロックの `${X:-既定値}` と 2 か所に書くと、片方だけ変えたときに空の値と不正な値で戻る先が食い違う
+  - `10#` の正規化を外すと、`RATE_CHART_LEN=08` が `$(( ))` や `for (( ))` で `value too great for base` のエラーになる (`POLL_INTERVAL_SEC` などは `[ ]` でしか比較しないので、正規化しなくても出力は変わらない)
+  - 順序を入れ替えて `RATE_CHART_LEN` の clamp より前に上限を求めると、丸める前の値 (`0` や `abc`) で割り算をしてエラーになるか、範囲外のチャート長に合わせた上限になる
+- 守っているテスト:
+  - 挙動: `clamp-zero-interval` (git-fetch-behavior)、`poll-max-follows-chart-len` / `poll-max-default` / `poll-clamp-zero` / `poll-invalid-default` (rate-history-behavior)
+  - 出力: `82-config-invalid-values`、`85-config-huge-interval`、`128-rate-chart-len-clamp-zero`〜`134-rate-chart-len-crlf`
+  - 両版の一致: `tests/script-parity.sh` の `block:interval-clamp`
 
 既定値はレンジ内にあるため、clamp は既定の出力を変えません。丸めは警告を出さずに行い、描画を続けます (履歴ディレクトリの安全性チェックと同じ｢無効値ならフォールバックして表示は続ける｣方針です)。
 
@@ -396,17 +439,17 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 
 ### rate のハイフン区切り
 
-- 箇所: `format_rate`
-- 何をしているか: 色が付く残量のとき `chart NN% - HH:MM` とスペース･ハイフン･スペースで区切る。括弧は使わない
+- 箇所: `format_limit`
+- 何をしているか: 色が付く残量のとき `chart NN% - HH:MM` とスペース･ハイフン･スペースで区切る。括弧は使わない。weekly も同じ関数で `spark NN% - Mon` と区切る
 - 外すと何が起きるか: 表記が SPEC (` - ` 区切り、括弧なし) と食い違い、`02-rate-warning-with-reset` の `not_contains: (22:13)` などが失敗する
-- 守っているテスト: `02-rate-warning-with-reset` (`not_contains: (22:13)`)、`03-rate-warning-no-reset`、`05-rate-danger`、`06-rate-critical`、`24`〜`29` の境界ケース
+- 守っているテスト: `02-rate-warning-with-reset` (`not_contains: (22:13)`)、`03-rate-warning-no-reset`、`05-rate-danger`、`06-rate-critical`、`24`〜`29` の境界ケース、`137-weekly-warning-with-reset` (`not_contains: (Tue)`)、`138-weekly-warning-no-reset`
 
 ### 2 行目のトークンは空でも積む
 
-- 箇所: `build_layout "${LAYOUT_LINE2}|model_ctx|rate" "|model_ctx|rate|" 1`
+- 箇所: `build_layout "${LAYOUT_LINE2}|${LAYOUT_LINE2_TOKENS}" "|${LAYOUT_LINE2_TOKENS}|" 1`
 - 何をしているか: 2 行目は値が空でも列を落とさない。書かれなかったトークンは末尾に補う
-- 外すと何が起きるか: 第 3 引数を `0` にすると｢2 行目は常に出す｣が成り立たなくなる。ただし `format_rate` と `model_ctx` は常に空でない値を返すので、今のテストは通ったまま不変条件だけが失われる
-- 守っているテスト: 補完は `89-layout-line2-reorder`、`93-layout-line2-partial`、`91-layout-unknown-token`。空でも積むこと自体はテストなし
+- 外すと何が起きるか: 第 3 引数を `0` にすると｢2 行目は常に出す｣が成り立たなくなる。ただし `format_limit` と `model_ctx` は常に空でない値を返す (使用率が欠落しても `<チャート> --` / `· --`) ので、今のテストは通ったまま不変条件だけが失われる
+- 守っているテスト: 補完は `89-layout-line2-reorder`、`93-layout-line2-partial`、`91-layout-unknown-token`、`145-layout-line2-weekly-first`。weekly の欠落時に列が残ることは `143-weekly-missing`。空でも積むこと自体はテストなし
 
 ### 1 行目の省略と改行の位置
 
@@ -417,10 +460,10 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 
 ### rate チャートの土台と右端差し替え
 
-- 箇所: main の `rate_chart=$(history_chart /dev/null)` と `rate_chart="${rate_chart:0:$((HISTORY_LEN - 1))}$(spark_single "$rate_remaining")"`
+- 箇所: main の `rate_chart=$(history_chart /dev/null)` と `spark_of rate_now_spark "$rate_remaining"` と `rate_chart="${rate_chart:0:$((RATE_CHART_LEN - 1))}${rate_now_spark}"`
 - 何をしているか: [rate チャートの土台と右端の現在値](#rate-チャートの土台と右端の現在値) を参照
 - 外すと何が起きるか: 差し替えを外すと、右端も間引かれた古い値になり、リセット直後の残量が反映されない。土台の初期化を `HISTORY_DIR` の分岐より後に移すか外すと、履歴が無効なときに `rate_chart` が空になり、右端が描かれない
-- 守っているテスト: `47-rate-rightmost-live` (seed で古い履歴を仕込む)、`48-rate-rightmost-no-history` (履歴を無効化する)
+- 守っているテスト: `47-rate-rightmost-live` / `126-rate-chart-len-seed-pad` (seed で古い履歴を仕込む)、`48-rate-rightmost-no-history` / `127-rate-chart-len-no-history` (履歴を無効化する)
 
 ### 色定義ブロックの両版一致
 
@@ -431,10 +474,10 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 
 ### 点滅属性
 
-- 箇所: `rate_color` / `ctx_color` の致命段 (`printf 'static \033[5m%s' "$COLOR_error"`)
-- 何をしているか: [rate / ctx の 3 階調と点滅](#rate--ctx-の-3-階調と点滅) を参照
+- 箇所: `limit_color` / `ctx_color` の致命段 (`printf 'static \033[5m%s' "$COLOR_error"`)
+- 何をしているか: [rate / weekly / ctx の 3 階調と点滅](#rate--weekly--ctx-の-3-階調と点滅) を参照
 - 外すと何が起きるか: 致命段と危険段が色だけで区別されることになり、見た目の段差が小さくなる
-- 守っているテスト: `06-rate-critical`、`10-ctx-critical`、`23-ctx-boundary-90`、`29-rate-boundary-remaining-5`
+- 守っているテスト: `06-rate-critical`、`10-ctx-critical`、`23-ctx-boundary-90`、`29-rate-boundary-remaining-5`、`140-weekly-critical`
 
 ### effort の別 paint と `∙`
 
@@ -514,6 +557,20 @@ Claude Code のフッターの PR バッジは下線に色を付けています�
 ### `statusCheckRollup` の各チェックを自前で集約する
 
 CI 記号は `statusCheckRollup.state` (GitHub が集約した値) をそのまま使い、個々のチェックを自前で集約しません。自前で集約すると、失敗したジョブを再実行して成功させても古い失敗が残って `✗` のままになるうえ、取得件数の上限を超えたチェックが落ちるためです。
+
+### rate チャートの長さと履歴の設定
+
+- `HISTORY_LEN` をそのまま公開する: `HISTORY_LEN` は｢conf で変えられない内部定数｣の例として SPEC とテスト `82` が保証していたため、同じ名前を公開すると意味が逆になる。公開する名前は `RATE_CHART_LEN` にし、`HISTORY_LEN` は廃止した
+- 履歴ファイルを表示長で切り詰める: 伸ばした直後は `·` が並び、短いチャートのセッションが長いチャートのセッションの履歴を削る。保存件数は `RATE_CHART_LEN_MAX` で固定している ([履歴ファイルと排他制御](#履歴ファイルと排他制御))
+- `POLL_INTERVAL_SEC` の上限を固定値にする / 上限をなくす: 前者はチャート長を変えると根拠 (チャート全体で 5 時間を覆う) がなくなり、後者は間引きの意味がなくなる値も通る
+- `POLL_INTERVAL_SEC` や `RATE_CHART_LEN` に env の上書き口を付ける: 全セッション共通の履歴ファイルの間引きの基準がセッションごとに変わり、最も短い間隔のセッションが追記を支配する。チャート長も `POLL_INTERVAL_SEC` の上限を決めるため同じ理由で付けない。env を付けたうえで上限だけ env の効かない値から決める案も、チャート長と上限の対応が崩れて上限の根拠がなくなる
+
+### weekly の表示
+
+- 書いたときだけ weekly を出す: `build_layout` にトークンごとの例外が入り、配布テンプレートを写した `LAYOUT_LINE2="model_ctx|rate"` の利用者には新しい列が出ない。2 行目の｢書かなかったトークンは末尾に補う｣規則に従わせた
+- 使用率が欠落したら列ごと省く: 既存の期待値は変えずに済むが、｢2 行目は空でも積む｣が崩れる
+- rate と同じ履歴チャートにする: 要件は現在の残量だけで、5 時間用の間引き間隔で 7 日の窓を記録しても傾向を示さない
+- 曜日に時刻を添える: 曜日だけでは、リセットが今日と同じ曜日のとき (24 時間以内か 6 日以上先か) を区別できないが、要件どおり曜日だけにして SPEC に制約として書いた
 
 ### その他
 

@@ -1,0 +1,3 @@
+# conf の COLOR_SCHEME=light で、seven_day の残量 35 -> light の warning (150;108;30) で塗る
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| ▆{12} 22:13 \| \\e\[38;2;150;108;30m▃ 35% - Tue\\e\[0m$
+exit_code: 0
