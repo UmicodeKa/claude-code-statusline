@@ -26,15 +26,7 @@
                 }
               ]
             },
-            "comments": {
-              "totalCount": 0
-            },
-            "reviewThreads": {
-              "totalCount": 0
-            },
-            "reviews": {
-              "totalCount": 1
-            },
+            "totalCommentsCount": 14,
             "commits": {
               "nodes": [
                 {

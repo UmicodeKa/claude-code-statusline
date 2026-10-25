@@ -675,7 +675,7 @@ maybe_git_fetch() {
 
 # --- PR の状態表示 ---
 # PR_STATUS=1 のときだけ、現在のブランチに紐付く GitHub の PR を
-# `#<番号>[<CI記号>][✎]` で表示する。情報はバックグラウンドの子プロセスが gh api graphql で
+# `#<番号>[<CI記号>][ <件数>]` で表示する。情報はバックグラウンドの子プロセスが gh api graphql で
 # 取得してキャッシュに書き、描画はキャッシュを読むだけにする (gh も追加の git も描画経路に入れない)。
 # stdin の pr フィールドは、同じセッションで PR を切り替えても更新されないため使わない。
 #
@@ -686,16 +686,19 @@ maybe_git_fetch() {
 # キャッシュとマーカーを分けるのは、マーカーの書き方 (`true > file`) がファイルを空にするため。
 #
 # キャッシュはタブ区切りの 1 行。PR がないときは fetched_at だけを書く。
-#   <fetched_at>\t<number>\t<state>\t<review>\t<ci>\t<commented>\t<head_matches>\t<url>
+#   <fetched_at>\t<number>\t<state>\t<review>\t<ci>\t<comments>\t<head_matches>\t<url>
 #   fetched_at:   取得を始めた時刻 (epoch 秒)。期限切れの判定と、古い結果での上書きの防止に使う
 #   state:        open / draft / merged / closed
 #   review:       approved / pending / changes_requested (open / draft 以外では空)
 #   ci:           pass / fail / pending / 空 (チェックが 1 つもない)
-#   commented:    1 / 0
+#   comments:     コメントの件数 (0 以上の整数)
 #   head_matches: 1 / 0 (ローカルの HEAD が PR の head と一致するか。再取得の間隔に使う)
 
 # 1 回で取る GraphQL。必要なのは件数と集約値だけなので、コメントやレビューの本文は取らない。
 # repository.owner は、push 先が分からないときに head のオーナーとして使う。
+# totalCommentsCount は GitHub が数えたコメントの件数 (会話のコメント、コードの行へのコメント、
+# 本文付きのレビュー) で、PR 一覧の吹き出しの数字と同じ値。種類ごとの totalCount を足すと、
+# reviewThreads はスレッドの数なので返信を数えられない。
 PR_QUERY='query($owner: String!, $repo: String!, $head: String!) {
   repository(owner: $owner, name: $repo) {
     owner { login }
@@ -705,9 +708,7 @@ PR_QUERY='query($owner: String!, $repo: String!, $head: String!) {
         headRepositoryOwner { login }
         reviewDecision
         latestReviews(first: 20) { nodes { state } }
-        comments { totalCount }
-        reviewThreads { totalCount }
-        reviews(states: [COMMENTED, CHANGES_REQUESTED]) { totalCount }
+        totalCommentsCount
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
       }
     }
@@ -723,6 +724,7 @@ PR_QUERY='query($owner: String!, $repo: String!, $head: String!) {
 #   review: reviewDecision はレビュー必須でないリポジトリでは常に null なので、
 #           null のときは latestReviews から決める
 #   ci: statusCheckRollup.state (PR 画面のチェック表示と同じ集約値) をそのまま使う
+#   comments: totalCommentsCount をそのまま使う。null は 0 とする
 PR_JQ='.data.repository as $r
 | (($ENV.HEAD_OWNER // "") | if . == "" then ($r.owner.login // "") else . end | ascii_downcase) as $owner
 | [$r.pullRequests.nodes[] | select(((.headRepositoryOwner.login // "") | ascii_downcase) == $owner)] as $c
@@ -745,18 +747,24 @@ PR_JQ='.data.repository as $r
        elif . == "FAILURE" or . == "ERROR" then "fail"
        elif . == "PENDING" or . == "EXPECTED" then "pending"
        else "" end) as $ci
-  | (if (($p.comments.totalCount // 0) + ($p.reviewThreads.totalCount // 0)
-         + ($p.reviews.totalCount // 0)) > 0 then "1" else "0" end) as $commented
+  | (($p.totalCommentsCount // 0) | tostring) as $comments
   | (if $p.headRefOid == $ENV.LOCAL_HEAD then "1" else "0" end) as $head_matches
-  | [($p.number | tostring), $state, $review, $ci, $commented, $head_matches, ($p.url // "")]
+  | [($p.number | tostring), $state, $review, $ci, $comments, $head_matches, ($p.url // "")]
   | join("\t")
   end'
 
-# キャッシュを読み、pr_fetched / pr_state / pr_number / pr_review / pr_ci / pr_commented /
+# $1 が先頭に 0 のない 9 桁以内の正の整数なら 0 を返す (PR の番号とコメントの件数の検証)。
+# 0 も 1 を返すので、コメントが 0 件のときは件数がないものとして扱われる。
+pr_is_count() {
+  case "$1" in ''|0*|*[!0-9]*|??????????*) return 1 ;; esac
+}
+
+# キャッシュを読み、pr_fetched / pr_state / pr_number / pr_review / pr_ci / pr_comments /
 # pr_head_matches / pr_url に入れる。PR がないキャッシュは pr_state=none にする。
 # 読めない、または形が壊れている (fetched_at か number か state が不正、フィールド数が違う) ときは
 # 1 を返し、キャッシュがないものとして扱わせる。
 # それ以外のフィールドは信用せず、想定外の値はそのフィールドがないものとして扱う。
+# comments は 1 件以上のときだけ pr_comments に入れる。
 # url は https:// で始まり、残りが URL に使う ASCII の英数字と記号だけのときに残す (OSC 8 に
 # 埋め込むため)。許す文字を列挙するのは、[[:cntrl:]] などの文字クラスや A-Z の範囲が、どの文字を
 # 含むかを OS のロケール実装ごとに変え、両版で結果が食い違いうるため。
@@ -765,7 +773,7 @@ pr_cache_load() {
   local file=$1 line="" rest
   local url_bad='*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~:/?#=&+@%-]*'
   local -a f=()
-  pr_fetched="" pr_state="" pr_number="" pr_review="" pr_ci="" pr_commented="" pr_head_matches="" pr_url=""
+  pr_fetched="" pr_state="" pr_number="" pr_review="" pr_ci="" pr_comments="" pr_head_matches="" pr_url=""
   [ -f "$file" ] || return 1
   { IFS= read -r line; } 2>/dev/null < "$file"
   [ -n "$line" ] || return 1
@@ -784,14 +792,14 @@ pr_cache_load() {
     return 0
   fi
   [ "${#f[@]}" -eq 8 ] || return 1
-  case "${f[1]}" in ''|0*|*[!0-9]*|??????????*) return 1 ;; esac
+  pr_is_count "${f[1]}" || return 1
   case "${f[2]}" in open|draft|merged|closed) ;; *) return 1 ;; esac
   pr_fetched=${f[0]}
   pr_number=${f[1]}
   pr_state=${f[2]}
   case "${f[3]}" in approved|pending|changes_requested) pr_review=${f[3]} ;; esac
   case "${f[4]}" in pass|fail|pending) pr_ci=${f[4]} ;; esac
-  [ "${f[5]}" = "1" ] && pr_commented=1
+  pr_is_count "${f[5]}" && pr_comments=${f[5]}
   [ "${f[6]}" = "1" ] && pr_head_matches=1
   case "${f[7]}" in
     https://$url_bad) ;;
@@ -803,7 +811,9 @@ pr_cache_load() {
 # 読み込んだキャッシュから PR の状態表示の値を組み立てて pr_str に入れる。PR がなければ空。
 #   #<番号>: 状態の色で塗り、下線 (SGR 4) を付ける。merged / closed は取り消し線 (SGR 9) も重ねる。
 #            url があり FORCE_HYPERLINK=0 でなければ、ここだけを OSC 8 で PR へのリンクにする
-#   CI 記号 / ✎: open / draft のときだけ付ける。CI 記号と ✎ は #<番号> に詰めて続ける
+#   CI 記号: open / draft のときだけ、#<番号> に詰めて続ける
+#   件数:    open / draft でコメントが 1 件以上のときだけ、半角スペースを挟んで続ける。
+#            詰めると、CI 記号がないときに番号と続けて読めてしまう (#12 と 3 で #123)
 # OSC 8 のエスケープ列を含むので、truncate_label や ${#var} の幅計算には渡さない。
 format_pr() {
   pr_str=""
@@ -833,7 +843,7 @@ format_pr() {
         fail)    pr_str="${pr_str}${COLOR_error}✗"$'\033[0m' ;;
         pending) pr_str="${pr_str}${COLOR_warning}●"$'\033[0m' ;;
       esac
-      [ "$pr_commented" = "1" ] && pr_str="${pr_str}✎"
+      [ -n "$pr_comments" ] && pr_str="${pr_str} ${pr_comments}"
       ;;
   esac
 }

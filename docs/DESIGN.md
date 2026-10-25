@@ -377,8 +377,9 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 
 ### pr のキャッシュの読み取りと値の検証
 
-- 箇所: `pr_cache_load`、`format_pr`
+- 箇所: `pr_cache_load`、`pr_is_count`、`format_pr`
 - 何をしているか: キャッシュを信用せず、番号と状態が不正なら列ごと省略し、ほかのフィールドは想定外の値を無いものとして扱う。URL は `https://` で始まり、残りが URL に使う ASCII の英数字と記号だけのときに OSC 8 に埋め込む。許す文字は `[[:cntrl:]]` や `A-Z` を使わずに列挙する。文字クラスや範囲が含む文字は OS のロケール実装で違い (macOS では U+202E も `[[:cntrl:]]` に当たる)、両版の出力が食い違いうるため
+  - 番号とコメントの件数は、同じ `pr_is_count` (先頭が 0 でない 9 桁以内の整数) で確かめる。件数が 0 か不正なら件数を出さない
 - 外すと何が起きるか: キャッシュは `/tmp` 配下のファイルで、壊れることも、`gh` の出力が想定と違うこともある。URL に ESC や BEL が混ざると、OSC 8 が途中で閉じて後続の列の表示が崩れる
 - 守っているテスト: `108-pr-stale`〜`112-pr-invalid-optional-fields`、`115-pr-url-non-ascii`、`future-fetched-at` (pr-status-behavior)
 
@@ -486,9 +487,14 @@ Claude Code が statusline に渡す `pr` フィールドは使いません。�
 
 Claude Code のフッターの PR バッジは下線に色を付けていますが、PR の状態表示は `#<番号>` の文字色で表し、下線 (SGR 4) は文字と同じ色のまま付けます。下線色 (SGR 58) を Claude Code の statusline 描画がそのまま通すかを確認できていないためです。
 
-### `gh pr list --json`
+### `gh pr list --json` とほかのコメントの数え方
 
-`gh pr list --json` は使いません。件数を知りたいだけのコメントとレビューの本文まで取ってしまい重いうえ、行コメントの件数 (`reviewThreads`) を取れないためです。GraphQL なら必要な件数と集約値だけを 1 回 (コスト 1) で取れます。
+`gh pr list --json` / `gh pr view --json` は使いません。どちらも `comments` で返すのは会話タブのコメントだけで ([cli/cli#11477](https://github.com/cli/cli/issues/11477))、行コメントや本文付きのレビューを含みません。件数を知りたいだけなのに本文まで取るため、重くもなります。
+
+コメントの件数は GraphQL の `totalCommentsCount` で取ります。GitHub が数えた件数 (会話のコメント、行コメントとその返信、本文付きのレビュー) を 1 つの値で返し、PR 一覧の吹き出しアイコンの数と一致します。PR の選択に使うほかの値と合わせて、1 回の問い合わせ (コスト 1) で取れます。次の数え方は採っていません。
+
+- REST の `GET /repos/{owner}/{repo}/pulls/{number}` の `comments` と `review_comments`: PR の番号が先に要るため、ブランチから PR を探す問い合わせと合わせて 2 回になる。本文付きのレビューも数えない
+- GraphQL で種類ごとの `totalCount` を足す (`comments` + `reviewThreads` + `reviews`): `reviewThreads.totalCount` はコメントではなくスレッドの数なので、返信を数えない。スレッドごとのコメント数を足すにはノードを `first: N` で取る必要があり、上限を超えると数え漏れる。レビューは本文の有無で絞り込めない
 
 ### `statusCheckRollup` の各チェックを自前で集約する
 

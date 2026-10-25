@@ -61,11 +61,11 @@ PR の状態表示の取得も投げっぱなしの非同期処理のため、fa
 | `future-fetched-at` | `fetched_at` が現在より未来のキャッシュは表示せず、取得の結果で置き換える |
 | `jq-fork-same-name` | 他人の fork の同名ブランチの OPEN より、自分の MERGED (HEAD 一致) を選ぶ |
 | `jq-review-null-approved` | `reviewDecision` が `null` でも、`latestReviews` の `APPROVED` で approved になる |
-| `jq-review-threads-only` | `reviewThreads.totalCount` だけが 1 以上でも `✎` が付く |
+| `jq-nullable-fields` | `statusCheckRollup` が `null` なら CI は空、`totalCommentsCount` が `null` なら件数は 0 |
 | `jq-merged-head-mismatch` | MERGED の `headRefOid` がローカルの HEAD と違えば PR なし |
 | `jq-base-owner` | push 先がないときは base リポジトリのオーナーで候補を絞る |
 | `jq-other-owner` | push 先のオーナーと違うオーナーの PR は拾わない |
-| `jq-open-changes-requested` | `reviewDecision` が `null` なら `latestReviews` の `CHANGES_REQUESTED` を優先する。`reviews` だけでも `✎`、`FAILURE` は fail |
+| `jq-open-changes-requested` | `reviewDecision` が `null` なら `latestReviews` の `CHANGES_REQUESTED` を優先する。`totalCommentsCount` (2 桁) をそのまま件数にする。`FAILURE` は fail |
 | `jq-open-review-required` | `REVIEW_REQUIRED` は `latestReviews` に `APPROVED` があっても pending |
 | `jq-closed-error` | CLOSED (HEAD 一致) は closed でレビュー状態は空。`ERROR` は fail |
 

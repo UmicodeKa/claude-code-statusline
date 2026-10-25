@@ -159,7 +159,7 @@ case_invoked() {
   local out
   out=$(run_sl "$bash_bin" "$script")
   case "$out" in
-    *'main · \e[4m\e[38;2;78;186;101m#12\e[0m\e[38;2;78;186;101m✓\e[0m✎'*)
+    *'main · \e[4m\e[38;2;78;186;101m#12\e[0m\e[38;2;78;186;101m✓\e[0m 2'*)
       pass_case "invoked [$label]" ;;
     *) fail_case "invoked [$label]" "2 回目の描画に PR が出ない: $out" ;;
   esac
@@ -536,14 +536,14 @@ case_future_fetched_at() {
     fail_case "future-fetched-at [$label]" "未来の fetched_at のキャッシュを表示した: $out"
     return
   fi
-  if wait_until 5 '[ "$(cache_body "$cache")" = "12|open|approved|pass|1|1|https://github.com/my-org/my-project/pull/12" ]'; then
+  if wait_until 5 '[ "$(cache_body "$cache")" = "12|open|approved|pass|2|1|https://github.com/my-org/my-project/pull/12" ]'; then
     pass_case "future-fetched-at [$label]"
   else
     fail_case "future-fetched-at [$label]" "取得の結果で置き換わらない: $(cache_body "$cache")"
   fi
 }
 
-# --- jq-*: --jq による変換 (候補の選び方、レビュー状態、CI、コメントの判定) ---
+# --- jq-*: --jq による変換 (候補の選び方、レビュー状態、CI、コメントの件数) ---
 #   $4 ケース名 / $5 応答 / $6 期待するキャッシュの fetched_at 以降 (タブを | にしたもの。PR なしは空)
 #   $7 repo の fake git 規約 (省略時は push 先のオーナー me)
 run_jq_case() {
@@ -594,9 +594,9 @@ run_all_cases() {
   # reviewDecision が null でも latestReviews の APPROVED で approved になる
   run_jq_case "$bash_bin" "$script" "$label" jq-review-null-approved review-null-approved \
     "12|open|approved|pass|0|1|$url12"
-  # reviewThreads だけが 1 以上でも ✎ (commented=1) になる。statusCheckRollup が null なら ci は空
-  run_jq_case "$bash_bin" "$script" "$label" jq-review-threads-only review-threads-only \
-    "12|open|pending||1|1|$url12"
+  # statusCheckRollup が null なら ci は空、totalCommentsCount が null なら件数は 0
+  run_jq_case "$bash_bin" "$script" "$label" jq-nullable-fields nullable-fields \
+    "12|open|pending||0|1|$url12"
   # MERGED の headRefOid がローカルの HEAD と違えば PR なし
   run_jq_case "$bash_bin" "$script" "$label" jq-merged-head-mismatch merged-head-mismatch ""
   # push 先がない (まだ push していない) ときは base リポジトリのオーナーで候補を絞る。draft / EXPECTED
@@ -605,9 +605,9 @@ run_all_cases() {
   # push 先のオーナー (me) と違うオーナー (my-org) の PR は拾わない
   run_jq_case "$bash_bin" "$script" "$label" jq-other-owner base-owner ""
   # reviewDecision が null なら latestReviews の CHANGES_REQUESTED を APPROVED より優先する。
-  # reviews だけが 1 以上でも ✎。FAILURE は fail。headRefOid が違えば head_matches=0
+  # totalCommentsCount (2 桁) をそのまま件数にする。FAILURE は fail。headRefOid が違えば head_matches=0
   run_jq_case "$bash_bin" "$script" "$label" jq-open-changes-requested open-changes-requested \
-    "12|open|changes_requested|fail|1|0|$url12" "branch=main;ab=0,0"
+    "12|open|changes_requested|fail|14|0|$url12" "branch=main;ab=0,0"
   # REVIEW_REQUIRED は latestReviews に APPROVED があっても pending。PENDING は pending
   run_jq_case "$bash_bin" "$script" "$label" jq-open-review-required open-review-required \
     "12|open|pending|pending|0|1|$url12" "branch=main;ab=0,0"
