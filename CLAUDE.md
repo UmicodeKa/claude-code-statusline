@@ -43,8 +43,8 @@ CI は Linux 版のみを実行します。macOS 版の変更はローカルの 
 - 冒頭の `export LC_ALL=C.UTF-8`: 外すと `${#var}` がバイト数換算になり、トリム位置が変わる。([詳細](docs/DESIGN.md#ロケール固定))
 - 値の出力は `printf '%s'` を使い、`echo` は使わない。`echo` は値が `-n` や `-e` のとき出力が変わる。([詳細](docs/DESIGN.md#printf-s-の統一))
 - Linux 版冒頭の bash 4.1+ チェック: named fd (`exec {fd}>...`) を使うため、外すと古い bash でパースエラーになる。([詳細](docs/DESIGN.md#linux-版の-bash-41-ゲート))
-- `highlight` は空の文字列を塗らない: 外すと空の列が ESC だけの値になり、1 行目に余分な ` | ` が出る。`HIGHLIGHT` の既定は空なので、既存のケースでは表面化しない。([詳細](docs/DESIGN.md#highlight-は空の文字列を塗らない))
-- トリムしてから `highlight` に通す: 逆にすると ANSI エスケープが文字数に数えられ、トリム位置が変わる。([詳細](docs/DESIGN.md#トリムしてから-highlight-に通す))
+- `highlight` は空の文字列を塗らない: 外すと空の列が ESC だけの値になり、1 行目に余分な ` | ` が出る。`163-highlight-empty-columns` / `164-highlight-empty-line1` が検出する。([詳細](docs/DESIGN.md#highlight-は空の文字列を塗らない))
+- トリムしてから `highlight` に通す: 逆にすると ANSI エスケープが文字数に数えられ、トリム位置が変わる。`152`〜`154` の `highlight-*-trim*` が検出する。([詳細](docs/DESIGN.md#トリムしてから-highlight-に通す))
 - rate 表示の区切りはハイフン (`chart NN% - HH:MM`) で、括弧は使わない。weekly (`spark NN% - Mon`) も同じ `format_limit` で組み立てる。([詳細](docs/DESIGN.md#rate-のハイフン区切り))
 
 ## 公開リポジトリとしての注意

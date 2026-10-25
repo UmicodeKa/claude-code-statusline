@@ -133,7 +133,7 @@ effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の�
 - `hl_out` は 1 つのグローバル変数なので、続けて呼ぶと上書きされます。`format_limit` の無色の分岐では、チャートの結果を `chart_out` に移してから時刻を通します
 - 空の文字列は塗りません。塗ると空の列が ESC だけの空でない値になり、1 行目の｢値が空の列は省略する｣が崩れます。空のときも終了ステータスは 0 にして、呼び出し側が `&&` / `||` でつないでも失敗と取り違えないようにしています
 - トリムしてから塗ります。`truncate_label` / `truncate_branch` の文字数に ANSI エスケープを含めないためです
-- 1 行目の要素 (directory / branch / session) は `layout_token` で塗ります。`dir_field` は `hl_set` より前に作られるので、作る箇所で塗る設計にすると、`hl_set` の構築位置を動かしただけで directory のハイライトが黙って効かなくなります
+- 1 行目の要素 (directory / branch / session) は `layout_token` で塗ります。`layout_token` は main の末尾の `build_layout` からだけ呼ばれるので、`hl_set` を組み立てた後に塗ることがここで決まります。directory も `dir_field` を作る箇所では塗らず、1 行目の塗りを 1 か所に集めています
 - branch は表示中の名前の最後の `/` で分け、後ろだけを塗ります。`/` が無い名前で `${label%/*}` を使うと名前全体が返り `main/main` のように重なるため、`case` で分けます。塗る範囲は表示中の名前から決めるので、トリムの規則が変わってもこの規則は変わりません
 - ctx / rate / weekly は `format_ctx` / `format_limit` の無色の分岐 (と欠落の分岐) だけで呼びます。`format_limit` は第 5 引数の列の名前 (`rate` / `weekly`) から `<列の名前>_chart` / `<列の名前>_reset` のトークンを組み立て、rate と weekly で同じコードを使います
 - model は `model_effect` が無色 (`static`) のときだけ `highlight` を通し、色付きのときは `paint` で塗ります。無色のモデルは `paint` の `$(...)` を通らないので、その分の fork がありません
@@ -521,14 +521,14 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 
 - 箇所: `highlight` の `[ -n "$2" ] || return 0`
 - 何をしているか: 空の文字列は `COLOR_text` で囲まずに空のまま返す
-- 外すと何が起きるか: 空の session や `SHOW_CWD=0` の directory が ESC だけの空でない値になり、1 行目に余分な ` | ` が出る。1 行目の列がすべて空のときも 1 行目が出るようになる。`HIGHLIGHT` が既定 (空) のときは塗らないので、既存のケースでは表面化しない
+- 外すと何が起きるか: 空の session や `SHOW_CWD=0` の directory が ESC だけの空でない値になり、1 行目に余分な ` | ` が出る。1 行目の列がすべて空のときも 1 行目が出るようになる。`HIGHLIGHT` を指定したときだけ起きる
 - 守っているテスト: `163-highlight-empty-columns`、`164-highlight-empty-line1`
 
 ### トリムしてから `highlight` に通す
 
 - 箇所: `layout_token` の branch / session と、main の model の組み立て
 - 何をしているか: `truncate_branch` / `truncate_label` でトリムした後の文字列を `highlight` に渡す
-- 外すと何が起きるか: 塗ってからトリムすると ANSI エスケープが文字数に数えられ、トリム位置が変わる。`\033[0m` が切り落とされて色が後続の列へ漏れることもある。`HIGHLIGHT` が既定 (空) のときは塗らないので、既存のケースでは表面化しない
+- 外すと何が起きるか: 塗ってからトリムすると ANSI エスケープが文字数に数えられ、トリム位置が変わる。`\033[0m` が切り落とされて色が後続の列へ漏れることもある。`HIGHLIGHT` を指定したときだけ起きる
 - 守っているテスト: `152-highlight-branch-trim-head`、`153-highlight-branch-trim-middle`、`154-highlight-session-trim`
 
 ### `HIGHLIGHT` の組み立てと塗る順序

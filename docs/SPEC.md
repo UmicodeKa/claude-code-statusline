@@ -523,6 +523,8 @@ branch の塗る範囲の例:
 | `feature/xxx/yyy` | `yyy` |
 | `feature/aaaaaaaaaaaa…/yyy` (中間を省略した名前) | `yyy` |
 | `feature/improve-awesome-…` (先頭を残してトリムした名前) | `improve-awesome-…` |
+| `platform-infrastructure-…` (`/` より前で切れた名前) | `platform-infrastructure-…` |
+| `abcdefghijklmnopqrstuvw/…` (`/` の直後で切れた名前) | `…` |
 
 - 色が付いている状態ではその色だけを使い、ハイライトは効かない。ctx の使用率 70% 以上、rate / weekly の残量 40% 以下 (`<chart> NN% - HH:MM` 全体がしきい値の色)、Fable / Opus / Haiku のモデルが該当する
 - 区切りと空白の扱いは [レイアウト](#レイアウト-layout_line1--layout_line2) と同じ。トークン前後の空白 (スペース･タブ) は無視し、未知のトークンは黙って無視する。同じトークンを複数回書いても 1 回と同じ

@@ -1281,8 +1281,9 @@ format_ctx() {
 # 挟まないため。branch/session のトリムは truncate_branch / truncate_label の command substitution を伴う)。
 # トークン内部の区切り (branch の ab/diff/PR 前のスペース、model_ctx の ∙/スペース) は
 # トークン間の " | " とは別ルールなので、ここで組み立て済みの 1 塊として返す。
-# 1 行目の値の HIGHLIGHT の塗りもここで行う (トリムした後に塗る)。directory を dir_field を作る箇所で塗ると、
-# 塗る処理が hl_set の組み立てより前に来て、指定しても黙って効かなくなるため。
+# 1 行目の値の HIGHLIGHT の塗りもここで行う (トリムした後に塗る)。layout_token は main の末尾の build_layout からだけ
+# 呼ばれるので、hl_set の組み立てより後に塗ることがここで決まる。directory も dir_field を作る箇所ではなくここで塗り、
+# 1 行目の塗りを 1 か所に集める。
 layout_token() {
   token_value=""
   case "$1" in
@@ -1401,10 +1402,8 @@ EOF
 # HIGHLIGHT のトークンを "|a|b|" の形にまとめ、highlight が照合する hl_set を作る。
 # 要素を組み立てる処理 (format_ctx / format_limit / model / layout_token) より前に置く。
 split_tokens "$HIGHLIGHT"
-hl_set="|"
-for hl_token in "${tokens[@]}"; do
-  hl_set="${hl_set}${hl_token}|"
-done
+printf -v hl_set '|%s' "${tokens[@]}"
+hl_set+='|'
 
 # rate は残量を履歴に積む (チャートも数字も 100→0 に減っていく様子になる)
 set_remaining rate_remaining "$rate_pct"
