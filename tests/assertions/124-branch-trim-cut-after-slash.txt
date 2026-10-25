@@ -1,0 +1,3 @@
+# 先頭を切った位置がちょうど / の直後でも、そのまま … を続ける
+# feature/aaaa/bbbbbbbbbbbbbbb (28 文字) -> 先頭 25-1-len("/bbbbbbbbbbbbbbb")=8 文字 (feature/) + … + /bbbbbbbbbbbbbbb
+matches_line1: ^feature/…/bbbbbbbbbbbbbbb ·$

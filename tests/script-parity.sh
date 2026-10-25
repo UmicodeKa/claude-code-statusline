@@ -105,10 +105,13 @@ main() {
   check_block interval-clamp '# --- 間引き定数の推奨レンジ ---' '# --- カラースキーム ---'
   check_block color-scheme '# --- カラースキーム ---' 'esac'
   # PR の状態表示。ロックの取り方が違う maybe_pr_refresh を除き、定数・キャッシュの読み書き・
-  # 子プロセスの起動と本体・描画は両版で同じ。branch 列の組み立てから呼ばれるので layout の比較も守る。
+  # 子プロセスの起動と本体・描画は両版で同じ。branch 列の組み立てから呼ばれるので format-layout の比較も守る。
   check_block pr-constants '# PR の状態表示の再取得間隔' '# --- PR の状態表示の内部定数ここまで ---'
   check_block pr-common '# --- PR の状態表示 ---' '# maybe_pr_refresh:'
-  check_block layout '# レイアウトのトークンを描画済み文字列に引く' '# 配列を区切り文字で結合する'
+  # 色付け・トリム・git の集計と、rate/ctx の整形からレイアウトの組み立てまで。
+  # 出力を決める関数のうち OS 依存の無いもの (truncate_branch / layout_token など) をここで守る。
+  check_block paint '# 色付けは 3 段構成' '# GIT_FETCH=1 のときだけ'
+  check_block format-layout '# レートリミット残量の文字列を組み立てる' '# --- main ---'
 
   # ロケール固定はトリムの文字数換算に効くため冒頭 (先頭 20 行) にあることまで見る。
   check_static locale '1,20p' 'export LC_ALL=C.UTF-8'

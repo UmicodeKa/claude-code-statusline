@@ -93,7 +93,8 @@ PR の状態表示の取得も投げっぱなしの非同期処理のため、fa
 | `block:color-scheme` | カラースキーム定義ブロックが両版で一致する |
 | `block:pr-constants` | PR の状態表示の内部定数が両版で一致する |
 | `block:pr-common` | PR の状態表示の共通部分 (クエリ、`--jq`、キャッシュの読み書き、子プロセスの起動と本体、描画) が両版で一致する |
-| `block:layout` | レイアウトの組み立て (`layout_token` / `build_layout`) が両版で一致する |
+| `block:paint` | 色付け、トリム、git の集計 (`paint` / `*_color` / `truncate_label` / `truncate_branch` / `git_diff_stat` / `git_ahead_behind`) が両版で一致する |
+| `block:format-layout` | rate / ctx の整形とレイアウトの組み立て (`format_rate` / `format_ctx` / `layout_token` / `build_layout` / `join_by`) が両版で一致する |
 | `static:locale` | 先頭 20 行に `export LC_ALL=C.UTF-8` がある |
 | `static:no-prompt:<関数>:*` | `maybe_git_fetch` と `pr_spawn_refresh` のそれぞれに、`GIT_TERMINAL_PROMPT=0` / `GIT_ASKPASS=/bin/true` / `SSH_ASKPASS=/bin/true` / `SSH_ASKPASS_REQUIRE=force` が残っている |
 | `static:fetch-fd-redirect` | `maybe_git_fetch` に `>/dev/null 2>&1 </dev/null` が残っている |

@@ -470,7 +470,7 @@ ctx_color() {
 
 # 文字列を `max` 文字以下に丸め、超過時は先頭 `max-1` 文字 + `…` (U+2026) にする。
 # 文字数カウントは LC_ALL=C.UTF-8 固定下の bash `${#var}` / `${var:0:N}` に依存する。
-# 詳細は README の「トリム仕様」参照。
+# 規則は docs/SPEC.md の「トリム規則」参照。
 truncate_label() {
   local max=$1
   local text=$2
@@ -479,6 +479,27 @@ truncate_label() {
   else
     printf '%s…\n' "${text:0:$((max - 1))}"
   fi
+}
+
+# ブランチ名を `max` 文字以下に丸める。`feature/xxx/yyy` の末尾 `yyy` は作業内容を表すことが
+# 多いので、最後の `/` より後ろを残し、手前を `…` で省略する (先頭 N 文字 + `…` + `/<末尾>`)。
+# 先頭を最低 1 文字残せないほど末尾が長い (max-3 文字超) ときと `/` が無いときは
+# truncate_label の先頭優先の規則に委ねる (同じ規則を 2 か所に書かないため)。
+truncate_branch() {
+  local max=$1
+  local text=$2
+  local last head_len
+  case "$text" in
+    */*)
+      last="/${text##*/}"
+      head_len=$((max - 1 - ${#last}))
+      if [ "${#text}" -gt "$max" ] && [ "$head_len" -ge 1 ]; then
+        printf '%s…%s\n' "${text:0:$head_len}" "$last"
+        return
+      fi
+      ;;
+  esac
+  truncate_label "$max" "$text"
 }
 
 # 作業ツリーの変更行数を色付きで返す。
@@ -1137,7 +1158,7 @@ format_ctx() {
 }
 
 # レイアウトのトークンを描画済み文字列に引く。値は token_value に返す (呼び出し側で $(...) を
-# 挟まないため。branch/session のトリムは従来どおり truncate_label の command substitution を伴う)。
+# 挟まないため。branch/session のトリムは truncate_branch / truncate_label の command substitution を伴う)。
 # トークン内部の区切り (branch の ab/diff/PR 前のスペース、model_ctx の ∙/スペース) は
 # トークン間の " | " とは別ルールなので、ここで組み立て済みの 1 塊として返す。
 layout_token() {
@@ -1147,7 +1168,7 @@ layout_token() {
     branch)
       if [ -n "$branch" ]; then
         pr_token
-        token_value="$(truncate_label 25 "$branch")${ab_str:+ $ab_str}${diff_str:+ $diff_str}${pr_str:+ $pr_str}"
+        token_value="$(truncate_branch 25 "$branch")${ab_str:+ $ab_str}${diff_str:+ $diff_str}${pr_str:+ $pr_str}"
       fi
       ;;
     session)

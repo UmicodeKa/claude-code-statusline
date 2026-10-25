@@ -1,0 +1,2 @@
+# / を含まない 26 文字以上の名前: 先頭 24 文字 + … の規則のまま
+matches_line1: ^improve-awesome-statusli… ·$
