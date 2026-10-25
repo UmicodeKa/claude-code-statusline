@@ -108,14 +108,14 @@ effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の�
 
 - トークン間の区切りは常に ` | ` です。トークンの内側で別の区切りを使う要素は 1 トークンにまとめています
   - `model_ctx` は `✻ <model>∙<effort> <ctx>` (`∙` とスペース 1 個を内包)
-  - `branch` は `$(truncate_label 25 "$branch")${ab_str:+ $ab_str}${diff_str:+ $diff_str}${pr_str:+ $pr_str}` (ab / PR が空のときに余分なスペースを残さないよう `:+` で条件付き連結。diff は作業ツリーがクリーンでも `·` を返すため、ブランチがあれば常に出る)
+  - `branch` は `$(truncate_branch 25 "$branch")${ab_str:+ $ab_str}${diff_str:+ $diff_str}${pr_str:+ $pr_str}` (ab / PR が空のときに余分なスペースを残さないよう `:+` で条件付き連結。diff は作業ツリーがクリーンでも `·` を返すため、ブランチがあれば常に出る)
     - `pr_str` は同じ case 節で直前に呼ぶ `pr_token` が設定する。連結を `pr_token` より前に移すと PR が出なくなる
 - `model` と `ctx` を別トークンに分けないのは、トークン間の区切りが組み合わせごとに変わり、実装とテストの両方が複雑になるためです
 - `build_layout` の第 3 引数で｢空の値を積むか｣を切り替えます。1 行目は `0` (空なら列ごと省略)、2 行目は `1` (空でも積む)
 - 2 行目は走査対象の末尾に既定の全トークン (`|model_ctx|rate`) を足し、書かれなかったトークンを既定順で補います。これにより `✻` を含む `model_ctx` は消せません
 - 未知のトークンは黙って無視し、重複は最初の 1 回だけ採ります。前後の空白 (タブを含む) はパラメータ展開で除去し、`tr` や `awk` は使いません
 - トークンから値への対応は連想配列ではなく `case` で引き、値はグローバル変数 `token_value` で返します。macOS の `/bin/bash` 3.2 には連想配列が無く、`$(...)` で受けると fork が増えるためです
-  - 例外として、branch / session のトリムは `truncate_label` の command substitution を伴います
+  - 例外として、branch / session のトリムは `truncate_branch` / `truncate_label` の command substitution を伴います
   - `PR_STATUS=1` のときは branch で呼ぶ `pr_token` もキャッシュの読み取りで fork します ([PR の状態表示の取得とキャッシュ](#pr-の状態表示の取得とキャッシュ))
 - `SHOW_CWD=0` は `directory` トークンが空を返すことで実現しています。フラグとレイアウトで二重に判定する箇所を作らないためです
 
@@ -161,6 +161,16 @@ rate チャートは `HISTORY_LEN` (6) 文字で、左 5 文字が履歴、右�
 - 複数のセッションを並行しているときに、どのプロジェクトを操作しているかを見分けるための列です
 - `workspace.current_dir` の basename をパラメータ展開 (`${path##*/}`) だけで取り出し、`basename` や git の呼び出しを足しません
 - 末尾のスラッシュは先に取り除きます。`/tmp/project/` のような値では `${cwd##*/}` が空になり、実在するディレクトリなのに列が消えるためです。`/` だけは除去すると空になり、｢ルートは列ごと省略｣と同じ結果になります
+
+### ブランチ名の末尾を残すトリム
+
+- `feature/xxx/yyy` のような名前では末尾の `yyy` が作業内容を表すことが多いので、`truncate_branch` は最後の `/` より後ろを残し、中間を `…` で省略します。先頭優先で切ると、長い名前ほど見分けたい部分が消えるためです
+- 末尾の上限 22 文字は、25 文字の中に先頭 1 文字 + `…` + `/` + 末尾を収められる最大値です。これより長い末尾や `/` の無い名前は中間省略では収まらない (または区切りが無い) ので、`truncate_label` に委ねて先頭 24 文字 + `…` にします。先頭優先の規則を 2 か所に書かないためです
+- パラメータ展開 (`${text##*/}` / `${#tail}` / `${text:0:N}`) だけで組み、外部コマンドを使いません。呼び出し側の command substitution は `truncate_label` のときと同じ 1 回で、fork は増えません
+- 守っているテスト
+  - 中間省略: `117-branch-trim-keep-tail`、閾値の両側の `118-branch-trim-tail-22` / `119-branch-trim-tail-23`、`121-branch-trim-keep-tail-ab-diff`
+  - 先頭優先のまま: `120-branch-trim-no-slash`、末尾が長い `31-branch-trim` / `41-diff-trim-keeps-stat`
+  - 両版のずれ: `tests/script-parity.sh` の `block:paint` / `block:format-layout`
 
 ### PR の状態表示の取得とキャッシュ
 

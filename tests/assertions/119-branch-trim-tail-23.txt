@@ -1,0 +1,2 @@
+# 末尾が 23 文字: 中間省略では先頭を 1 文字も残せないので、先頭 24 文字 + … の規則のまま
+matches_line1: ^feature/cccccccccccccccc… ·$

@@ -1,0 +1,4 @@
+# branch トリムで末尾のセグメントを残す: feature/aaaaaaaaaaaaaaaaaaaa/yyy (32 文字) は末尾 yyy が 22 文字以下
+# -> 先頭 25-1-len("/yyy")=20 文字 + … + /yyy (25 文字)
+matches_line1: ^feature/aaaaaaaaaaaa…/yyy ·$
+not_contains: feature/aaaaaaaaaaaaaaaa…
