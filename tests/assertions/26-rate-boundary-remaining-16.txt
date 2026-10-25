@@ -1,5 +1,5 @@
 # rate=84% (残量 16, 閾値 15 の直上) -> 黄(warning)のまま + chart 16% - 22:13
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| \\e\[38;2;255;193;7m[▁▂▃▄▅▆▇█]{6} 16% - 22:13\\e\[0m$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| \\e\[38;2;255;193;7m[▁▂▃▄▅▆▇█]{6} 16% - 22:13\\e\[0m \| · --$
 matches_line1: ^statusline-demo$
 contains: \e[38;2;255;193;7m
 contains: 16% - 22:13

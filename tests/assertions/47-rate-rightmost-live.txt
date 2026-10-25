@@ -6,7 +6,7 @@
 #
 # rate=90% (残量10) -> 色閾値 ≤15% で橙(claude) + 数値 10% + ハイフン区切り時刻
 # ctx=40% -> 色なし + 1 文字 spark のみ
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| \\e\[38;2;215;119;87m▇▇▇▇▇▁ 10% - 22:13\\e\[0m$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| \\e\[38;2;215;119;87m▇▇▇▇▇▁ 10% - 22:13\\e\[0m \| · --$
 matches_line1: ^statusline-demo$
 contains: ▇▇▇▇▇▁
 not_contains: ▇▇▇▇▇▇

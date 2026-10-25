@@ -1,6 +1,6 @@
 # conf で SHOW_CWD=1、env (show-cwd-off マーカー) で CLAUDE_STATUSLINE_SHOW_CWD=0。
 # env > conf の優先順位により directory 列は消え、branch 列だけが 1 行目に残る。
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13 \| · --$
 matches_line1: ^main ·$
 not_contains: sl-repo
 exit_code: 0

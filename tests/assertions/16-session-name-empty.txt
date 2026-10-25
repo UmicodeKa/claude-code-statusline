@@ -1,5 +1,5 @@
 # session_name="" -> 1 行目の末尾要素なし (branch も /var/empty で無く directory のみ)。
 # モデル行は model ctx と rate の 2 要素で終わる
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13 \| · --$
 matches_line1: ^statusline-demo$
 not_contains: |  |

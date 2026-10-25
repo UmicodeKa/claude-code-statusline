@@ -76,12 +76,12 @@ SHOW_CWD="${CLAUDE_STATUSLINE_SHOW_CWD:-${SHOW_CWD:-1}}"
 
 # 表示要素の並び。トークンを `|` で区切って並べる (前後の空白は無視)。
 # 1 行目: directory / branch / session。値が空のトークンは列ごと省略し、全て空なら 1 行目ごと出さない。
-# 2 行目: model_ctx / rate。並び順だけを変えられる (書かなかったトークンは既定順で末尾に補い、常に両方出す)。
+# 2 行目: model_ctx / rate / weekly。並び順だけを変えられる (書かなかったトークンは既定順で末尾に補い、常に 3 つとも出す)。
 # 未知のトークンは黙って無視する。空文字は既定値扱い (1 行目を消したいときは none 等の未知トークンを書く)。
 # SHOW_CWD=0 は 1 行目から directory を外すのと等価 (directory トークンが空を返す)。
 # env CLAUDE_STATUSLINE_LAYOUT_LINE1 / CLAUDE_STATUSLINE_LAYOUT_LINE2 でも上書き可。
 LAYOUT_LINE1="${CLAUDE_STATUSLINE_LAYOUT_LINE1:-${LAYOUT_LINE1:-directory|branch|session}}"
-LAYOUT_LINE2="${CLAUDE_STATUSLINE_LAYOUT_LINE2:-${LAYOUT_LINE2:-model_ctx|rate}}"
+LAYOUT_LINE2="${CLAUDE_STATUSLINE_LAYOUT_LINE2:-${LAYOUT_LINE2:-model_ctx|rate|weekly}}"
 
 # 数値の設定 (conf のみで変える。env の上書き口は持たない)。既定値と範囲は後方の「間引き定数」の
 # clamp_int の呼び出しにだけ置く (既定値が 2 か所にあると、空の値と不正な値で戻る先が食い違いうるため)。
@@ -132,7 +132,7 @@ LOCK_TIMEOUT_SEC=2
 # レンジの根拠:
 #   RATE_CHART_LEN 2..20
 #     下限: 履歴 1 文字 + 現在値 1 文字。1 だと現在値だけになり推移を表さない
-#     上限: 2 行目が最も長くなる組み合わせでも 80 桁の端末に収まる長さ。履歴ファイルに残す件数も兼ねる
+#     上限: 2 行目が最も長くなる組み合わせ (58 + RATE_CHART_LEN 桁) でも 80 桁の端末に収まる長さ。履歴ファイルに残す件数も兼ねる
 #   GIT_FETCH_INTERVAL_SEC 60..1800
 #     下限: statusline は数秒〜十数秒間隔で呼ばれ得るため、60 未満では間引きが実質機能せず fetch が頻発する
 #     上限: 30 分を超えると ↓behind 自動最新化の意味が薄れ、手動 fetch と大差なくなる
@@ -404,7 +404,7 @@ history_chart() {
 }
 
 # 色付けは 3 段構成: paint (エフェクトディスパッチャ) → static / rainbow (プリミティブ)。
-# 全色付け経路 (model / rate / ctx / diff) は paint を経由する。色決定関数
+# 全色付け経路 (model / rate / weekly / ctx / diff) は paint を経由する。色決定関数
 # (model_color / limit_color / ctx_color) は "static <ansi>" / "rainbow" のような
 # effect 名を返し、それを paint の <effect> [arg] にそのまま展開して渡す。
 # 将来エフェクトが増えても paint に 1 ブランチ足すだけで済む。
@@ -467,7 +467,7 @@ paint() {
   esac
 }
 
-# レートリミットの残量に応じた paint の effect 指定 (static <ansi> / static) を返す。
+# レートリミットの残量に応じた paint の effect 指定 (static <ansi> / static) を返す (rate と weekly で共有)。
 # 警戒→危険→致命の 3 段を公式パレットで階調化: 40% 以下=warning (黄), 15% 以下=claude (橙),
 # 5% 以下=error (赤) + 点滅 (\033[5m)。点滅は色ではなく属性なので公式色に重ねて残す。
 limit_color() {
@@ -1142,8 +1142,8 @@ maybe_pr_refresh() {
 # レートリミット残量の文字列を組み立てる
 #   format_limit <残量> <リセット epoch> <チャート> <時刻の書式>
 #   残量: set_remaining で計算済みの整数 (空なら `<チャート> --`)。ここでは丸め直さない
-#   チャート: 呼び出し側で組み立て済みのスパーク列 (rate は履歴チャート)
-#   時刻の書式: format_reset_time に渡す date の書式 (rate は %H:%M)
+#   チャート: 呼び出し側で組み立て済みのスパーク列 (rate は履歴チャート、weekly は現在値の 1 文字)
+#   時刻の書式: format_reset_time に渡す date の書式 (rate は %H:%M、weekly は曜日の %a)
 format_limit() {
   local remaining=$1
   local reset=${2:-0}
@@ -1229,6 +1229,7 @@ layout_token() {
       ;;
     model_ctx) token_value="${model_field} ${ctx_str}" ;;
     rate) token_value="$rate_str" ;;
+    weekly) token_value="$weekly_str" ;;
   esac
 }
 
@@ -1274,10 +1275,10 @@ join_by() {
 input=$(cat)
 
 # jq は起動コストが高い (1 回 ~20-50ms) ため、必要なフィールドを 1 回で取り出す。
-# 1 フィールド 1 行で出力し、`read` を 7 回呼んで空フィールドも保持する。
+# 1 フィールド 1 行で出力し、`read` を 9 回呼んで空フィールドも保持する。
 # 値に改行が混入せず、ESC などの制御文字で端末の表示が崩れないよう、文字列フィールドは
 # gsub で制御文字をすべて半角スペースに潰してから渡す。
-# effort は必ず末尾に追加する (read 個数 = jq 出力行数。途中挿入すると既存変数の対応がズレる)。
+# 新しいフィールドは必ず末尾に追加する (read 個数 = jq 出力行数。途中挿入すると既存変数の対応がズレる)。
 {
   IFS= read -r model
   IFS= read -r ctx_pct
@@ -1286,6 +1287,8 @@ input=$(cat)
   IFS= read -r session
   IFS= read -r cwd
   IFS= read -r effort
+  IFS= read -r weekly_pct
+  IFS= read -r weekly_reset
 } <<EOF
 $(printf '%s' "$input" | jq -r '
   def safe: tostring | gsub("[[:cntrl:]]"; " ");
@@ -1295,7 +1298,9 @@ $(printf '%s' "$input" | jq -r '
   (.rate_limits.five_hour.resets_at          // 0  | tostring),
   (.session_name                             // "" | safe),
   (.workspace.current_dir                    // "" | safe),
-  (.effort.level                             // "" | safe)
+  (.effort.level                             // "" | safe),
+  (.rate_limits.seven_day.used_percentage    // "" | tostring),
+  (.rate_limits.seven_day.resets_at          // 0  | tostring)
 ')
 EOF
 
@@ -1362,6 +1367,14 @@ model_str="${model:-Unknown}"
 ctx_str=$(format_ctx "$ctx_pct")
 rate_str=$(format_limit "$rate_remaining" "$rate_reset" "$rate_chart" '%H:%M')
 
+# weekly (7 日間のレートリミット) は履歴を持たず、現在の残量を ctx と同じ 1 文字の spark で描く。
+# 色・数値・区切りの規則は rate と共有し (format_limit / limit_color)、時刻の代わりに曜日 (%a) を添える。
+# %a は LC_ALL=C.UTF-8 の下で評価されるため、利用者のロケールによらず英語の略称 (Sun..Sat) になる。
+# 使用率が欠落していれば spark_of が · を返し、format_limit が `· --` にする (列は残す)。
+set_remaining weekly_remaining "$weekly_pct"
+spark_of weekly_spark "$weekly_remaining"
+weekly_str=$(format_limit "$weekly_remaining" "$weekly_reset" "$weekly_spark" '%a')
+
 # ✻ (+ トリム後モデル名) をモデル色で塗る。色判定はトリム前の全長で行う。
 # model_color は paint の effect 指定 (Fable/Opus/Haiku→static <ansi>, 他→static) を返す。
 # 全モデルが単色 (無色含む)。無色 (Sonnet) でも $(...) で末尾改行が
@@ -1413,11 +1426,11 @@ if [ "$SHOW_CWD" = "1" ]; then
   [ -n "$dir_name" ] && dir_field=$(truncate_label 25 "$dir_name")
 fi
 
-# 2 行目の列順: LAYOUT_LINE2 (既定 model_ctx → rate)
+# 2 行目の列順: LAYOUT_LINE2 (既定 model_ctx → rate → weekly)
 # model_ctx は model と ctx をスペース 1 個で結合した 1 トークン (両者の間にパイプは出さない)。
 # 2 行目は常に出力するため、値が空でも要素を落とさず無条件に積む (空なら省略は 1 行目のみ)。
 # 末尾に既定の全トークンを足して走査し、書かれなかったトークンを既定順で補う (✻ を消せないようにする)。
-build_layout "${LAYOUT_LINE2}|model_ctx|rate" "|model_ctx|rate|" 1
+build_layout "${LAYOUT_LINE2}|model_ctx|rate|weekly" "|model_ctx|rate|weekly|" 1
 parts=("${layout_parts[@]}")
 
 # 1 行目の列順: LAYOUT_LINE1 (既定 directory? → branch? → session?)

@@ -22,7 +22,7 @@ macOS 版 (`statusline-macos.sh`) と Linux 版 (`statusline-linux.sh`) は同�
 5. カラースキーム (`COLOR_*`) を定義する
 6. 依存コマンドを確認し、履歴ディレクトリを安全に用意する
 7. 入力 JSON を `jq` 1 回で読み取る
-8. rate 履歴を更新してチャートを作る
+8. rate 履歴を更新してチャートを作り、weekly の 1 文字のスパークを求める
 9. git のブランチ、変更行数、ahead/behind を取得する (`GIT_FETCH=1` のときはここでバックグラウンド fetch を投げる)
 10. 各フィールドを着色し、レイアウトに従って 1 行目と 2 行目を組み立てて出力する (`PR_STATUS=1` で branch 列を組み立てるときだけ、PR のキャッシュを読み、必要ならバックグラウンドで取得を投げる)
 
@@ -50,7 +50,7 @@ macOS 版で `flock` を使わないのは、macOS に標準で入っておら�
 
 ### 色付けの 3 段構成
 
-すべての着色 (model / effort / ctx / rate / diff / ahead-behind) は `paint <text> <effect> [arg]` を経由します。
+すべての着色 (model / effort / ctx / rate / weekly / diff / ahead-behind) は `paint <text> <effect> [arg]` を経由します。
 
 - `paint` は effect 名を見て `static` か `rainbow` に振り分けるだけのディスパッチャです
 - `static <text> <color>` は単色で囲んで末尾に `\033[0m` を付けます。color が空のときは文字列を末尾改行付きで素通しします
@@ -90,9 +90,9 @@ effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の�
 
 色の値を各関数に直接書く形に戻すと、light/dark の切り替えと両版の一致確認が難しくなります。
 
-### rate / ctx の 3 階調と点滅
+### rate / weekly / ctx の 3 階調と点滅
 
-テーマの配色には警告系の色が `warning` (黄) と `error` (赤) の 2 段しかありません。rate と ctx では中間に `claude` (橙) を挟み、警戒 → 危険 → 致命 の 3 段にしています。致命段は `error` に点滅属性 `\033[5m` を重ねます。点滅は色ではなく属性なので、色の数を増やさずに危険段と区別できます。点滅を外して `error` 単色にすると、致命段と危険段の見た目の差が色だけになり、隣接する段と紛れやすくなります。
+テーマの配色には警告系の色が `warning` (黄) と `error` (赤) の 2 段しかありません。rate / weekly と ctx では中間に `claude` (橙) を挟み、警戒 → 危険 → 致命 の 3 段にしています。致命段は `error` に点滅属性 `\033[5m` を重ねます。点滅は色ではなく属性なので、色の数を増やさずに危険段と区別できます。点滅を外して `error` 単色にすると、致命段と危険段の見た目の差が色だけになり、隣接する段と紛れやすくなります。
 
 ### 1 行目の組み立て
 
@@ -112,7 +112,7 @@ effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の�
     - `pr_str` は同じ case 節で直前に呼ぶ `pr_token` が設定する。連結を `pr_token` より前に移すと PR が出なくなる
 - `model` と `ctx` を別トークンに分けないのは、トークン間の区切りが組み合わせごとに変わり、実装とテストの両方が複雑になるためです
 - `build_layout` の第 3 引数で｢空の値を積むか｣を切り替えます。1 行目は `0` (空なら列ごと省略)、2 行目は `1` (空でも積む)
-- 2 行目は走査対象の末尾に既定の全トークン (`|model_ctx|rate`) を足し、書かれなかったトークンを既定順で補います。これにより `✻` を含む `model_ctx` は消せません
+- 2 行目は走査対象の末尾に既定の全トークン (`|model_ctx|rate|weekly`) を足し、書かれなかったトークンを既定順で補います。これにより `✻` を含む `model_ctx` は消せません。以前の既定値 `model_ctx|rate` を写した conf でも、`weekly` は末尾に補われます
 - 未知のトークンは黙って無視し、重複は最初の 1 回だけ採ります。前後の空白 (タブを含む) はパラメータ展開で除去し、`tr` や `awk` は使いません
 - トークンから値への対応は連想配列ではなく `case` で引き、値はグローバル変数 `token_value` で返します。macOS の `/bin/bash` 3.2 には連想配列が無く、`$(...)` で受けると fork が増えるためです
   - 例外として、branch / session のトリムは `truncate_branch` / `truncate_label` の command substitution を伴います
@@ -140,7 +140,7 @@ rate チャートは `RATE_CHART_LEN` (既定 6) 文字で、左 `RATE_CHART_LEN
 
 ### 履歴ファイルと排他制御
 
-- 履歴は rate だけが持ちます。rate は 5 時間ウィンドウのアカウント単位の値で全セッション共通なので、`${HISTORY_DIR}/rate` の 1 ファイルに集約します。ctx は現在値の 1 文字だけを描くため履歴を持ちません
+- 履歴は rate だけが持ちます。rate は 5 時間ウィンドウのアカウント単位の値で全セッション共通なので、`${HISTORY_DIR}/rate` の 1 ファイルに集約します。ctx と weekly は現在値の 1 文字だけを描くため履歴を持ちません
 - 保存する件数は表示長 (`RATE_CHART_LEN`) ではなく、その上限の `RATE_CHART_LEN_MAX` (20) 件で固定します
   - チャート長を伸ばしたとき、保存済みの履歴がすぐ表示に出ます。表示長で切り詰めると、伸ばした直後は `·` が並びます
   - 履歴ファイルは全セッション共通なので、`CLAUDE_STATUSLINE_CONFIG` で別の conf を読むセッションがあっても、短いチャートのセッションが長いチャートのセッションの履歴を切り詰めません
@@ -149,13 +149,24 @@ rate チャートは `RATE_CHART_LEN` (既定 6) 文字で、左 `RATE_CHART_LEN
 - 追記後は `tail -n RATE_CHART_LEN_MAX` を一時ファイルへ書いて `mv` で置き換えます。読み出し側は `tail -n RATE_CHART_LEN` で末尾だけを読むので、切り詰めに失敗してファイルが伸びても表示幅は崩れません
 - 複数の statusline が同時に書き込むことがあるため、追記はロックの中で行います。ロック待ちは `LOCK_TIMEOUT_SEC` (2 秒) までで、取れなければその回の追記を飛ばします。statusline は頻繁に呼ばれるので、次の呼び出しで反映されます
 
+### weekly (週間リミット)
+
+- 7 日間のレートリミットの残量を、ctx と同じ 1 文字のスパークで描きます。履歴は持ちません。5 時間用の間引き間隔で 7 日の窓を記録しても傾向を示さないためです
+- 整形は rate と同じ `format_limit` を使い、チャートの代わりに `spark_of` の 1 文字、時刻の書式の代わりに `%a` (曜日) を渡します。色の閾値 (`limit_color`)、数値を出す条件、` - ` の区切りを 2 か所に書かないためです
+- `%a` は `LC_ALL=C.UTF-8` の下で評価されるため、利用者のロケールによらず `Sun`〜`Sat` の英語の略称になります
+- 使用率が欠落しても `· --` で列を残します。ctx (`· --`) や rate (`<チャート> --`) と同じく、｢2 行目は空でも積む｣を保つためです
+- 描画コスト
+  - 増える: weekly の分として、描画ごとに command substitution が 3 つ (`format_limit` と、その中の `limit_color` / `format_reset_time`) と `date` の起動が 1 つ。`resets_at` が無いときは `format_reset_time` を呼ばない
+  - 減る: `round_int` / `spark_of` への置き換えで、`$(printf ...)` が 3 つ、rate のチャート (`RATE_CHART_LEN` 文字) と右端の現在値の分の command substitution と `awk`、ctx のスパークを包む command substitution が 1 つ
+  - 既定のチャート長 6 では、全体として以前より fork が減ります
+
 ### 入力 JSON の読み取り
 
-`jq` は 1 回の起動に数十 ms かかるため、必要な 7 フィールドを 1 回の呼び出しで 1 行ずつ出力し、`read` を 7 回呼んで受け取ります。
+`jq` は 1 回の起動に数十 ms かかるため、必要な 9 フィールドを 1 回の呼び出しで 1 行ずつ出力し、`read` を 9 回呼んで受け取ります。
 
 - 文字列フィールドは `jq` の中で改行･タブ･CR を空白に置き換えます。値に改行が混ざると行の対応がずれるためです
 - `@tsv` で 1 行にまとめる方法は使いません。bash 3.2 では IFS が非空白のとき `read` が連続する区切りを 1 つにまとめてしまい、空フィールドが失われます
-- 新しいフィールドは末尾に追加します。途中に挿入すると、既存の変数と行の対応がずれます (`effort` が最後にあるのはこのためです)
+- 新しいフィールドは末尾に追加します。途中に挿入すると、既存の変数と行の対応がずれます (`effort` の後に weekly の 2 フィールドがあるのはこのためです)
 
 ### 変更行数の集計
 
@@ -422,16 +433,16 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 ### rate のハイフン区切り
 
 - 箇所: `format_limit`
-- 何をしているか: 色が付く残量のとき `chart NN% - HH:MM` とスペース･ハイフン･スペースで区切る。括弧は使わない
+- 何をしているか: 色が付く残量のとき `chart NN% - HH:MM` とスペース･ハイフン･スペースで区切る。括弧は使わない。weekly も同じ関数で `spark NN% - Mon` と区切る
 - 外すと何が起きるか: 表記が SPEC (` - ` 区切り、括弧なし) と食い違い、`02-rate-warning-with-reset` の `not_contains: (22:13)` などが失敗する
-- 守っているテスト: `02-rate-warning-with-reset` (`not_contains: (22:13)`)、`03-rate-warning-no-reset`、`05-rate-danger`、`06-rate-critical`、`24`〜`29` の境界ケース
+- 守っているテスト: `02-rate-warning-with-reset` (`not_contains: (22:13)`)、`03-rate-warning-no-reset`、`05-rate-danger`、`06-rate-critical`、`24`〜`29` の境界ケース、`137-weekly-warning-with-reset` (`not_contains: (Tue)`)、`138-weekly-warning-no-reset`
 
 ### 2 行目のトークンは空でも積む
 
-- 箇所: `build_layout "${LAYOUT_LINE2}|model_ctx|rate" "|model_ctx|rate|" 1`
+- 箇所: `build_layout "${LAYOUT_LINE2}|model_ctx|rate|weekly" "|model_ctx|rate|weekly|" 1`
 - 何をしているか: 2 行目は値が空でも列を落とさない。書かれなかったトークンは末尾に補う
-- 外すと何が起きるか: 第 3 引数を `0` にすると｢2 行目は常に出す｣が成り立たなくなる。ただし `format_limit` と `model_ctx` は常に空でない値を返すので、今のテストは通ったまま不変条件だけが失われる
-- 守っているテスト: 補完は `89-layout-line2-reorder`、`93-layout-line2-partial`、`91-layout-unknown-token`。空でも積むこと自体はテストなし
+- 外すと何が起きるか: 第 3 引数を `0` にすると｢2 行目は常に出す｣が成り立たなくなる。ただし `format_limit` と `model_ctx` は常に空でない値を返す (使用率が欠落しても `<チャート> --` / `· --`) ので、今のテストは通ったまま不変条件だけが失われる
+- 守っているテスト: 補完は `89-layout-line2-reorder`、`93-layout-line2-partial`、`91-layout-unknown-token`、`145-layout-line2-weekly-first`。weekly の欠落時に列が残ることは `143-weekly-missing`。空でも積むこと自体はテストなし
 
 ### 1 行目の省略と改行の位置
 
@@ -457,9 +468,9 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 ### 点滅属性
 
 - 箇所: `limit_color` / `ctx_color` の致命段 (`printf 'static \033[5m%s' "$COLOR_error"`)
-- 何をしているか: [rate / ctx の 3 階調と点滅](#rate--ctx-の-3-階調と点滅) を参照
+- 何をしているか: [rate / weekly / ctx の 3 階調と点滅](#rate--weekly--ctx-の-3-階調と点滅) を参照
 - 外すと何が起きるか: 致命段と危険段が色だけで区別されることになり、見た目の段差が小さくなる
-- 守っているテスト: `06-rate-critical`、`10-ctx-critical`、`23-ctx-boundary-90`、`29-rate-boundary-remaining-5`
+- 守っているテスト: `06-rate-critical`、`10-ctx-critical`、`23-ctx-boundary-90`、`29-rate-boundary-remaining-5`、`140-weekly-critical`
 
 ### effort の別 paint と `∙`
 
@@ -539,6 +550,20 @@ Claude Code のフッターの PR バッジは下線に色を付けています�
 ### `statusCheckRollup` の各チェックを自前で集約する
 
 CI 記号は `statusCheckRollup.state` (GitHub が集約した値) をそのまま使い、個々のチェックを自前で集約しません。自前で集約すると、失敗したジョブを再実行して成功させても古い失敗が残って `✗` のままになるうえ、取得件数の上限を超えたチェックが落ちるためです。
+
+### rate チャートの長さと履歴の設定
+
+- `HISTORY_LEN` をそのまま公開する: `HISTORY_LEN` は｢conf で変えられない内部定数｣の例として SPEC とテスト `82` が保証していたため、同じ名前を公開すると意味が逆になる。公開する名前は `RATE_CHART_LEN` にし、`HISTORY_LEN` は廃止した
+- 履歴ファイルを表示長で切り詰める: 伸ばした直後は `·` が並び、短いチャートのセッションが長いチャートのセッションの履歴を削る。保存件数は `RATE_CHART_LEN_MAX` で固定している ([履歴ファイルと排他制御](#履歴ファイルと排他制御))
+- `POLL_INTERVAL_SEC` の上限を 3000 のまま固定する / 上限をなくす: 前者はチャート長を変えると根拠 (チャート全体で 5 時間を覆う) がなくなり、後者は間引きの意味がなくなる値も通る
+- `POLL_INTERVAL_SEC` や `RATE_CHART_LEN` に env の上書き口を付ける: 全セッション共通の履歴ファイルの間引きの基準がセッションごとに変わり、最も短い間隔のセッションが追記を支配する。チャート長も `POLL_INTERVAL_SEC` の上限を決めるため同じ理由で付けない。env を付けたうえで上限だけ env の効かない値から決める案も、チャート長と上限の対応が崩れて上限の根拠がなくなる
+
+### weekly の表示
+
+- 書いたときだけ weekly を出す: `build_layout` にトークンごとの例外が入り、配布テンプレートを写した `LAYOUT_LINE2="model_ctx|rate"` の利用者には新しい列が出ない。2 行目の｢書かなかったトークンは末尾に補う｣規則に従わせた
+- 使用率が欠落したら列ごと省く: 既存の期待値は変えずに済むが、｢2 行目は空でも積む｣が崩れる
+- rate と同じ履歴チャートにする: 要件は現在の残量だけで、5 時間用の間引き間隔で 7 日の窓を記録しても傾向を示さない
+- 曜日に時刻を添える: 曜日だけでは、リセットが今日と同じ曜日のとき (24 時間以内か 6 日以上先か) を区別できないが、要件どおり曜日だけにして SPEC に制約として書いた
 
 ### その他
 

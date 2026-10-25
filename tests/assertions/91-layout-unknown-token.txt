@@ -1,5 +1,5 @@
 # 未知トークン (foo / bogus)、前後の空白 (スペース･タブ)、空トークン、重複を含むレイアウト
 # -> 未知と空は黙って無視、空白は剥がし、重複は最初の 1 回だけ採る。2 行目は既定順に戻る
 matches_line1: ^my-session \| sl-repo#branch=main;ab=0…$
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13 \| · --$
 exit_code: 0

@@ -1,7 +1,7 @@
 # effort=low -> ✻ Sonnet 4.6 (無色) の右に `∙` (無色、スペースなし) + 黄系 (38;2;255;193;7 = warning) 単色の "low"
 # モデル名表示 ON なので `∙` 区切りで連結 (前後スペースなし)。∙ は無色 (effort 色シーケンスの外)。
 # effort は別 paint なので model 部 (Sonnet=無色) とは独立した色シーケンスで囲まれ \e[0m で閉じる。
-matches_line2: ^✻ Sonnet 4\.6∙\\e\[38;2;255;193;7mlow\\e\[0m [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
+matches_line2: ^✻ Sonnet 4\.6∙\\e\[38;2;255;193;7mlow\\e\[0m [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13 \| · --$
 matches_line1: ^statusline-demo$
 contains: \e[38;2;255;193;7m
 contains: ∙\e[38;2;255;193;7mlow

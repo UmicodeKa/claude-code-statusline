@@ -1,5 +1,5 @@
 # ctx=79% (閾値 80 の直下) -> 黄(warning)のまま + 1 文字 spark + 79%
-matches_line2: ^✻ Sonnet 4\.6 \\e\[38;2;255;193;7m[▁▂▃▄▅▆▇█] 79%\\e\[0m \| [▁▂▃▄▅▆▇█]{6} 22:13$
+matches_line2: ^✻ Sonnet 4\.6 \\e\[38;2;255;193;7m[▁▂▃▄▅▆▇█] 79%\\e\[0m \| [▁▂▃▄▅▆▇█]{6} 22:13 \| · --$
 matches_line1: ^statusline-demo$
 contains: \e[38;2;255;193;7m
 contains: 79%

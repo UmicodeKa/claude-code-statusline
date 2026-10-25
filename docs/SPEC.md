@@ -30,12 +30,16 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 | `context_window.used_percentage` | コンテキスト使用率 | ctx を `· --` と表示 |
 | `rate_limits.five_hour.used_percentage` | レートリミット使用率 | rate を `<チャート> --` と表示 |
 | `rate_limits.five_hour.resets_at` | リセット時刻 (epoch 秒) | 時刻を表示しない (`0` と同じ) |
+| `rate_limits.seven_day.used_percentage` | 週間 (7 日間) のレートリミット使用率 | weekly を `· --` と表示 |
+| `rate_limits.seven_day.resets_at` | 週間のリセット時刻 (epoch 秒) | 曜日を表示しない (`0` と同じ) |
 | `session_name` | セッション名 | セッション列を省略 |
 | `workspace.current_dir` | ディレクトリ名とブランチ取得 | ディレクトリ列とブランチ列を省略 |
 
 - 文字列フィールド (`model.display_name` / `session_name` / `workspace.current_dir` / `effort.level`) に含まれる制御文字 (改行･タブ･CR･ESC など) は半角スペースに置き換える。値に紛れた ANSI エスケープで後続の列の色が変わるのを防ぐ
 - 値は加工せずそのまま出力する (`-n` で始まるセッション名なども文字どおり表示する)
 - `pr` フィールドは使わない ([理由](DESIGN.md#stdin-の-pr-フィールド))。PR の状態は [`PR_STATUS=1`](#pr-の状態-pr_status1) のとき `gh` で自前に取得する
+- `rate_limits` は claude.ai の Pro / Max の契約者などにだけ、セッションの最初の API 応答の後から渡される。`five_hour` と `seven_day` はそれぞれ独立に欠落しうる
+- `rate_limits.spend_limit` は使わない
 
 ## 出力構造
 
@@ -43,7 +47,7 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 
 ```text
 <directory> | <branch><ab><diff><pr> | <session_name>
-✻ <model>∙<effort> <ctx> | <rate>
+✻ <model>∙<effort> <ctx> | <rate> | <weekly>
 ```
 
 上は既定のレイアウトでの並び。各行の並び順は [レイアウト](#レイアウト-layout_line1--layout_line2) で変えられる。`<pr>` は `PR_STATUS=1` のときだけ出る。
@@ -67,8 +71,8 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 
 ### 2 行目
 
-- 既定の並びは `model_ctx` → `rate`
-- **常に出力する**。`model_ctx` と `rate` の両方が必ず含まれる
+- 既定の並びは `model_ctx` → `rate` → `weekly`
+- **常に出力する**。`model_ctx`、`rate`、`weekly` の 3 つが必ず含まれる
 - `session_name` は 2 行目には置かない
 
 ## 1 行目の要素
@@ -195,18 +199,40 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 - 履歴が `RATE_CHART_LEN` 件に満たないときは左側を `·` (U+00B7) で埋める
 - 履歴を保存できない (`HISTORY_DIR` が無効) ときも、`RATE_CHART_LEN − 1` 個の `·` の右に現在値の 1 文字を出す (既定の長さでは `·····▁ 10% - 22:13`)
 
+### weekly
+
+7 日間のレートリミットの**残量** (100 − 使用率を整数に丸めた値) を、ctx と同じ 1 文字のスパークで表す。履歴は持たず、減っていく様子は表さない。
+
+| 残量 | `resets_at` > 0 | `resets_at` が 0 または欠落 |
+| --- | --- | --- |
+| 40% 超 (無色) | `<spark> Mon` | `<spark>` |
+| 40% 以下 (色あり) | `<spark> NN% - Mon` | `<spark> NN%` |
+| 使用率が欠落 | `· --` (無色) | `· --` (無色) |
+
+- `<spark>` は rate のチャート右端と同じ規則 (`▁▂▃▄▅▆▇█` の 8 階調。残量 p に対して `int(p / 100 × 8 + 0.5)` を 1〜8 に収める)
+- 色の閾値、点滅、数値を出す条件、` - ` の区切りは rate と同じ。色が付くときは `<spark>` から末尾までをまとめて塗る
+- 曜日は `resets_at` をローカル時刻に変換した曜日の英語の略称 3 文字 (`Sun` `Mon` `Tue` `Wed` `Thu` `Fri` `Sat`)。利用者のロケールによらず英語になる
+- `POLL_INTERVAL_SEC` と `RATE_CHART_LEN` の影響は受けない
+
+> [!NOTE]
+> 曜日だけを出すため、リセットが今日と同じ曜日のとき (24 時間以内か、6 日以上先か) は表示から区別できない。
+
 ### 出力例
 
 ```text
 my-project | main ↑2↓3 3+13-5 | my-session
-✻ Opus 4.7∙high ▆ 72% | ▇▆▅▄▃▃ 35% - 18:30
+✻ Opus 4.7∙high ▆ 72% | ▇▆▅▄▃▃ 35% - 18:30 | ▅ Thu
 ```
 
 ```text
-✻ Unknown · -- | ······ --
+✻ Opus 4.7∙high ▄ | ▇▆▆▅▅▄ 18:30 | ▂ 22% - Thu
 ```
 
-2 つ目は、rate 履歴が無い状態で空の JSON (`{}`) を渡したときの出力 (履歴があればチャート部分は保存済みの履歴になる)。1 行目の要素がすべて空なので 1 行だけになる。
+```text
+✻ Unknown · -- | ······ -- | · --
+```
+
+1 つ目は rate が警戒域、weekly が 62% の既定の表示。2 つ目は weekly が警戒域 (22%) の表示。3 つ目は、rate 履歴が無い状態で空の JSON (`{}`) を渡したときの出力 (履歴があればチャート部分は保存済みの履歴になる)。1 行目の要素がすべて空なので 1 行だけになる。
 
 ## トリム規則
 
@@ -254,7 +280,7 @@ RGB は dark の値。light の値は [セマンティックカラー](#セマ�
 | | 80% 以上 | `claude` (橙) | `\033[38;2;215;119;87m` |
 | | 70% 以上 | `warning` (黄) | `\033[38;2;255;193;7m` |
 | | 70% 未満 | 無色 | — |
-| rate 残量 | 5% 以下 | `error` + 点滅 | `\033[5m\033[38;2;255;107;128m` |
+| rate / weekly 残量 | 5% 以下 | `error` + 点滅 | `\033[5m\033[38;2;255;107;128m` |
 | | 15% 以下 | `claude` (橙) | `\033[38;2;215;119;87m` |
 | | 40% 以下 | `warning` (黄) | `\033[38;2;255;193;7m` |
 | | 40% 超 | 無色 | — |
@@ -287,7 +313,7 @@ RGB は dark の値。light の値は [セマンティックカラー](#セマ�
 
 - pr `#<番号>` は状態によらず下線 (`\033[4m`) を付ける。上表の色の ESC の前に置く (merged / closed は取り消し線と合わせて `\033[4;9m`)
 
-- ctx と rate は警戒 (黄) → 危険 (橙) → 致命 (赤 + 点滅) の 3 段階。致命段は点滅属性 (`\033[5m`) で危険段と区別する
+- ctx、rate、weekly は警戒 (黄) → 危険 (橙) → 致命 (赤 + 点滅) の 3 段階。致命段は点滅属性 (`\033[5m`) で危険段と区別する
 - model の判定は部分一致で、`Fable` → `Opus` → `Haiku` の順に評価する。バージョン表記に依存しない (`Fable 5 (1M context)` も紫)
 - ultracode は入力上 `xhigh` と区別できないため、`xhigh` と同じ紫になる
 - `max` のレインボーは effort の語句だけに掛かり、`∙` には掛からない
@@ -389,7 +415,7 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 
 | 定数 | レンジ | 下限の根拠 | 上限の根拠 |
 | --- | --- | --- | --- |
-| `RATE_CHART_LEN` | 2〜20 | 履歴 1 文字 + 現在値 1 文字。1 だと現在値だけになって推移を表さない | 2 行目が最も長くなる組み合わせ (モデル名 13 文字、effort `medium`、ctx `█ 100%`、rate が警戒域で時刻つき) でも 80 桁の端末に収まる |
+| `RATE_CHART_LEN` | 2〜20 | 履歴 1 文字 + 現在値 1 文字。1 だと現在値だけになって推移を表さない | 2 行目が最も長くなる組み合わせ (モデル名 13 文字、effort `medium`、ctx `█ 100%`、rate と weekly がともに警戒域で時刻と曜日つき) は `58 + RATE_CHART_LEN` 桁で、20 なら 78 桁。80 桁の端末に収まる |
 | `POLL_INTERVAL_SEC` | 60〜(18000 ÷ `RATE_CHART_LEN`、整数の割り算) | statusline は数秒〜十数秒間隔で呼ばれるため、これより短いと毎回履歴が更新され間引きの意味がなくなる | 5 時間 (18000 秒) のウィンドウをチャート全体 (`RATE_CHART_LEN` サンプル) で覆う間隔。超えるとチャートが傾向を示さない。既定のチャート長では 3000、2 なら 9000、12 なら 1500、20 なら 900 |
 | `GIT_FETCH_INTERVAL_SEC` | 60〜1800 | これより短いと `git fetch` の子プロセスが頻発する。間引きは cwd 単位なので、同じリポジトリを複数の worktree で開くほど fetch の総数は増える | 30 分を超えると `↓behind` の自動更新が遅く、手動 fetch と大差なくなる |
 
@@ -405,7 +431,7 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 | `GIT_FETCH` | `0` | `CLAUDE_STATUSLINE_GIT_FETCH` | `1` でバックグラウンド fetch を有効化。それ以外は無効 |
 | `PR_STATUS` | `0` | `CLAUDE_STATUSLINE_PR_STATUS` | `1` で [PR の状態](#pr-の状態-pr_status1) を branch 列に表示。それ以外は無効 |
 | `LAYOUT_LINE1` | `directory\|branch\|session` | `CLAUDE_STATUSLINE_LAYOUT_LINE1` | [レイアウト](#レイアウト-layout_line1--layout_line2) |
-| `LAYOUT_LINE2` | `model_ctx\|rate` | `CLAUDE_STATUSLINE_LAYOUT_LINE2` | [レイアウト](#レイアウト-layout_line1--layout_line2) |
+| `LAYOUT_LINE2` | `model_ctx\|rate\|weekly` | `CLAUDE_STATUSLINE_LAYOUT_LINE2` | [レイアウト](#レイアウト-layout_line1--layout_line2) |
 | `RATE_CHART_LEN` | `6` | なし | rate チャートの文字数。[推奨レンジ](#間引き間隔の推奨レンジ) |
 | `POLL_INTERVAL_SEC` | `480` | なし | [推奨レンジ](#間引き間隔の推奨レンジ) |
 | `GIT_FETCH_INTERVAL_SEC` | `900` | なし | [推奨レンジ](#間引き間隔の推奨レンジ) |
@@ -436,7 +462,8 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 | | `branch` | `<ブランチ名>[ <ab>] <diff>[ <pr>]` |
 | | `session` | セッション名 |
 | 2 行目 | `model_ctx` | `✻ <model>∙<effort> <ctx>` |
-| | `rate` | レートリミット |
+| | `rate` | 5 時間のレートリミット |
+| | `weekly` | 週間 (7 日間) のレートリミット |
 
 共通:
 
@@ -455,9 +482,9 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 
 2 行目:
 
-- 変えられるのは `model_ctx` と `rate` の順番だけ
-- 書かなかったトークンは既定の順で末尾に補う。`LAYOUT_LINE2="rate"` は `rate | model_ctx` になる
-- 値が空でも列を省略しない
+- 変えられるのは `model_ctx`、`rate`、`weekly` の順番だけ
+- 書かなかったトークンは既定の順で末尾に補う。`LAYOUT_LINE2="rate"` は `rate | model_ctx | weekly` になる。以前の既定値 `model_ctx|rate` を書いた conf でも `weekly` は末尾に出る
+- 値が空でも列を省略しない。どのトークンも消せない
 
 ## バックグラウンド fetch (`GIT_FETCH=1`)
 
@@ -604,6 +631,9 @@ CI 記号は、PR の head コミットの `statusCheckRollup.state` (GitHub が
 - Claude Code 標準のフッターの PR バッジは消さない (PR の状態表示とは別の場所に並んで表示される)
 - 表示幅に基づくトリム (CJK を 2 桁として数える) は行わない
 - 描画のたびに同期的に `git fetch` することはしない
-- ctx の履歴チャートは持たない
+- ctx と weekly の履歴チャートは持たない
+- `rate_limits.spend_limit` (Claude apps gateway の利用上限) は表示しない
+- weekly の列を消す設定は設けない (2 行目のトークンはどれも消せない)
+- weekly の曜日のローカライズ (`月` など) と、リセットが近いときに時刻を併記することはしない
 - `RATE_CHART_LEN`、`POLL_INTERVAL_SEC`、`GIT_FETCH_INTERVAL_SEC` に env の上書き口は設けない (全セッション共通の履歴ファイルの間引きがセッションごとに変わるため)
 - 設定ファイルを JSON や YAML にはしない (シェルの変数代入のみ)

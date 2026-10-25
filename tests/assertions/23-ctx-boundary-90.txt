@@ -1,5 +1,5 @@
 # ctx=90% (閾値ジャスト) -> 赤(error)+点滅 + 1 文字 spark + 90%
-matches_line2: ^✻ Sonnet 4\.6 \\e\[5m\\e\[38;2;255;107;128m[▁▂▃▄▅▆▇█] 90%\\e\[0m \| [▁▂▃▄▅▆▇█]{6} 22:13$
+matches_line2: ^✻ Sonnet 4\.6 \\e\[5m\\e\[38;2;255;107;128m[▁▂▃▄▅▆▇█] 90%\\e\[0m \| [▁▂▃▄▅▆▇█]{6} 22:13 \| · --$
 matches_line1: ^statusline-demo$
 contains: \e[5m\e[38;2;255;107;128m
 contains: 90%

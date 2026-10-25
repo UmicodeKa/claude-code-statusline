@@ -1,6 +1,6 @@
 # ab=0,0: 同期済み (ahead も behind も 0) -> ab フィールドごと省略 (main ·、= 30-branch-on と同じ出力)
 # 同期済みは * を出さない (upstream 未設定/detached の * と区別する回帰防止)
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13 \| · --$
 matches_line1: ^sl-repo#branch=main;ab=0… \| main ·$
 not_contains: ↑
 not_contains: ↓
