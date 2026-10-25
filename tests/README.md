@@ -157,7 +157,7 @@ conf は一時ファイルに書いて渡します。`RATE_CHART_LEN` と `POLL_
   - `86-config-template` / `95-config-template-layout` は配布テンプレート `statusline.conf` を読ませ、出力が既定値のときと一致することで、テンプレートの値が既定値とずれていないことを確かめます。`86` は branch / session の無い fixture のため、1 行目の並びの一致は `95` で確かめます。
   - レイアウトの値は `|` を含むため、テンプレートではクォートで囲んでいます。
 - `layout/`: 空行は｢指定なし｣を意味します。
-- `highlight/`: マーカーが無いケースでは空で渡します (conf → 既定値。既定はどれも塗らない)。conf の `HIGHLIGHT` を確かめるケース (`166-highlight-config` など) は `config-file/` を使い、env が conf に勝つことは両方のマーカーを置いて確かめます。前後の空白やタブも含めて 1 行目をそのまま渡します (`165-highlight-tokens`)。
+- `highlight/`: マーカーが無いケースでは空で渡します (conf → 既定値。既定は `branch`)。conf の `HIGHLIGHT` を確かめるケース (`166-highlight-config` など) は `config-file/` を使い、env が conf に勝つことは両方のマーカーを置いて確かめます。前後の空白やタブも含めて 1 行目をそのまま渡します (`165-highlight-tokens`)。
 - `pr-cache/`: 1 行目をキャッシュの 1 行として書きます。`printf %b` で展開するのでタブは `\t`、ESC は `\033` と書けます。`fetched_at` は現在時刻に依存するため、`@NOW@` (現在時刻) と `@STALE@` (現在時刻 - 4000 秒) を仕込む直前に置き換えます。1 行目が空ならキャッシュを置きません。どの場合も新しいマーカーを置くため、描画は取得を起動せず、仕込んだキャッシュがそのまま読まれます
 - `hyperlink-off/`: マーカーが無いケースでは `FORCE_HYPERLINK` を空で渡し、開発者のシェルの値が混ざらないようにしています
 - `pr-status-on/`: マーカーが無いケースでは `CLAUDE_STATUSLINE_PR_STATUS` を空で渡します。PR は fake gh が受け、`pr-cache/` で仕込んだキャッシュを branch 列に出すケースで使います

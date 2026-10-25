@@ -117,7 +117,7 @@ LAYOUT_LINE1="session|directory|branch"
 | `SHOW_CWD` | `1` | `0` で 1 行目のディレクトリ名を隠す |
 | `LAYOUT_LINE1` | `directory\|branch\|session` | 1 行目の要素と並び |
 | `LAYOUT_LINE2` | `model_ctx\|rate\|weekly` | 2 行目の並び |
-| `HIGHLIGHT` | 空 | 無色の要素のうち目立たせるもの ([詳細](#ハイライト)) |
+| `HIGHLIGHT` | `branch` | 無色の要素のうち目立たせるもの ([詳細](#ハイライト)) |
 | `GIT_FETCH` | `0` | `1` でバックグラウンド `git fetch` を有効にする |
 | `PR_STATUS` | `0` | `1` でブランチ列に PR の状態を表示する ([詳細](#pr_status1-で-pr-の状態を表示する)) |
 | `RATE_CHART_LEN` | `12` | レートリミットのチャートの文字数 (2〜20) |
@@ -174,7 +174,7 @@ HIGHLIGHT="directory|branch|session|rate_chart|rate_reset"
 | `pr_comments` | PR のコメントの件数 |
 
 - 警戒域の ctx やレートリミット、Opus などのモデル色のように、もともと色が付いている状態ではその色が優先される
-- 既定は空で、どれも塗らない。未知のトークンは無視される
+- 既定は `branch` (ブランチ名の末尾だけ)。どれも塗らないときは `HIGHLIGHT="none"` のように未知のトークンだけを書く (未知のトークンは無視され、空の値は既定値になる)
 - `COLOR_SCHEME` を Claude Code のテーマに合わせておく。食い違うと、明るい背景に白い文字が重なるなどして読めなくなる
 - 環境変数 `CLAUDE_STATUSLINE_HIGHLIGHT` を空にしても設定ファイルの値は消えない。一時的に無効にするときは `none` などの未知のトークンを渡す
 

@@ -1,2 +1,2 @@
 # draft: #12 は無色 (端末の前景色)。チェックが 1 つもない (ci 空) ときは CI 記号を出さず、件数は番号の後に半角スペースを挟んで付ける (#121 と読めないように)
-matches_line1: ^main · \\e\]8;;https://github\.com/my-org/my-project/pull/12\\a\\e\[4m#12\\e\[0m\\e\]8;;\\a 1$
+matches_line1: ^\\e\[38;2;255;255;255mmain\\e\[0m · \\e\]8;;https://github\.com/my-org/my-project/pull/12\\a\\e\[4m#12\\e\[0m\\e\]8;;\\a 1$

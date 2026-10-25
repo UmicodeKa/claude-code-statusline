@@ -129,7 +129,7 @@ effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の�
 無色の要素を `COLOR_text` で塗る処理は、ヘルパー `highlight <トークン> <文字列>` 1 つに集めています。
 
 - main で jq の読み取りの直後に、`split_tokens "$HIGHLIGHT"` の結果を `|a|b|` の形に連結した `hl_set` を 1 回だけ作ります (`build_layout` の `seen` / `allowed` と同じ形)。`highlight` は `case` で `*"|<トークン>|"*` と照合します
-- 結果は `$(...)` で受けずにグローバル変数 `hl_out` に返し、fork しません。指定されていないトークンでは元の文字列がそのまま返るので、無色の要素を出す箇所は条件分岐なしで常に `highlight` を通します。既定 (空) では何も塗らず、ハイライトの有無で fork の回数は変わりません
+- 結果は `$(...)` で受けずにグローバル変数 `hl_out` に返し、fork しません。指定されていないトークンでは元の文字列がそのまま返るので、無色の要素を出す箇所は条件分岐なしで常に `highlight` を通します。ハイライトの有無で fork の回数は変わりません
 - `hl_out` は 1 つのグローバル変数なので、続けて呼ぶと上書きされます。`format_limit` の無色の分岐では、チャートの結果を `chart_out` に移してから時刻を通します
 - 空の文字列は塗りません。塗ると空の列が ESC だけの空でない値になり、1 行目の｢値が空の列は省略する｣が崩れます。空のときも終了ステータスは 0 にして、呼び出し側が `&&` / `||` でつないでも失敗と取り違えないようにしています
 - トリムしてから塗ります。`truncate_label` / `truncate_branch` の文字数に ANSI エスケープを含めないためです
@@ -521,14 +521,14 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 
 - 箇所: `highlight` の `[ -n "$2" ] || return 0`
 - 何をしているか: 空の文字列は `COLOR_text` で囲まずに空のまま返す
-- 外すと何が起きるか: 空の session や `SHOW_CWD=0` の directory が ESC だけの空でない値になり、1 行目に余分な ` | ` が出る。1 行目の列がすべて空のときも 1 行目が出るようになる。`HIGHLIGHT` を指定したときだけ起きる
+- 外すと何が起きるか: 空の session や `SHOW_CWD=0` の directory が ESC だけの空でない値になり、1 行目に余分な ` | ` が出る。1 行目の列がすべて空のときも 1 行目が出るようになる。`HIGHLIGHT` に `directory` や `session` を書いたときに起きる
 - 守っているテスト: `163-highlight-empty-columns`、`164-highlight-empty-line1`
 
 ### トリムしてから `highlight` に通す
 
 - 箇所: `layout_token` の branch / session と、main の model の組み立て
 - 何をしているか: `truncate_branch` / `truncate_label` でトリムした後の文字列を `highlight` に渡す
-- 外すと何が起きるか: 塗ってからトリムすると ANSI エスケープが文字数に数えられ、トリム位置が変わる。`\033[0m` が切り落とされて色が後続の列へ漏れることもある。`HIGHLIGHT` を指定したときだけ起きる
+- 外すと何が起きるか: 塗ってからトリムすると ANSI エスケープが文字数に数えられ、トリム位置が変わる。`\033[0m` が切り落とされて色が後続の列へ漏れることもある。branch は既定でハイライトするので、既定の設定でも起きる
 - 守っているテスト: `152-highlight-branch-trim-head`、`153-highlight-branch-trim-middle`、`154-highlight-session-trim`
 
 ### `HIGHLIGHT` の組み立てと塗る順序

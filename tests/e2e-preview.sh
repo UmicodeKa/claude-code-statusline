@@ -184,7 +184,7 @@ print_case() {
   # layout マーカーがあればそのレイアウト文字列で表示する (無ければ空 = 既定レイアウト)。
   local case_layout_line1 case_layout_line2
   layout_for_case "$case_name"
-  # highlight マーカーがあればそのハイライトの指定で表示する (無ければ空 = 既定のどれも塗らない)。
+  # highlight マーカーがあればそのハイライトの指定で表示する (無ければ空 = conf → 既定値の branch)。
   local case_highlight
   highlight_for_case "$case_name"
   # hyperlink-off マーカーがあれば OSC 8 のリンクを出さない (無ければ空 = リンクあり)。

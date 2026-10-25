@@ -92,9 +92,9 @@ LAYOUT_LINE2="${CLAUDE_STATUSLINE_LAYOUT_LINE2:-${LAYOUT_LINE2:-$LAYOUT_LINE2_TO
 #   directory / branch (表示中の名前の最後の `/` より後ろ) / session / model (✻ とモデル名) /
 #   ctx_chart / rate_chart / rate_reset / weekly_chart / weekly_reset / pr_comments (PR のコメントの件数)
 # 色が付いている状態 (Fable/Opus/Haiku、ctx 70% 以上、rate/weekly 残量 40% 以下) ではその色を優先して塗らない。
-# 既定は空 (どれも塗らない)。conf では `|` を含むため値をクォートで囲む。
-# env CLAUDE_STATUSLINE_HIGHLIGHT でも上書き可 (空の env は未設定と同じ扱いなので、conf の値を消すには none 等を渡す)。
-HIGHLIGHT="${CLAUDE_STATUSLINE_HIGHLIGHT:-${HIGHLIGHT:-}}"
+# 既定は branch (ブランチ名の末尾だけを塗る)。conf では `|` を含むため値をクォートで囲む。
+# env CLAUDE_STATUSLINE_HIGHLIGHT でも上書き可。空の値は既定値扱いなので、どれも塗らないときは none 等の未知のトークンを書く。
+HIGHLIGHT="${CLAUDE_STATUSLINE_HIGHLIGHT:-${HIGHLIGHT:-branch}}"
 
 # 数値の設定 (conf のみで変える。env の上書き口は持たない)。既定値と範囲は後方の「間引き定数」の
 # clamp_int の呼び出しと MIN/MAX 定数にだけ置き、ここには書かない (2 か所にあると食い違いうるため)。

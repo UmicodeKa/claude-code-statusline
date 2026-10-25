@@ -1,5 +1,5 @@
 # diff=0,5: 追加 0 のとき追加側 (+0) を省略し、ファイル数 1 + 削除 -5 (赤) のみ表示する
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
-matches_line1: ^sl-repo#branch=main;diff… \| main \\e\[38;2;255;255;255m1\\e\[0m\\e\[38;2;255;107;128m-5\\e\[0m$
-contains: main \e[38;2;255;255;255m1\e[0m\e[38;2;255;107;128m-5\e[0m
+matches_line1: ^sl-repo#branch=main;diff… \| \\e\[38;2;255;255;255mmain\\e\[0m \\e\[38;2;255;255;255m1\\e\[0m\\e\[38;2;255;107;128m-5\\e\[0m$
+contains: \e[38;2;255;255;255mmain\e[0m \e[38;2;255;255;255m1\e[0m\e[38;2;255;107;128m-5\e[0m
 not_contains: +0

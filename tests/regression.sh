@@ -40,7 +40,7 @@ SHOW_CWD_OFF_DIR="$TESTS_DIR/show-cwd-off"
 # layout/<case> があればそのケースで 1 行目 / 2 行目のレイアウト文字列を
 # CLAUDE_STATUSLINE_LAYOUT_LINE1 / _LINE2 に渡す (lib/layout.sh)。無ければ既定レイアウト。
 # highlight/<case> があればそのケースで 1 行目を CLAUDE_STATUSLINE_HIGHLIGHT に渡す (lib/highlight.sh)。
-# 無ければ空文字 (= conf → 既定値。既定はどれも塗らない)。
+# 無ければ空文字 (= conf → 既定値。既定は branch)。
 # pr-cache/<case> があればそのケースの履歴 dir に PR の状態表示のキャッシュとマーカーを仕込む
 # (lib/pr-cache.sh)。マーカーが新しいので描画は取得を起動しない。
 # hyperlink-off/<case> があればそのケースで FORCE_HYPERLINK=0 を渡す (OSC 8 を出さない)。

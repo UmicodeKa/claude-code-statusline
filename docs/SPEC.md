@@ -99,7 +99,7 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 - git 外、`current_dir` が空、git が未インストールのときは**列ごと省略**する (`<ab>`、`<diff>`、`<pr>` も出ない)
 - 25 文字でトリムする。`/` を含み末尾のセグメント (最後の `/` より後ろ) が 22 文字以下なら、末尾を残して中間を省略する ([トリム規則](#トリム規則))
 - `<ab>`、`<diff>`、`<pr>` はトリムの対象外で、ブランチ名が切れても残る
-- 無色。`HIGHLIGHT` に `branch` を書くと、トリム後の名前の最後の `/` より後ろ (`/` が無ければ全体) を `text` で塗る ([ハイライト](#ハイライト-highlight))
+- トリム後の名前の最後の `/` より後ろ (`/` が無ければ全体) を `text` で塗り、それより前は無色にする。`HIGHLIGHT` の既定値 `branch` による表示で、`HIGHLIGHT` から `branch` を外すと名前全体が無色になる ([ハイライト](#ハイライト-highlight))
 
 #### ahead/behind (`<ab>`)
 
@@ -439,7 +439,7 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 | `PR_STATUS` | `0` | `CLAUDE_STATUSLINE_PR_STATUS` | `1` で [PR の状態](#pr-の状態-pr_status1) を branch 列に表示。それ以外は無効 |
 | `LAYOUT_LINE1` | `directory\|branch\|session` | `CLAUDE_STATUSLINE_LAYOUT_LINE1` | [レイアウト](#レイアウト-layout_line1--layout_line2) |
 | `LAYOUT_LINE2` | `model_ctx\|rate\|weekly` | `CLAUDE_STATUSLINE_LAYOUT_LINE2` | [レイアウト](#レイアウト-layout_line1--layout_line2) |
-| `HIGHLIGHT` | 空 | `CLAUDE_STATUSLINE_HIGHLIGHT` | [ハイライト](#ハイライト-highlight) |
+| `HIGHLIGHT` | `branch` | `CLAUDE_STATUSLINE_HIGHLIGHT` | [ハイライト](#ハイライト-highlight) |
 | `RATE_CHART_LEN` | `12` | なし | rate チャートの文字数。[推奨レンジ](#間引き間隔の推奨レンジ) |
 | `POLL_INTERVAL_SEC` | `300` | なし | [推奨レンジ](#間引き間隔の推奨レンジ) |
 | `GIT_FETCH_INTERVAL_SEC` | `900` | なし | [推奨レンジ](#間引き間隔の推奨レンジ) |
@@ -528,9 +528,9 @@ branch の塗る範囲の例:
 
 - 色が付いている状態ではその色だけを使い、ハイライトは効かない。ctx の使用率 70% 以上、rate / weekly の残量 40% 以下 (`<chart> NN% - HH:MM` 全体がしきい値の色)、Fable / Opus / Haiku のモデルが該当する
 - 区切りと空白の扱いは [レイアウト](#レイアウト-layout_line1--layout_line2) と同じ。トークン前後の空白 (スペース･タブ) は無視し、未知のトークンは黙って無視する。同じトークンを複数回書いても 1 回と同じ
-- 既定は空で、どの要素も塗らない
+- 既定は `branch` で、ブランチ名の末尾だけを塗る。どの要素も塗らないときは `none` などの未知のトークンだけを書く (空の値は既定値として扱う)
 - 設定ファイルでは値に `|` を含むため、クォートで囲む。囲まないとパイプとして解釈され、描画のたびに `command not found` が出て `HIGHLIGHT` も設定されない
-- env `CLAUDE_STATUSLINE_HIGHLIGHT` を空にしても設定ファイルの値は消えない (空の env は指定されていないものとして扱う)。env で一時的に無効にするときは `none` などの未知のトークンを渡す
+- env `CLAUDE_STATUSLINE_HIGHLIGHT` を空にしても設定ファイルの値は消えない (空の env は指定されていないものとして扱う)。env で一時的にどれも塗らないようにするときは `none` などの未知のトークンを渡す
 - 塗るのはトリムの後。トリムの位置はハイライトの有無で変わらない
 - 値が空の要素は塗らない。1 行目の空の列は、ハイライトを指定していても列ごと省略する
 - 表示の有無はハイライトと独立している。`LAYOUT_LINE*` に書かれていない要素や `SHOW_CWD=0` で消えた要素は、指定しても表示されない

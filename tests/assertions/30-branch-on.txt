@@ -1,5 +1,5 @@
 # branch on テスト: cwd=branch=main の git repo (git-shim で再現) -> 1 行目の branch 列に main が出る
 # session_name="" -> 1 行目の session 列は省略
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
-matches_line1: ^sl-repo#branch=main;ab=0… \| main ·$
-contains: | main
+matches_line1: ^sl-repo#branch=main;ab=0… \| \\e\[38;2;255;255;255mmain\\e\[0m ·$
+contains: | \e[38;2;255;255;255mmain\e[0m

@@ -1,4 +1,4 @@
 # SHOW_CWD=0: directory 列のみ消え、branch 列は 1 行目に残る (2 行構成は維持)
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
-matches_line1: ^main ·$
+matches_line1: ^\\e\[38;2;255;255;255mmain\\e\[0m ·$
 not_contains: sl-repo

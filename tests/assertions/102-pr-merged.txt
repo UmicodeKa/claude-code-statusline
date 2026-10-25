@@ -1,2 +1,2 @@
 # merged: #12 を merged で塗り、下線 (SGR 4) と取り消し線 (SGR 9) を重ねる。コメントがあっても CI 記号と件数は出さない
-matches_line1: ^main · \\e\]8;;https://github\.com/my-org/my-project/pull/12\\a\\e\[4;9m\\e\[38;2;135;0;255m#12\\e\[0m\\e\]8;;\\a$
+matches_line1: ^\\e\[38;2;255;255;255mmain\\e\[0m · \\e\]8;;https://github\.com/my-org/my-project/pull/12\\a\\e\[4;9m\\e\[38;2;135;0;255m#12\\e\[0m\\e\]8;;\\a$
