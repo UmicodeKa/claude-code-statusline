@@ -1,0 +1,2 @@
+# / を含むちょうど 25 文字のブランチ名は省略しない (上限ちょうどは超過ではない)
+matches_line1: ^feature/aaaaaaaaaaaaaa/yy ·$

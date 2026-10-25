@@ -205,7 +205,7 @@ my-project | feature/login ↑1 3+10-2 #12✓ 3 | my-session
 | 要素 | 内容 |
 | --- | --- |
 | ディレクトリ名 | カレントディレクトリ名。25 文字を超えると `…` で省略 |
-| ブランチ名 | git ブランチ名。25 文字を超えると `…` で省略 (`feature/xxx/yyy` の末尾 `yyy` は残して中間を省略)。detached HEAD では短縮 sha |
+| ブランチ名 | git ブランチ名。25 文字を超えると `…` で省略。最後の `/` より後ろが 22 文字以下なら、そこを残して中間を省略 (`feature/improve-sta…/trim`)。detached HEAD では短縮 sha |
 | `↑N↓M` | リモート追跡ブランチとの差。`↑` が push 待ち、`↓` が pull 待ち。同期済みなら出ない |
 | `*` | リモート追跡ブランチが無い (青) / detached HEAD (無色) |
 | `3+13-5` | 作業ツリーの変更 (ファイル数 / 追加行 / 削除行)。未追跡ファイルを含む。変更が無ければ `·` |
@@ -238,7 +238,7 @@ my-project | main ↑2↓3 3+13-5 #12✓ 3 | my-session
 長い名前は省略される (変更行数は省略されない):
 
 ```text
-my-project | feature/improve-awesome-… 1+8 | my-project-refactoring-and-cleanup-work…
+my-project | feature/improve-sta…/trim 1+8 | my-project-refactoring-and-cleanup-work…
 ✻ Opus 4.7∙high ▄ | ▇▆▅▄▃▂ 18:30
 ```
 

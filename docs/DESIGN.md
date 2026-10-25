@@ -169,6 +169,7 @@ rate チャートは `HISTORY_LEN` (6) 文字で、左 5 文字が履歴、右�
 - パラメータ展開 (`${text##*/}` / `${#tail}` / `${text:0:N}`) だけで組み、外部コマンドを使いません。呼び出し側の command substitution は `truncate_label` のときと同じ 1 回で、fork は増えません
 - 守っているテスト
   - 中間省略: `117-branch-trim-keep-tail`、閾値の両側の `118-branch-trim-tail-22` / `119-branch-trim-tail-23`、`121-branch-trim-keep-tail-ab-diff`
+  - 中間省略の境界: CJK の `122-branch-trim-keep-tail-cjk`、ちょうど 25 文字の `123-branch-trim-slash-25`、`/` の直後で切る `124-branch-trim-cut-after-slash`
   - 先頭優先のまま: `120-branch-trim-no-slash`、末尾が長い `31-branch-trim` / `41-diff-trim-keeps-stat`
   - 両版のずれ: `tests/script-parity.sh` の `block:paint` / `block:format-layout`
 
@@ -461,6 +462,10 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 ### 1 行構成へ戻す設定
 
 2 行構成に移ったあと、1 行構成へ戻す設定は設けていません。戻せる設定を用意すると、両方の期待値をテストで維持し続ける必要があるためです。`LAYOUT_LINE1` で 1 行目の要素をすべて外すと 1 行目は出なくなりますが、これは git 外などで 1 行目が空になるのと同じ｢1 行目の省略｣で、1 行目の要素を 2 行目に戻すものではありません。Claude Code の statusline は、出力の各行をそのまま 1 行として描画します。
+
+### ブランチ名の先頭セグメントだけを残す / 左から削る
+
+ブランチ名の中間省略では、`feature/…/yyy` のように先頭のセグメントだけを残す形や、`…/yyy` のように左から削る形は採っていません。前者は先頭のセグメントが長いと末尾に使える幅が減り、後者は `feature/` や `hotfix/` のような種類の手がかりが消えます。先頭を 25 文字に収まるだけ残し、`/` の位置にそろえずに切るのは、セグメントの区切りを探す処理を足さずにパラメータ展開だけで済ませるためです。
 
 ### セッション名のトリム長 (20 → 40 文字)
 

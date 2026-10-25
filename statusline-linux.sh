@@ -488,12 +488,13 @@ truncate_label() {
 truncate_branch() {
   local max=$1
   local text=$2
-  local tail="/${text##*/}"
-  local head_len=$((max - 1 - ${#tail}))
+  local last head_len
   case "$text" in
     */*)
+      last="/${text##*/}"
+      head_len=$((max - 1 - ${#last}))
       if [ "${#text}" -gt "$max" ] && [ "$head_len" -ge 1 ]; then
-        printf '%s…%s\n' "${text:0:$head_len}" "$tail"
+        printf '%s…%s\n' "${text:0:$head_len}" "$last"
         return
       fi
       ;;
