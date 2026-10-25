@@ -81,7 +81,7 @@ SHOW_CWD="${CLAUDE_STATUSLINE_SHOW_CWD:-${SHOW_CWD:-1}}"
 # SHOW_CWD=0 は 1 行目から directory を外すのと等価 (directory トークンが空を返す)。
 # env CLAUDE_STATUSLINE_LAYOUT_LINE1 / CLAUDE_STATUSLINE_LAYOUT_LINE2 でも上書き可。
 # 各行で使えるトークンの一覧 (既定の並びを兼ねる)。既定値、2 行目の補完、有効なトークンの判定は
-# この 1 か所から組み立てる (トークンを足すときにここだけ直せば済むように)。
+# この 1 か所から組み立てる。トークンを足すときは、この一覧と layout_token の case の両方を直す。
 LAYOUT_LINE1_TOKENS="directory|branch|session"
 LAYOUT_LINE2_TOKENS="model_ctx|rate|weekly"
 LAYOUT_LINE1="${CLAUDE_STATUSLINE_LAYOUT_LINE1:-${LAYOUT_LINE1:-$LAYOUT_LINE1_TOKENS}}"
@@ -174,7 +174,7 @@ clamp_int() {
 }
 
 clamp_int RATE_CHART_LEN 12 "$RATE_CHART_LEN_MIN" "$RATE_CHART_LEN_MAX"
-# チャート全体 (RATE_CHART_LEN サンプル) で 5 時間の窓を覆う間隔を上限にする。既定の 12 なら 1500。
+# チャート全体 (RATE_CHART_LEN サンプル) で 5 時間の窓を覆う間隔を上限にする。
 # 丸めた後の RATE_CHART_LEN を使うので、RATE_CHART_LEN の clamp より後に置く (順序を入れ替えない)。
 POLL_INTERVAL_MAX_SEC=$((RATE_WINDOW_SEC / RATE_CHART_LEN))
 clamp_int POLL_INTERVAL_SEC 300 "$POLL_INTERVAL_MIN_SEC" "$POLL_INTERVAL_MAX_SEC"

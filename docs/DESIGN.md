@@ -115,7 +115,7 @@ effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の�
 - `model` と `ctx` を別トークンに分けないのは、トークン間の区切りが組み合わせごとに変わり、実装とテストの両方が複雑になるためです
 - `build_layout` の第 3 引数で｢空の値を積むか｣を切り替えます。1 行目は `0` (空なら列ごと省略)、2 行目は `1` (空でも積む)
 - 2 行目は走査対象の末尾に既定の全トークン (`LAYOUT_LINE2_TOKENS`、`model_ctx|rate|weekly`) を足し、書かれなかったトークンを既定順で補います。これにより `✻` を含む `model_ctx` は消せず、`weekly` を書かない conf でも `weekly` は末尾に補われます
-- 各行のトークンの一覧 (`LAYOUT_LINE1_TOKENS` / `LAYOUT_LINE2_TOKENS`) は、既定値、補完、有効なトークンの判定に共通で使います。トークンを足すときは 1 か所だけを直します
+- 各行のトークンの一覧 (`LAYOUT_LINE1_TOKENS` / `LAYOUT_LINE2_TOKENS`) は、既定値、補完、有効なトークンの判定に共通で使います。トークンを足すときは、この一覧と `layout_token` の `case` の両方を直します (一覧だけに足すと、値が空の列が 2 行目に出ます)
 - 未知のトークンは黙って無視し、重複は最初の 1 回だけ採ります。前後の空白 (タブを含む) はパラメータ展開で除去し、`tr` や `awk` は使いません
 - トークンから値への対応は連想配列ではなく `case` で引き、値はグローバル変数 `token_value` で返します。macOS の `/bin/bash` 3.2 には連想配列が無く、`$(...)` で受けると fork が増えるためです
   - 例外として、branch / session のトリムは `truncate_branch` / `truncate_label` の command substitution を伴います

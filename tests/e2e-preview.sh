@@ -118,7 +118,7 @@ print_header() {
 build_history_lines() {
   local current=$1
   local trend=$2
-  local step=10
+  local step=5
   [ -z "$current" ] && return
   awk -v cur="$current" -v trend="$trend" -v step="$step" -v len=20 '
     BEGIN {
