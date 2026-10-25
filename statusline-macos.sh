@@ -792,8 +792,8 @@ PR_JQ='.data.repository as $r
   end'
 
 # $1 が先頭に 0 のない 9 桁以内の正の整数なら 0 を返す (PR の番号とコメントの件数の検証)。
-# 0 も 1 を返すので、コメントが 0 件のときは件数がないものとして扱われる。
-pr_is_count() {
+# 値が 0 のときも偽を返すので、コメントが 0 件なら件数がないものとして扱われる。
+pr_is_positive_int() {
   case "$1" in ''|0*|*[!0-9]*|??????????*) return 1 ;; esac
 }
 
@@ -830,14 +830,14 @@ pr_cache_load() {
     return 0
   fi
   [ "${#f[@]}" -eq 8 ] || return 1
-  pr_is_count "${f[1]}" || return 1
+  pr_is_positive_int "${f[1]}" || return 1
   case "${f[2]}" in open|draft|merged|closed) ;; *) return 1 ;; esac
   pr_fetched=${f[0]}
   pr_number=${f[1]}
   pr_state=${f[2]}
   case "${f[3]}" in approved|pending|changes_requested) pr_review=${f[3]} ;; esac
   case "${f[4]}" in pass|fail|pending) pr_ci=${f[4]} ;; esac
-  pr_is_count "${f[5]}" && pr_comments=${f[5]}
+  pr_is_positive_int "${f[5]}" && pr_comments=${f[5]}
   [ "${f[6]}" = "1" ] && pr_head_matches=1
   case "${f[7]}" in
     https://$url_bad) ;;
@@ -1168,7 +1168,7 @@ format_ctx() {
 
 # レイアウトのトークンを描画済み文字列に引く。値は token_value に返す (呼び出し側で $(...) を
 # 挟まないため。branch/session のトリムは従来どおり truncate_label の command substitution を伴う)。
-# トークン内部の区切り (branch の ab/diff 前のスペースと PR 前の ∙、model_ctx の ∙/スペース) は
+# トークン内部の区切り (branch の ab/diff/PR 前のスペース、model_ctx の ∙/スペース) は
 # トークン間の " | " とは別ルールなので、ここで組み立て済みの 1 塊として返す。
 layout_token() {
   token_value=""

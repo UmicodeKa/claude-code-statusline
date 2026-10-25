@@ -543,6 +543,31 @@ case_future_fetched_at() {
   fi
 }
 
+# --- comment-count: キャッシュのコメントの件数は、先頭が 0 でない 9 桁以内の正の整数のときだけ出す ---
+#   各要素は「キャッシュに書く件数;1 行目の CI 記号の後に続く期待値」
+case_comment_count() {
+  local bash_bin=$1 script=$2 label=$3
+  local spec comments want cache line
+  for spec in '3; 3' '123456789; 123456789' '0;' '012;' '1234567890;' '-1;'; do
+    comments=${spec%%;*}
+    want=${spec#*;}
+    setup_case "branch=main;ab=0,0"
+    cache="$(cache_path main)"
+    printf '%s\t12\topen\tapproved\tpass\t%s\t1\thttps://github.com/my-org/my-project/pull/12\n' \
+      "$(date +%s)" "$comments" > "$cache"
+    # 間隔内のマーカーを置き、取得を起動させずに仕込んだキャッシュをそのまま読ませる。
+    : > "$cache.marker"
+    line=$(run_sl "$bash_bin" "$script")
+    line=${line%%$'\n'*}
+    cleanup_case
+    if [ "$line" != 'main · \e[4m\e[38;2;78;186;101m#12\e[0m\e[38;2;78;186;101m✓\e[0m'"$want" ]; then
+      fail_case "comment-count [$label]" "件数 '${comments}' の表示が違う: $line"
+      return
+    fi
+  done
+  pass_case "comment-count [$label]"
+}
+
 # --- jq-*: --jq による変換 (候補の選び方、レビュー状態、CI、コメントの件数) ---
 #   $4 ケース名 / $5 応答 / $6 期待するキャッシュの fetched_at 以降 (タブを | にしたもの。PR なしは空)
 #   $7 repo の fake git 規約 (省略時は push 先のオーナー me)
@@ -588,6 +613,7 @@ run_all_cases() {
   case_refresh_interval           "$bash_bin" "$script" "$label"
   case_not_invoked_without_prerequisites "$bash_bin" "$script" "$label"
   case_future_fetched_at          "$bash_bin" "$script" "$label"
+  case_comment_count              "$bash_bin" "$script" "$label"
   # 他人の fork の同名ブランチの OPEN より、自分の MERGED (HEAD 一致) を選ぶ。オーナーは大文字小文字を区別しない
   run_jq_case "$bash_bin" "$script" "$label" jq-fork-same-name fork-same-name \
     "12|merged||pass|0|1|$url12"

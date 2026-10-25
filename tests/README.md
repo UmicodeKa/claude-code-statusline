@@ -59,6 +59,7 @@ PR の状態表示の取得も投げっぱなしの非同期処理のため、fa
 | `refresh-interval` | キャッシュの状態とマーカーの経過時間から、30 / 300 / 900 秒の間隔で起動する (前回の試行が失敗したときは 300 秒) |
 | `not-invoked-without-prerequisites` | detached HEAD と、symlink の履歴ディレクトリ (無効になる) では `gh` を起動しない |
 | `future-fetched-at` | `fetched_at` が現在より未来のキャッシュは表示せず、取得の結果で置き換える |
+| `comment-count` | キャッシュのコメントの件数は、先頭が 0 でない 9 桁以内の正の整数のときだけ出す (`0`、`012`、10 桁、`-1` は出さない) |
 | `jq-fork-same-name` | 他人の fork の同名ブランチの OPEN より、自分の MERGED (HEAD 一致) を選ぶ |
 | `jq-review-null-approved` | `reviewDecision` が `null` でも、`latestReviews` の `APPROVED` で approved になる |
 | `jq-nullable-fields` | `statusCheckRollup` が `null` なら CI は空、`totalCommentsCount` が `null` なら件数は 0 |

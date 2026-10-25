@@ -377,11 +377,11 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 
 ### pr のキャッシュの読み取りと値の検証
 
-- 箇所: `pr_cache_load`、`pr_is_count`、`format_pr`
+- 箇所: `pr_cache_load`、`pr_is_positive_int`、`format_pr`
 - 何をしているか: キャッシュを信用せず、番号と状態が不正なら列ごと省略し、ほかのフィールドは想定外の値を無いものとして扱う。URL は `https://` で始まり、残りが URL に使う ASCII の英数字と記号だけのときに OSC 8 に埋め込む。許す文字は `[[:cntrl:]]` や `A-Z` を使わずに列挙する。文字クラスや範囲が含む文字は OS のロケール実装で違い (macOS では U+202E も `[[:cntrl:]]` に当たる)、両版の出力が食い違いうるため
-  - 番号とコメントの件数は、同じ `pr_is_count` (先頭が 0 でない 9 桁以内の整数) で確かめる。件数が 0 か不正なら件数を出さない
+  - 番号とコメントの件数は、同じ `pr_is_positive_int` (先頭が 0 でない 9 桁以内の正の整数) で確かめる。件数が 0 か不正なら件数を出さない
 - 外すと何が起きるか: キャッシュは `/tmp` 配下のファイルで、壊れることも、`gh` の出力が想定と違うこともある。URL に ESC や BEL が混ざると、OSC 8 が途中で閉じて後続の列の表示が崩れる
-- 守っているテスト: `108-pr-stale`〜`112-pr-invalid-optional-fields`、`115-pr-url-non-ascii`、`future-fetched-at` (pr-status-behavior)
+- 守っているテスト: `108-pr-stale`〜`112-pr-invalid-optional-fields`、`115-pr-url-non-ascii`、`future-fetched-at` / `comment-count` (pr-status-behavior)
 
 ### rate のハイフン区切り
 
