@@ -39,6 +39,8 @@ SHOW_CWD_OFF_DIR="$TESTS_DIR/show-cwd-off"
 # マーカーが無いケースは存在しないパスに固定する (lib/config-file.sh)。
 # layout/<case> があればそのケースで 1 行目 / 2 行目のレイアウト文字列を
 # CLAUDE_STATUSLINE_LAYOUT_LINE1 / _LINE2 に渡す (lib/layout.sh)。無ければ既定レイアウト。
+# highlight/<case> があればそのケースで 1 行目を CLAUDE_STATUSLINE_HIGHLIGHT に渡す (lib/highlight.sh)。
+# 無ければ空文字 (= conf → 既定値。既定は branch)。
 # pr-cache/<case> があればそのケースの履歴 dir に PR の状態表示のキャッシュとマーカーを仕込む
 # (lib/pr-cache.sh)。マーカーが新しいので描画は取得を起動しない。
 # hyperlink-off/<case> があればそのケースで FORCE_HYPERLINK=0 を渡す (OSC 8 を出さない)。
@@ -51,6 +53,8 @@ PR_STATUS_ON_DIR="$TESTS_DIR/pr-status-on"
 source "$TESTS_DIR/lib/config-file.sh"
 # shellcheck source=lib/layout.sh
 source "$TESTS_DIR/lib/layout.sh"
+# shellcheck source=lib/highlight.sh
+source "$TESTS_DIR/lib/highlight.sh"
 # shellcheck source=lib/pr-cache.sh
 source "$TESTS_DIR/lib/pr-cache.sh"
 # shellcheck source=lib/escape-ansi.sh
@@ -340,6 +344,10 @@ run_case() {
   local case_layout_line1 case_layout_line2
   layout_for_case "$case_name"
 
+  # highlight/<case> があればハイライトの指定を渡す (無ければ空 = conf → 既定値)。
+  local case_highlight
+  highlight_for_case "$case_name"
+
   # set -e + command substitution の組み合わせは、子プロセスが非ゼロ終了
   # した時点でハーネス全体を即死させる。`|| rc=$?` で吸収し、終了コードを
   # 別変数に取り出してアサーション側で扱えるようにする。pipefail 配下でも
@@ -364,12 +372,14 @@ run_case() {
       SHOW_MODEL_NAME=0 COLOR_SCHEME=light GIT_FETCH=1 PR_STATUS=1 SHOW_CWD=0 \
       RATE_CHART_LEN=3 POLL_INTERVAL_SEC=0 GIT_FETCH_INTERVAL_SEC=0 \
       LAYOUT_LINE1="session" LAYOUT_LINE2="rate|model_ctx" \
+      HIGHLIGHT="directory|branch|session|model|ctx_chart|rate_chart|rate_reset|weekly_chart|weekly_reset|pr_comments" \
       CLAUDE_STATUSLINE_SHOW_MODEL_NAME="$show_model_name" \
       CLAUDE_STATUSLINE_GIT_FETCH="$git_fetch" \
       CLAUDE_STATUSLINE_PR_STATUS="$pr_status" \
       CLAUDE_STATUSLINE_SHOW_CWD="$show_cwd" \
       CLAUDE_STATUSLINE_LAYOUT_LINE1="$case_layout_line1" \
       CLAUDE_STATUSLINE_LAYOUT_LINE2="$case_layout_line2" \
+      CLAUDE_STATUSLINE_HIGHLIGHT="$case_highlight" \
       FORCE_HYPERLINK="$force_hyperlink" \
       PATH="$GIT_SHIM_DIR:$GH_SHIM_DIR:$PATH" \
         "$bash_bin" "$script" < "$fixture" 2>&1 | escape_ansi

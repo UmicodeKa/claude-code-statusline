@@ -21,7 +21,7 @@ STATUSLINE_CONFIG="${CLAUDE_STATUSLINE_CONFIG:-$HOME/.claude/statusline.conf}"
 case "$STATUSLINE_CONFIG" in */*) ;; *) STATUSLINE_CONFIG="./$STATUSLINE_CONFIG" ;; esac
 # conf で設定できる変数の一覧。unset と \r の除去の両方でこの配列を使う (一覧を 1 か所に保つ)。
 STATUSLINE_CONF_VARS=(SHOW_MODEL_NAME COLOR_SCHEME GIT_FETCH PR_STATUS SHOW_CWD RATE_CHART_LEN POLL_INTERVAL_SEC \
-  GIT_FETCH_INTERVAL_SEC LAYOUT_LINE1 LAYOUT_LINE2)
+  GIT_FETCH_INTERVAL_SEC LAYOUT_LINE1 LAYOUT_LINE2 HIGHLIGHT)
 unset "${STATUSLINE_CONF_VARS[@]}"
 if [ -f "$STATUSLINE_CONFIG" ] && [ -r "$STATUSLINE_CONFIG" ]; then
   # shellcheck source=/dev/null
@@ -76,6 +76,15 @@ LAYOUT_LINE1_TOKENS="directory|branch|session"
 LAYOUT_LINE2_TOKENS="model_ctx|rate|weekly"
 LAYOUT_LINE1="${CLAUDE_STATUSLINE_LAYOUT_LINE1:-${LAYOUT_LINE1:-$LAYOUT_LINE1_TOKENS}}"
 LAYOUT_LINE2="${CLAUDE_STATUSLINE_LAYOUT_LINE2:-${LAYOUT_LINE2:-$LAYOUT_LINE2_TOKENS}}"
+
+# 無色で表示する要素のうち、目立たせたいものを text 色 (dark は白、light は黒) で塗る。
+# トークンを `|` で区切って並べる (区切りと空白の扱いは LAYOUT_LINE* と同じ。未知のトークンは黙って無視する)。
+#   directory / branch (表示中の名前の最後の `/` より後ろ) / session / model (✻ とモデル名) /
+#   ctx_chart / rate_chart / rate_reset / weekly_chart / weekly_reset / pr_comments (PR のコメントの件数)
+# 色が付いている状態 (Fable/Opus/Haiku、ctx 70% 以上、rate/weekly 残量 40% 以下) ではその色を優先して塗らない。
+# 既定は branch (ブランチ名の末尾だけを塗る)。conf では `|` を含むため値をクォートで囲む。
+# env CLAUDE_STATUSLINE_HIGHLIGHT でも上書き可。空の値は既定値扱いなので、どれも塗らないときは none 等の未知のトークンを書く。
+HIGHLIGHT="${CLAUDE_STATUSLINE_HIGHLIGHT:-${HIGHLIGHT:-branch}}"
 
 # 数値の設定 (conf のみで変える。env の上書き口は持たない)。既定値と範囲は後方の「間引き定数」の
 # clamp_int の呼び出しと MIN/MAX 定数にだけ置き、ここには書かない (2 か所にあると食い違いうるため)。
@@ -456,6 +465,7 @@ history_chart() {
 # (model_color / effort_color / limit_color / ctx_color) は "static <ansi>" / "rainbow" のような
 # effect 名を変数に入れ、それを paint の <effect> [arg] にそのまま展開して渡す。
 # 将来エフェクトが増えても paint に 1 ブランチ足すだけで済む。
+# HIGHLIGHT の塗り (highlight) だけは色が COLOR_text に決まっているので paint を通さず、fork しないよう変数で返す。
 
 # static: 文字列を単色で囲む。color が空なら素通し。
 # `echo` は値が `-n` / `-e` で始まったり、バックスラッシュを含むと壊れる
@@ -513,6 +523,20 @@ paint() {
     rainbow) rainbow "$text" ;;
     *)       static "$text" "$arg" ;;
   esac
+}
+
+# highlight <トークン> <文字列>
+# トークンが HIGHLIGHT で指定されていれば文字列を COLOR_text で囲んで hl_out に入れ、そうでなければそのまま入れる。
+# 指定が無いときは元の文字列が返るので、無色の要素を出す箇所は分岐せずに常に通す ($(...) で受けないので fork しない)。
+#   - 空の文字列は塗らない。塗ると空の列が ESC だけの空でない値になり、1 行目の空の列の省略が崩れる。
+#     空のときも終了ステータスは 0 にする (呼び出し側が && / || でつないでも失敗と取り違えない)
+#   - トリムは呼び出し側で塗る前に済ませる (ANSI エスケープを文字数に数えないため)
+#   - hl_out は次の呼び出しで上書きされる。続けて呼ぶときは先に別の変数へ移す
+# hl_set は main で HIGHLIGHT から "|a|b|" の形に組み立てる。
+highlight() {
+  hl_out=$2
+  [ -n "$2" ] || return 0
+  case "$hl_set" in *"|$1|"*) hl_out="${COLOR_text}$2"$'\033[0m' ;; esac
 }
 
 # 色を決める関数 (*_color <変数名> <値>) は、paint の effect 指定を printf -v で第 1 引数の変数に入れる
@@ -928,7 +952,8 @@ pr_cache_load() {
 #            url があり FORCE_HYPERLINK=0 でなければ、ここだけを OSC 8 で PR へのリンクにする
 #   CI 記号: open / draft のときだけ、#<番号> に詰めて続ける
 #   件数:    open / draft でコメントが 1 件以上のときだけ、半角スペースを挟んで続ける。
-#            詰めると、CI 記号がないときに番号と続けて読めてしまう (#12 と 3 で #123)
+#            詰めると、CI 記号がないときに番号と続けて読めてしまう (#12 と 3 で #123)。
+#            件数は無色なので、pr_comments として highlight に通す
 # OSC 8 のエスケープ列を含むので、truncate_label や ${#var} の幅計算には渡さない。
 format_pr() {
   pr_str=""
@@ -958,7 +983,10 @@ format_pr() {
         fail)    pr_str="${pr_str}${COLOR_error}✗"$'\033[0m' ;;
         pending) pr_str="${pr_str}${COLOR_warning}●"$'\033[0m' ;;
       esac
-      [ -n "$pr_comments" ] && pr_str="${pr_str} ${pr_comments}"
+      if [ -n "$pr_comments" ]; then
+        highlight pr_comments "$pr_comments"
+        pr_str="${pr_str} ${hl_out}"
+      fi
       ;;
   esac
 }
@@ -1173,17 +1201,23 @@ maybe_pr_refresh() {
 }
 
 # レートリミット残量の文字列を組み立てる
-#   format_limit <残量> <リセット epoch> <チャート> <時刻の書式>
+#   format_limit <残量> <リセット epoch> <チャート> <時刻の書式> <列の名前>
 #   残量: set_remaining で計算済みの整数 (空なら `<チャート> --`)。ここでは丸め直さない
 #   チャート: 呼び出し側で組み立て済みのスパーク列 (rate は履歴チャート、weekly は現在値の 1 文字)
 #   時刻の書式: format_reset_time に渡す date の書式 (rate は %H:%M、weekly は曜日の %a)
+#   列の名前: rate / weekly。無色のとき、チャートを <列の名前>_chart、時刻を <列の名前>_reset として highlight に通す
 format_limit() {
   local remaining=$1
   local reset=${2:-0}
   local chart=$3
   local time_format=$4
+  local name=$5
 
-  [ -z "$remaining" ] && { printf '%s\n' "${chart} --"; return; }
+  if [ -z "$remaining" ]; then
+    highlight "${name}_chart" "$chart"
+    printf '%s\n' "${hl_out} --"
+    return
+  fi
 
   # limit_color は paint の effect 指定 ("static <ansi>" / "static") を入れる。
   # 色付き分岐は ANSI コードを伴うとき (= 無色の "static" でないとき) だけ。
@@ -1207,20 +1241,25 @@ format_limit() {
     fi
     paint "$body" $color_spec
   else
-    if [ -n "$time_str" ]; then
-      printf '%s\n' "${chart} ${time_str}"
-    else
-      printf '%s\n' "$chart"
-    fi
+    # 無色のときはチャートと時刻を別々に塗る。時刻を通すと hl_out が上書きされるので、チャートの結果を先に移す。
+    highlight "${name}_chart" "$chart"
+    local chart_out=$hl_out
+    highlight "${name}_reset" "$time_str"
+    printf '%s\n' "${chart_out}${time_str:+ $hl_out}"
   fi
 }
 
 # コンテキスト使用率の文字列を組み立てる (現在値 1 文字スパーク版)
 # 履歴は持たず、現在値の spark を 1 文字描画する。70% 以上のときだけ数値併記。
+# 無色のときは spark (欠落時は ·) を ctx_chart として highlight に通す。
 format_ctx() {
   local ctx_pct=$1
 
-  [ -z "$ctx_pct" ] && { printf '%s\n' "· --"; return; }
+  if [ -z "$ctx_pct" ]; then
+    highlight ctx_chart '·'
+    printf '%s\n' "${hl_out} --"
+    return
+  fi
 
   local spark ctx_int
   spark_of spark "$ctx_pct"
@@ -1233,7 +1272,8 @@ format_ctx() {
   if [ "$color_spec" != static ]; then
     paint "${spark} ${ctx_int}%" $color_spec
   else
-    printf '%s\n' "$spark"
+    highlight ctx_chart "$spark"
+    printf '%s\n' "$hl_out"
   fi
 }
 
@@ -1241,19 +1281,32 @@ format_ctx() {
 # 挟まないため。branch/session のトリムは truncate_branch / truncate_label の command substitution を伴う)。
 # トークン内部の区切り (branch の ab/diff/PR 前のスペース、model_ctx の ∙/スペース) は
 # トークン間の " | " とは別ルールなので、ここで組み立て済みの 1 塊として返す。
+# 1 行目の値の HIGHLIGHT の塗りもここで行う (トリムした後に塗る)。layout_token は main の末尾の build_layout からだけ
+# 呼ばれるので、hl_set の組み立てより後に塗ることがここで決まる。directory も dir_field を作る箇所ではなくここで塗り、
+# 1 行目の塗りを 1 か所に集める。
 layout_token() {
   token_value=""
   case "$1" in
-    directory) token_value="$dir_field" ;;
+    directory)
+      highlight directory "$dir_field"
+      token_value=$hl_out
+      ;;
     branch)
       if [ -n "$branch" ]; then
         pr_token
-        token_value="$(truncate_branch 25 "$branch")${ab_str:+ $ab_str}${diff_str:+ $diff_str}${pr_str:+ $pr_str}"
+        # 塗るのは表示中の名前の最後の `/` より後ろだけ。`/` が無い名前で ${label%/*} を使うと
+        # 名前全体が返って main/main のように重なるので、case で分ける。
+        local label head=""
+        label=$(truncate_branch 25 "$branch")
+        case "$label" in */*) head="${label%/*}/" ;; esac
+        highlight branch "${label##*/}"
+        token_value="${head}${hl_out}${ab_str:+ $ab_str}${diff_str:+ $diff_str}${pr_str:+ $pr_str}"
       fi
       ;;
     session)
       if [ -n "$session" ]; then
-        token_value="$(truncate_label 40 "$session")"
+        highlight session "$(truncate_label 40 "$session")"
+        token_value=$hl_out
       fi
       ;;
     model_ctx) token_value="${model_field} ${ctx_str}" ;;
@@ -1262,20 +1315,32 @@ layout_token() {
   esac
 }
 
-# レイアウト文字列 (トークンを | で区切った列) を走査し、描画済みの列を layout_parts に積む。
-#   $1: レイアウト文字列
-#   $2: その行で有効なトークン ("|a|b|" 形式。それ以外は未知として黙って無視する)
-#   $3: 1 = 値が空でも積む (2 行目) / 0 = 値が空なら列ごと省略する (1 行目)
-# 重複は最初の 1 回だけ採る。トークン前後の空白 (タブ含む) は剥がす。
+# トークン列 ("a|b|c") を `|` で区切り、前後の空白 (タブ含む) を剥がして配列 tokens に返す。
+# LAYOUT_LINE* と HIGHLIGHT が同じ文字列を同じ規則で解釈するよう、分割はここにだけ書く。
+# 空のトークンもそのまま返す (呼び出し側の照合で、未知のトークンと同じく何にも一致しない)。
 # 分割･トリムはパラメータ展開のみで行う (tr / awk 等の外部コマンドを使わない)。
-build_layout() {
-  local rest="$1|" allowed=$2 keep_empty=$3 seen="|" token
-  layout_parts=()
+split_tokens() {
+  local rest="$1|" token
+  tokens=()
   while [ -n "$rest" ]; do
     token="${rest%%|*}"
     rest="${rest#*|}"
     token="${token#"${token%%[![:space:]]*}"}"
     token="${token%"${token##*[![:space:]]}"}"
+    tokens+=("$token")
+  done
+}
+
+# レイアウト文字列 (トークンを | で区切った列) を split_tokens で分け、描画済みの列を layout_parts に積む。
+#   $1: レイアウト文字列
+#   $2: その行で有効なトークン ("|a|b|" 形式。それ以外は未知として黙って無視する)
+#   $3: 1 = 値が空でも積む (2 行目) / 0 = 値が空なら列ごと省略する (1 行目)
+# 重複は最初の 1 回だけ採る。
+build_layout() {
+  local allowed=$2 keep_empty=$3 seen="|" token
+  layout_parts=()
+  split_tokens "$1"
+  for token in "${tokens[@]}"; do
     case "$allowed" in *"|${token}|"*) ;; *) continue ;; esac
     case "$seen" in *"|${token}|"*) continue ;; esac
     seen="${seen}${token}|"
@@ -1333,6 +1398,12 @@ $(printf '%s' "$input" | jq -r '
   (.rate_limits.seven_day.resets_at          // 0  | tostring)
 ')
 EOF
+
+# HIGHLIGHT のトークンを "|a|b|" の形にまとめ、highlight が照合する hl_set を作る。
+# 要素を組み立てる処理 (format_ctx / format_limit / model / layout_token) より前に置く。
+split_tokens "$HIGHLIGHT"
+printf -v hl_set '|%s' "${tokens[@]}"
+hl_set+='|'
 
 # rate は残量を履歴に積む (チャートも数字も 100→0 に減っていく様子になる)
 set_remaining rate_remaining "$rate_pct"
@@ -1395,7 +1466,7 @@ fi
 
 model_str="${model:-Unknown}"
 ctx_str=$(format_ctx "$ctx_pct")
-rate_str=$(format_limit "$rate_remaining" "$rate_reset" "$rate_chart" '%H:%M')
+rate_str=$(format_limit "$rate_remaining" "$rate_reset" "$rate_chart" '%H:%M' rate)
 
 # weekly (7 日間のレートリミット) は履歴を持たず、現在の残量を ctx と同じ 1 文字の spark で描く。
 # 色・数値・区切りの規則は rate と共有し (format_limit / limit_color)、時刻の代わりに曜日 (%a) を添える。
@@ -1403,18 +1474,22 @@ rate_str=$(format_limit "$rate_remaining" "$rate_reset" "$rate_chart" '%H:%M')
 # 使用率が欠落していれば spark_of が · を返し、format_limit が `· --` にする (列は残す)。
 set_remaining weekly_remaining "$weekly_pct"
 spark_of weekly_spark "$weekly_remaining"
-weekly_str=$(format_limit "$weekly_remaining" "$weekly_reset" "$weekly_spark" '%a')
+weekly_str=$(format_limit "$weekly_remaining" "$weekly_reset" "$weekly_spark" '%a' weekly)
 
 # ✻ (+ トリム後モデル名) をモデル色で塗る。色判定はトリム前の全長で行う。
 # model_color は paint の effect 指定 (Fable/Opus/Haiku→static <ansi>, 他→static) を model_effect に入れる。
-# 全モデルが単色 (無色含む)。無色 (Sonnet) でも $(...) で末尾改行が
-# 除去されるため後続の連結で出力は崩れない。
+# 全モデルが単色。無色 (Sonnet 等) のときは paint を通さず highlight に渡す (HIGHLIGHT の model で塗る)。
 # SHOW_MODEL_NAME=0 のときは ✻ 単体を model 色で塗る (記号の色でモデルを判別するため常に残す)。
 model_color model_effect "$model_str"
+model_text="✻"
 if [ "$SHOW_MODEL_NAME" = "1" ]; then
-  model_field=$(paint "✻ $(truncate_label 13 "$model_str")" $model_effect)
+  model_text="✻ $(truncate_label 13 "$model_str")"
+fi
+if [ "$model_effect" = static ]; then
+  highlight model "$model_text"
+  model_field=$hl_out
 else
-  model_field=$(paint "✻" $model_effect)
+  model_field=$(paint "$model_text" $model_effect)
 fi
 
 # effort (推論強度) を model とは別色で塗り、model_field に連結する。

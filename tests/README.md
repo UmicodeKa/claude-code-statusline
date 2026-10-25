@@ -113,8 +113,9 @@ conf は一時ファイルに書いて渡します。`RATE_CHART_LEN` と `POLL_
 | `block:pr-common` | PR の状態表示の共通部分 (クエリ、`--jq`、キャッシュの読み書き、子プロセスの起動と本体、描画) が両版で一致する |
 | `block:spark` | スパークと残量の計算 (`spark_of` / `round_int` / `set_remaining`) が両版で一致する |
 | `block:history-chart` | 履歴ファイルの読み出し (`history_chart`) が両版で一致する。ロックの取り方が違う `history_push` は対象外 |
-| `block:paint` | 色付け、トリム、git の集計 (`paint` / `*_color` / `truncate_label` / `truncate_branch` / `git_diff_stat` / `git_ahead_behind`) が両版で一致する |
-| `block:format-layout` | rate / ctx の整形とレイアウトの組み立て (`format_limit` / `format_ctx` / `layout_token` / `build_layout` / `join_by`) が両版で一致する |
+| `block:paint` | 色付け、ハイライト、トリム、git の集計 (`paint` / `highlight` / `*_color` / `truncate_label` / `truncate_branch` / `git_diff_stat` / `git_ahead_behind`) が両版で一致する |
+| `block:format-layout` | rate / ctx の整形とレイアウトの組み立て (`format_limit` / `format_ctx` / `layout_token` / `split_tokens` / `build_layout` / `join_by`) が両版で一致する |
+| `block:main-render` | main の描画部分 (`hl_set` の組み立て、rate チャート、branch / diff / ab の取得、model と effort の組み立て、directory、`build_layout` の呼び出し) が両版で一致する。手前の jq の読み取りはコメントが両版で違うので対象外 |
 | `static:locale` | 先頭 20 行に `export LC_ALL=C.UTF-8` がある |
 | `static:no-prompt:<関数>:*` | `maybe_git_fetch` と `pr_spawn_refresh` のそれぞれに、`GIT_TERMINAL_PROMPT=0` / `GIT_ASKPASS=/bin/true` / `SSH_ASKPASS=/bin/true` / `SSH_ASKPASS_REQUIRE=force` が残っている |
 | `static:fetch-fd-redirect` | `maybe_git_fetch` に `>/dev/null 2>&1 </dev/null` が残っている |
@@ -140,6 +141,7 @@ conf は一時ファイルに書いて渡します。`RATE_CHART_LEN` と `POLL_
 | `git-fetch-on/<case>` | 空ファイル。`CLAUDE_STATUSLINE_GIT_FETCH=1` を渡す |
 | `config-file/<case>` | 設定ファイルとして読ませる中身 |
 | `layout/<case>` | 1 行目 = `LAYOUT_LINE1`、2 行目 = `LAYOUT_LINE2` |
+| `highlight/<case>` | 1 行目 = `CLAUDE_STATUSLINE_HIGHLIGHT` |
 | `pr-cache/<case>` | PR の状態表示のキャッシュとして仕込む 1 行 (`lib/pr-cache.sh`) |
 | `hyperlink-off/<case>` | 空ファイル。`FORCE_HYPERLINK=0` を渡す |
 | `pr-status-on/<case>` | 空ファイル。`CLAUDE_STATUSLINE_PR_STATUS=1` を渡す |
@@ -155,6 +157,7 @@ conf は一時ファイルに書いて渡します。`RATE_CHART_LEN` と `POLL_
   - `86-config-template` / `95-config-template-layout` は配布テンプレート `statusline.conf` を読ませ、出力が既定値のときと一致することで、テンプレートの値が既定値とずれていないことを確かめます。`86` は branch / session の無い fixture のため、1 行目の並びの一致は `95` で確かめます。
   - レイアウトの値は `|` を含むため、テンプレートではクォートで囲んでいます。
 - `layout/`: 空行は｢指定なし｣を意味します。
+- `highlight/`: マーカーが無いケースでは空で渡します (conf → 既定値。既定は `branch`)。conf の `HIGHLIGHT` を確かめるケース (`166-highlight-config` など) は `config-file/` を使い、env が conf に勝つことは両方のマーカーを置いて確かめます。前後の空白やタブも含めて 1 行目をそのまま渡します (`165-highlight-tokens`)。
 - `pr-cache/`: 1 行目をキャッシュの 1 行として書きます。`printf %b` で展開するのでタブは `\t`、ESC は `\033` と書けます。`fetched_at` は現在時刻に依存するため、`@NOW@` (現在時刻) と `@STALE@` (現在時刻 - 4000 秒) を仕込む直前に置き換えます。1 行目が空ならキャッシュを置きません。どの場合も新しいマーカーを置くため、描画は取得を起動せず、仕込んだキャッシュがそのまま読まれます
 - `hyperlink-off/`: マーカーが無いケースでは `FORCE_HYPERLINK` を空で渡し、開発者のシェルの値が混ざらないようにしています
 - `pr-status-on/`: マーカーが無いケースでは `CLAUDE_STATUSLINE_PR_STATUS` を空で渡します。PR は fake gh が受け、`pr-cache/` で仕込んだキャッシュを branch 列に出すケースで使います
@@ -166,6 +169,7 @@ conf は一時ファイルに書いて渡します。`RATE_CHART_LEN` と `POLL_
 | `lib/escape-ansi.sh` | ESC を `\e` に、BEL を `\a` に置き換える (`perl` を使用) |
 | `lib/config-file.sh` | `config_for_case` で conf のパスを解決する。マーカーが無ければ存在しないパス (`NO_CONFIG`) を返す |
 | `lib/layout.sh` | `layout_for_case` でレイアウト文字列を解決する |
+| `lib/highlight.sh` | `highlight_for_case` でハイライトの指定を解決する |
 | `lib/find-debian-bash.sh` | Linux 版を実行できる bash を探す。CI 用の必須化チェックも持つ |
 | `lib/is-macos-host.sh` | macOS ホストかどうかを判定する |
 | `lib/git-shim/git` | テスト用の fake git |
@@ -276,7 +280,8 @@ PR の状態表示の子プロセスが呼ぶ `gh api graphql ... --jq <式>` �
 - 履歴ディレクトリ: `regression.sh` / `git-fetch-behavior.sh` / `pr-status-behavior.sh` / `e2e-preview.sh` のいずれも、ケースごとに `mktemp -d` で作った一時ディレクトリを `CLAUDE_STATUSLINE_HISTORY_DIR` に渡し、終了時に削除します。本番の `/tmp/claude-statusline-<uid>/` には触れません。実 uid で作られたディレクトリなので本体の所有者チェックを通り、初回起動時の履歴書き込みも実際に動きます。
 - 設定ファイル: `CLAUDE_STATUSLINE_CONFIG` は、`config-file/` にマーカーがあるケースを除き、存在しないパスに固定します。開発者の `~/.claude/statusline.conf` を読むことはありません。すべてのハーネスが `lib/config-file.sh` を通してこの規則に従います。
 - `CLAUDE_STATUSLINE_*` の環境変数: マーカーが無いときは空文字で渡します。本体は空を未設定と同じに扱うため、conf → 既定値の順にフォールバックします。既定値を直接渡すと conf の値が常に環境変数に負け、conf の検証ができなくなるためです。`CLAUDE_STATUSLINE_COLOR_SCHEME` も空で渡し、開発者のシェルの値が混ざらないようにしています。
-- 短縮名の変数: `regression.sh` は `SHOW_MODEL_NAME` や `LAYOUT_LINE1` などの短縮名 10 個を、全ケースで既定値と異なる値にして渡します。本体は conf を読む前にこれらを `unset` するため、出力には影響しません。この `unset` が消えると全ケースが失敗するので、その回帰ガードを兼ねています。
+  - `CLAUDE_STATUSLINE_HIGHLIGHT` は `regression.sh` / `pr-status-behavior.sh` / `e2e-preview.sh` のすべてで必ず渡します。渡さないと、ハイライトを export している開発者の手元だけで、branch などを含むケースが落ちます。
+- 短縮名の変数: `regression.sh` は `SHOW_MODEL_NAME` や `LAYOUT_LINE1` などの短縮名 11 個を、全ケースで既定値と異なる値にして渡します (`HIGHLIGHT` は全トークンを指定した値)。本体は conf を読む前にこれらを `unset` するため、出力には影響しません。この `unset` が消えると全ケースが失敗するので、その回帰ガードを兼ねています。
 - git / gh: 前述の fake git と fake gh を `PATH` の先頭に置きます。
 - `FORCE_HYPERLINK`: `regression.sh` と `e2e-preview.sh` は、`hyperlink-off/` にマーカーがあるケースを除き空で渡します。
 

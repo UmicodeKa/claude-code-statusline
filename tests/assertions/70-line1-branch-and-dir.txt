@@ -1,4 +1,4 @@
 # 1 行目に branch と directory が両方出る (" | " 区切り)
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
-matches_line1: ^sl-repo#branch=main;ab=0… \| main ·$
-contains: | main
+matches_line1: ^sl-repo#branch=main;ab=0… \| \\e\[38;2;255;255;255mmain\\e\[0m ·$
+contains: | \e[38;2;255;255;255mmain\e[0m

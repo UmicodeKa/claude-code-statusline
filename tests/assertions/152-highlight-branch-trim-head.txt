@@ -1,0 +1,4 @@
+# 末尾が長く先頭優先でトリムされた名前 (feature/improve-awesome-…) は、最後の / より後ろ (improve-awesome-…) だけが塗られる。
+# トリム位置はハイライトしないときと同じ
+matches_line1: ^improve-awesome-statusli… \| feature/\\e\[38;2;255;255;255mimprove-awesome-…\\e\[0m · \| my-session$
+matches_line2: ^✻ Sonnet 4\.6∙\\e\[38;2;177;185;249mhigh\\e\[0m ▃ \| ▆▆▆▆▆▆▆▆▆▆▆▆ 22:13 \| ▆ Tue$

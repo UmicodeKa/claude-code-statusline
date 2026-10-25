@@ -116,6 +116,9 @@ main() {
   # 出力を決める関数のうち OS 依存の無いもの (truncate_branch / layout_token など) をここで守る。
   check_block paint '# 色付けは 3 段構成' '# GIT_FETCH=1 のときだけ'
   check_block format-layout '# レートリミット残量の文字列を組み立てる' '# --- main ---'
+  # main の描画部分 (hl_set の組み立てから、各要素の組み立てと build_layout の呼び出しまで)。
+  # 手前の jq の読み取りはコメントが両版で違う (macOS 版だけ bash 3.2 の注記がある) ので含めない。
+  check_block main-render '# HIGHLIGHT のトークンを' '# " | " で結合'
 
   # ロケール固定はトリムの文字数換算に効くため冒頭 (先頭 20 行) にあることまで見る。
   check_static locale '1,20p' 'export LC_ALL=C.UTF-8'
