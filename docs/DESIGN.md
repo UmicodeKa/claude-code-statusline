@@ -21,7 +21,7 @@ macOS 版 (`statusline-macos.sh`) と Linux 版 (`statusline-linux.sh`) は同�
 4. 内部定数 (`SPARKS` / `UNTRACKED_DIFF_LIMIT` など) を定義し、数値の設定 (`RATE_CHART_LEN` と間引き間隔) を clamp する
 5. カラースキーム (`COLOR_*`) を定義する
 6. 依存コマンドを確認し、履歴ディレクトリを安全に用意する
-7. 入力 JSON を `jq` 1 回で読み取る
+7. 入力 JSON を `jq` 1 回で読み取り、`HIGHLIGHT` のトークンを照合用の `hl_set` にまとめる
 8. rate 履歴を更新してチャートを作り、weekly の 1 文字のスパークを求める
 9. git のブランチ、変更行数、ahead/behind を取得する (`GIT_FETCH=1` のときはここでバックグラウンド fetch を投げる)
 10. 各フィールドを着色し、レイアウトに従って 1 行目と 2 行目を組み立てて出力する (`PR_STATUS=1` で branch 列を組み立てるときだけ、PR のキャッシュを読み、必要ならバックグラウンドで取得を投げる)
@@ -44,7 +44,7 @@ Linux 版はステップ 1 の前に bash 4.1+ ゲートを置き、ステップ
 
 macOS 版で `flock` を使わないのは、macOS に標準で入っておらず、無い環境では黙って失敗するためです。代わりに POSIX で原子性が保証されている `mkdir` でロックを取り、`LOCK_TIMEOUT_SEC` × 5 秒 (既定 10 秒) より古いロックディレクトリは stale とみなして削除します。Linux 版の `flock` はプロセス終了時に自動で解放されるため、stale 処理は持ちません。
 
-これ以外のブロック (設定の読み込み、カスタマイズ設定、clamp、カラースキーム、PR の状態表示の定数と共通部分、スパークと残量の計算、履歴の読み出し、色付けと整形、レイアウトの組み立て) は両版で一字一句同じに保ちます。履歴まわりで両版が違うのは、ロックを取る `history_push` だけです。PR の状態表示で両版が違うのは、ロックを取る `maybe_pr_refresh` だけです。`tests/script-parity.sh` がこれらのブロックを抜き出して比較します。
+これ以外のブロック (設定の読み込み、カスタマイズ設定、clamp、カラースキーム、PR の状態表示の定数と共通部分、スパークと残量の計算、履歴の読み出し、色付けと整形、レイアウトの組み立て、main の描画部分) は両版で一字一句同じに保ちます。履歴まわりで両版が違うのは、ロックを取る `history_push` だけです。PR の状態表示で両版が違うのは、ロックを取る `maybe_pr_refresh` だけです。`tests/script-parity.sh` がこれらのブロックを抜き出して比較します。
 
 ## 実装上の仕組み
 
@@ -60,7 +60,9 @@ macOS 版で `flock` を使わないのは、macOS に標準で入っておら�
 
 新しいエフェクトを足すときは `paint` に分岐を 1 つ追加すれば済みます。個別の経路から `static` を直接呼ぶ形に戻すと、エフェクトの追加箇所が分散します。
 
-無色の `static` は末尾改行を付けるため、`$(...)` で受けて改行を落としてから連結します (無色の `*` や無色のモデル名がこの経路を通ります)。色付きの `static` は末尾改行を付けないので、そのまま連結しても出力は崩れません。
+例外は `HIGHLIGHT` の塗り (`highlight`) です。色が `COLOR_text` に決まっていて effect を選ぶ必要がなく、指定が無いときも全要素が通るため、`paint` を経由せず fork しない形にしています ([ハイライト (`HIGHLIGHT`)](#ハイライト-highlight))。
+
+無色の `static` は末尾改行を付けるため、`$(...)` で受けて改行を落としてから連結します (無色の `*` がこの経路を通ります)。色付きの `static` は末尾改行を付けないので、そのまま連結しても出力は崩れません。
 
 ### rainbow
 
@@ -110,17 +112,32 @@ effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の�
 
 - トークン間の区切りは常に ` | ` です。トークンの内側で別の区切りを使う要素は 1 トークンにまとめています
   - `model_ctx` は `✻ <model>∙<effort> <ctx>` (`∙` とスペース 1 個を内包)
-  - `branch` は `$(truncate_branch 25 "$branch")${ab_str:+ $ab_str}${diff_str:+ $diff_str}${pr_str:+ $pr_str}` (ab / PR が空のときに余分なスペースを残さないよう `:+` で条件付き連結。diff は作業ツリーがクリーンでも `·` を返すため、ブランチがあれば常に出る)
+  - `branch` は `truncate_branch 25` でトリムした名前 (末尾のセグメントだけを `highlight` に通す) に `${ab_str:+ $ab_str}${diff_str:+ $diff_str}${pr_str:+ $pr_str}` を続ける (ab / PR が空のときに余分なスペースを残さないよう `:+` で条件付き連結。diff は作業ツリーがクリーンでも `·` を返すため、ブランチがあれば常に出る)
     - `pr_str` は同じ case 節で直前に呼ぶ `pr_token` が設定する。連結を `pr_token` より前に移すと PR が出なくなる
 - `model` と `ctx` を別トークンに分けないのは、トークン間の区切りが組み合わせごとに変わり、実装とテストの両方が複雑になるためです
 - `build_layout` の第 3 引数で｢空の値を積むか｣を切り替えます。1 行目は `0` (空なら列ごと省略)、2 行目は `1` (空でも積む)
 - 2 行目は走査対象の末尾に既定の全トークン (`LAYOUT_LINE2_TOKENS`、`model_ctx|rate|weekly`) を足し、書かれなかったトークンを既定順で補います。これにより `✻` を含む `model_ctx` は消せず、`weekly` を書かない conf でも `weekly` は末尾に補われます
 - 各行のトークンの一覧 (`LAYOUT_LINE1_TOKENS` / `LAYOUT_LINE2_TOKENS`) は、既定値、補完、有効なトークンの判定に共通で使います。トークンを足すときは、この一覧と `layout_token` の `case` の両方を直します (一覧だけに足すと、値が空の列が 2 行目に出ます)
-- 未知のトークンは黙って無視し、重複は最初の 1 回だけ採ります。前後の空白 (タブを含む) はパラメータ展開で除去し、`tr` や `awk` は使いません
+- 未知のトークンは黙って無視し、重複は最初の 1 回だけ採ります。`|` での分割と前後の空白 (タブを含む) の除去は `split_tokens` がパラメータ展開だけで行い、`tr` や `awk` は使いません。`split_tokens` は `HIGHLIGHT` の解析と共有しています。同じ規則のループを 2 か所に書くと、片方だけ直したときに同じ文字列の解釈がずれるためです
 - トークンから値への対応は連想配列ではなく `case` で引き、値はグローバル変数 `token_value` で返します。macOS の `/bin/bash` 3.2 には連想配列が無く、`$(...)` で受けると fork が増えるためです
   - 例外として、branch / session のトリムは `truncate_branch` / `truncate_label` の command substitution を伴います
   - `PR_STATUS=1` のときは branch で呼ぶ `pr_token` もキャッシュの読み取りで fork します ([PR の状態表示の取得とキャッシュ](#pr-の状態表示の取得とキャッシュ))
 - `SHOW_CWD=0` は `directory` トークンが空を返すことで実現しています。フラグとレイアウトで二重に判定する箇所を作らないためです
+
+### ハイライト (`HIGHLIGHT`)
+
+無色の要素を `COLOR_text` で塗る処理は、ヘルパー `highlight <トークン> <文字列>` 1 つに集めています。
+
+- main で jq の読み取りの直後に、`split_tokens "$HIGHLIGHT"` の結果を `|a|b|` の形に連結した `hl_set` を 1 回だけ作ります (`build_layout` の `seen` / `allowed` と同じ形)。`highlight` は `case` で `*"|<トークン>|"*` と照合します
+- 結果は `$(...)` で受けずにグローバル変数 `hl_out` に返し、fork しません。指定されていないトークンでは元の文字列がそのまま返るので、無色の要素を出す箇所は条件分岐なしで常に `highlight` を通します。既定 (空) では何も塗らず、ハイライトの有無で fork の回数は変わりません
+- `hl_out` は 1 つのグローバル変数なので、続けて呼ぶと上書きされます。`format_limit` の無色の分岐では、チャートの結果を `chart_out` に移してから時刻を通します
+- 空の文字列は塗りません。塗ると空の列が ESC だけの空でない値になり、1 行目の｢値が空の列は省略する｣が崩れます。空のときも終了ステータスは 0 にして、呼び出し側が `&&` / `||` でつないでも失敗と取り違えないようにしています
+- トリムしてから塗ります。`truncate_label` / `truncate_branch` の文字数に ANSI エスケープを含めないためです
+- 1 行目の要素 (directory / branch / session) は `layout_token` で塗ります。`dir_field` は `hl_set` より前に作られるので、作る箇所で塗る設計にすると、`hl_set` の構築位置を動かしただけで directory のハイライトが黙って効かなくなります
+- branch は表示中の名前の最後の `/` で分け、後ろだけを塗ります。`/` が無い名前で `${label%/*}` を使うと名前全体が返り `main/main` のように重なるため、`case` で分けます。塗る範囲は表示中の名前から決めるので、トリムの規則が変わってもこの規則は変わりません
+- ctx / rate / weekly は `format_ctx` / `format_limit` の無色の分岐 (と欠落の分岐) だけで呼びます。`format_limit` は第 5 引数の列の名前 (`rate` / `weekly`) から `<列の名前>_chart` / `<列の名前>_reset` のトークンを組み立て、rate と weekly で同じコードを使います
+- model は `model_effect` が無色 (`static`) のときだけ `highlight` を通し、色付きのときは `paint` で塗ります。無色のモデルは `paint` の `$(...)` を通らないので、その分の fork がありません
+- PR のコメントの件数は `format_pr` で `pr_comments` として通します
 
 ### rate チャートの土台と右端の現在値
 
@@ -277,11 +294,11 @@ head のブランチ名とオーナーを push 先 (`@{push}`) から決める�
 - 箇所: 冒頭の｢ユーザー設定ファイルの読み込み｣ブロック
 - 何をしているか:
   - 内部定数と clamp より前、カスタマイズ設定の直前で conf を読む
-  - 読み込み前に短縮名の 10 変数 (`SHOW_MODEL_NAME` / `COLOR_SCHEME` / `GIT_FETCH` / `PR_STATUS` / `SHOW_CWD` / `RATE_CHART_LEN` / `POLL_INTERVAL_SEC` / `GIT_FETCH_INTERVAL_SEC` / `LAYOUT_LINE1` / `LAYOUT_LINE2`) を `unset` する
-  - 10 変数の一覧は配列 `STATUSLINE_CONF_VARS` の 1 か所に置き、`unset` と `\r` の除去の両方で使う
+  - 読み込み前に短縮名の 11 変数 (`SHOW_MODEL_NAME` / `COLOR_SCHEME` / `GIT_FETCH` / `PR_STATUS` / `SHOW_CWD` / `RATE_CHART_LEN` / `POLL_INTERVAL_SEC` / `GIT_FETCH_INTERVAL_SEC` / `LAYOUT_LINE1` / `LAYOUT_LINE2` / `HIGHLIGHT`) を `unset` する
+  - 11 変数の一覧は配列 `STATUSLINE_CONF_VARS` の 1 か所に置き、`unset` と `\r` の除去の両方で使う
   - `[ -f ] && [ -r ]` を満たすときだけ `.` で読み、読めなければ黙って既定値で続ける
   - `/` を含まないパスには `./` を前置する
-  - 読み込み直後に 10 変数の末尾の `\r` を取り除く (`printf -v` と間接展開 `${!name%$'\r'}` で書き戻す)
+  - 読み込み直後に 11 変数の末尾の `\r` を取り除く (`printf -v` と間接展開 `${!name%$'\r'}` で書き戻す)
   - 各設定は `${CLAUDE_STATUSLINE_X:-${X:-既定値}}` で読み、env > conf > 既定値 の順にする。env 口の無い数値の設定 (`RATE_CHART_LEN` と間引き間隔) は既定値を `clamp_int` の引数にだけ持ち、空の値も既定値に戻す
 - 外すと何が起きるか:
   - 読み込みを clamp より後へ移すと、conf の不正な間引き間隔が丸められず間引きが無効になる
@@ -292,7 +309,7 @@ head のブランチ名とオーナーを push 先 (`@{push}`) から決める�
   - `\r` を取り除かないと、CRLF で保存した conf の値が `light\r` のようになり、黙って既定値扱いになる
   - 設定を `X=300` のような無条件代入にすると、conf の値が上書きされる
 - 守っているテスト:
-  - `79-config-show-model-off`〜`86-config-template`、`94-config-layout`〜`96-config-layout-crlf`
+  - `79-config-show-model-off`〜`86-config-template`、`94-config-layout`〜`96-config-layout-crlf`、`166-highlight-config`〜`169-highlight-env-none`
   - `tests/script-parity.sh` の `block:config-load` / `block:settings`
   - `unset` は、回帰ハーネスが全ケースで短縮名を既定値と異なる値で渡しているため、外すと全ケースが落ちる
   - `./` の前置はテストなし
@@ -500,6 +517,30 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 - 外すと何が起きるか: 未追跡ファイルが大量にある作業ツリーで、ファイルごとの `git diff --no-index` が描画を遅くする
 - 守っているテスト: テストなし (未追跡ファイルの集計そのものは `42-diff-untracked-only`〜`45-diff-untracked-subdir`)
 
+### `highlight` は空の文字列を塗らない
+
+- 箇所: `highlight` の `[ -n "$2" ] || return 0`
+- 何をしているか: 空の文字列は `COLOR_text` で囲まずに空のまま返す
+- 外すと何が起きるか: 空の session や `SHOW_CWD=0` の directory が ESC だけの空でない値になり、1 行目に余分な ` | ` が出る。1 行目の列がすべて空のときも 1 行目が出るようになる。`HIGHLIGHT` が既定 (空) のときは塗らないので、既存のケースでは表面化しない
+- 守っているテスト: `163-highlight-empty-columns`、`164-highlight-empty-line1`
+
+### トリムしてから `highlight` に通す
+
+- 箇所: `layout_token` の branch / session と、main の model の組み立て
+- 何をしているか: `truncate_branch` / `truncate_label` でトリムした後の文字列を `highlight` に渡す
+- 外すと何が起きるか: 塗ってからトリムすると ANSI エスケープが文字数に数えられ、トリム位置が変わる。`\033[0m` が切り落とされて色が後続の列へ漏れることもある。`HIGHLIGHT` が既定 (空) のときは塗らないので、既存のケースでは表面化しない
+- 守っているテスト: `152-highlight-branch-trim-head`、`153-highlight-branch-trim-middle`、`154-highlight-session-trim`
+
+### `HIGHLIGHT` の組み立てと塗る順序
+
+- 箇所: main の `hl_set` の組み立てと、`format_ctx` / `format_limit` / model / `layout_token` での `highlight` の呼び出し
+- 何をしているか: [ハイライト (`HIGHLIGHT`)](#ハイライト-highlight) を参照
+- 外すと何が起きるか: `hl_set` を要素の組み立てより後に置くと、その要素のハイライトが黙って効かなくなる。`format_limit` で `chart_out` に移さずに時刻を通すと、チャートの代わりに時刻が 2 回出る。branch の `case` を外すと `/` の無い名前が `main/main` になる
+- 守っているテスト:
+  - `146-highlight-all-dark`〜`170-highlight-pr-comments`
+  - 順序は `149-highlight-directory-only`、`chart_out` は `160-highlight-rate-reset-only`、branch の `case` は `150-highlight-branch-no-slash` / `151-highlight-branch-detached`
+  - 両版のずれは `tests/script-parity.sh` の `block:paint` / `block:pr-common` / `block:format-layout` / `block:main-render`
+
 ## 採らなかった案と経緯
 
 ### 1 行構成へ戻す設定
@@ -572,6 +613,13 @@ CI 記号は `statusCheckRollup.state` (GitHub が集約した値) をそのま�
 - rate と同じ履歴チャートにする: 要件は現在の残量だけで、5 時間用の間引き間隔で 7 日の窓を記録しても傾向を示さない
 - 曜日に時刻を添える: 曜日だけでは、リセットが今日と同じ曜日のとき (24 時間以内か 6 日以上先か) を区別できないが、要件どおり曜日だけにして SPEC に制約として書いた
 
+### ハイライトの実装
+
+- 色を決める関数 (`ctx_color` / `limit_color` / `model_color`) の無色の戻り値をハイライト色にする: `format_ctx` と `format_limit` は｢色が付いているか｣(effect 指定が `static` でないか) で数値 `NN%` を出すかを決めているため、ハイライトしただけで数値が出るようになる。無色のときは要素ごと (チャートと時刻を別々)、色付きのときは全体を 1 色で塗るので、塗る単位も合わない
+- model の｢無色なら `highlight`、色付きなら `paint`｣を汎用のヘルパーにする: 分岐が 1 か所にしか無いので、ヘルパーを足しても重複は減らない
+- `HIGHLIGHT` をトークンごとの真偽値の設定 (`HIGHLIGHT_BRANCH=1` など) にする: 設定の数がトークンの数だけ増え、conf の読み込みブロックの一覧も増える。`LAYOUT_LINE*` と同じ書式の 1 変数にし、分割も `split_tokens` で共有した
+- 対象外にした無色の要素 (detached の `*`、draft / closed の PR 番号、`--` など) と理由は [SPEC.md](SPEC.md#ハイライト-highlight) にまとめている
+
 ### その他
 
 次の案も採っていません。理由はそれぞれのリンク先に書いています。
@@ -587,6 +635,7 @@ CI 記号は `statusCheckRollup.state` (GitHub が集約した値) をそのま�
 
 - 依存コマンド確認のメッセージ
 - 履歴ディレクトリの uid と mode の確認
+- `HIGHLIGHT` で塗る範囲が、実際の Claude Code の statusline で読みやすいこと (`COLOR_SCHEME` とテーマが食い違うと読めなくなる。`npm run preview` で目視で確認する)
 - ブランチ取得の空 `cwd` ガード
 - 描画経路に同期 fetch や git 呼び出しを足していないこと
 - 認証プロンプトが実際に出ないこと (記述の有無は `tests/script-parity.sh` で確認)

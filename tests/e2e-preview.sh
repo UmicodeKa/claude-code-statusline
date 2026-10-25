@@ -35,6 +35,9 @@ source "$TESTS_DIR/lib/config-file.sh"
 # layout/<case> があればそのケースをそのレイアウト文字列で表示する。
 # shellcheck source=lib/layout.sh
 source "$TESTS_DIR/lib/layout.sh"
+# highlight/<case> があればそのケースをそのハイライトの指定で表示する。
+# shellcheck source=lib/highlight.sh
+source "$TESTS_DIR/lib/highlight.sh"
 # pr-cache/<case> があればそのケースの履歴 dir に PR の状態表示のキャッシュを仕込む。
 # shellcheck source=lib/pr-cache.sh
 source "$TESTS_DIR/lib/pr-cache.sh"
@@ -181,6 +184,9 @@ print_case() {
   # layout マーカーがあればそのレイアウト文字列で表示する (無ければ空 = 既定レイアウト)。
   local case_layout_line1 case_layout_line2
   layout_for_case "$case_name"
+  # highlight マーカーがあればそのハイライトの指定で表示する (無ければ空 = 既定のどれも塗らない)。
+  local case_highlight
+  highlight_for_case "$case_name"
   # hyperlink-off マーカーがあれば OSC 8 のリンクを出さない (無ければ空 = リンクあり)。
   local force_hyperlink=""
   if [ -f "$HYPERLINK_OFF_DIR/${case_name}" ]; then force_hyperlink="0"; fi
@@ -194,7 +200,8 @@ print_case() {
     CLAUDE_STATUSLINE_COLOR_SCHEME="" CLAUDE_STATUSLINE_GIT_FETCH="" CLAUDE_STATUSLINE_PR_STATUS="$pr_status" \
     CLAUDE_STATUSLINE_SHOW_CWD="$show_cwd" \
     CLAUDE_STATUSLINE_LAYOUT_LINE1="$case_layout_line1" \
-    CLAUDE_STATUSLINE_LAYOUT_LINE2="$case_layout_line2" FORCE_HYPERLINK="$force_hyperlink" \
+    CLAUDE_STATUSLINE_LAYOUT_LINE2="$case_layout_line2" CLAUDE_STATUSLINE_HIGHLIGHT="$case_highlight" \
+    FORCE_HYPERLINK="$force_hyperlink" \
     PATH="$GIT_SHIM_DIR:$GH_SHIM_DIR:$PATH" \
     "$bash_bin" "$script" < "$fixture"
   printf '\n'

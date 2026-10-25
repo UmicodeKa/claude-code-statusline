@@ -117,6 +117,7 @@ LAYOUT_LINE1="session|directory|branch"
 | `SHOW_CWD` | `1` | `0` で 1 行目のディレクトリ名を隠す |
 | `LAYOUT_LINE1` | `directory\|branch\|session` | 1 行目の要素と並び |
 | `LAYOUT_LINE2` | `model_ctx\|rate\|weekly` | 2 行目の並び |
+| `HIGHLIGHT` | 空 | 無色の要素のうち目立たせるもの ([詳細](#ハイライト)) |
 | `GIT_FETCH` | `0` | `1` でバックグラウンド `git fetch` を有効にする |
 | `PR_STATUS` | `0` | `1` でブランチ列に PR の状態を表示する ([詳細](#pr_status1-で-pr-の状態を表示する)) |
 | `RATE_CHART_LEN` | `12` | レートリミットのチャートの文字数 (2〜20) |
@@ -138,7 +139,7 @@ LAYOUT_LINE1="session|directory|branch"
 
 ### レイアウト
 
-`LAYOUT_LINE1` / `LAYOUT_LINE2` には表示要素 (トークン) を `|` で区切って並べる。`|` を含むため、設定ファイルでは値をクォートで囲む。
+`LAYOUT_LINE1` / `LAYOUT_LINE2` には表示要素 (トークン) を `|` で区切って並べる。`|` を含むため、設定ファイルでは値をクォートで囲む (`HIGHLIGHT` も同じ)。
 
 | 行 | トークン | 内容 |
 | --- | --- | --- |
@@ -152,6 +153,30 @@ LAYOUT_LINE1="session|directory|branch"
 - 1 行目は書いたトークンだけが出る。`LAYOUT_LINE1="none"` のように既知でないトークンだけを書くと 1 行目ごと消える
 - 2 行目は並び順だけを変えられる。書かなかったトークンは末尾に補われ、常に 3 つとも出る (`weekly` を書かなくても末尾に出る)
 - 1 行構成へ戻す設定は無い
+
+### ハイライト
+
+ディレクトリ名やブランチ名など、色を付けずに端末の前景色で表示する要素のうち、`HIGHLIGHT` に書いたものを `COLOR_SCHEME` の文字色 (dark は白、light は黒) で塗って目立たせる。トークンは `|` で区切って並べる。
+
+```bash
+HIGHLIGHT="directory|branch|session|rate_chart|rate_reset"
+```
+
+| トークン | 塗る要素 |
+| --- | --- |
+| `directory` | ディレクトリ名 |
+| `branch` | ブランチ名の最後の `/` より後ろ (`feature/xxx/yyy` なら `yyy`) |
+| `session` | セッション名 |
+| `model` | `✻` とモデル名 (Sonnet など色の付かないモデルのとき) |
+| `ctx_chart` | コンテキスト使用率のスパーク |
+| `rate_chart` / `rate_reset` | 5 時間のレートリミットのチャート / リセット時刻 |
+| `weekly_chart` / `weekly_reset` | 週間のレートリミットのスパーク / リセットの曜日 |
+| `pr_comments` | PR のコメントの件数 |
+
+- 警戒域の ctx やレートリミット、Opus などのモデル色のように、もともと色が付いている状態ではその色が優先される
+- 既定は空で、どれも塗らない。未知のトークンは無視される
+- `COLOR_SCHEME` を Claude Code のテーマに合わせておく。食い違うと、明るい背景に白い文字が重なるなどして読めなくなる
+- 環境変数 `CLAUDE_STATUSLINE_HIGHLIGHT` を空にしても設定ファイルの値は消えない。一時的に無効にするときは `none` などの未知のトークンを渡す
 
 ### 数値の設定の範囲
 
