@@ -1,5 +1,5 @@
 # rate=59% (残量 41, 閾値 40 の直上) -> 色なし + chart + 時刻のみ (数値なし)
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13 \| · --$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
 matches_line1: ^statusline-demo$
 not_contains: 41%
 not_contains: \e[38;2;255;193;7m

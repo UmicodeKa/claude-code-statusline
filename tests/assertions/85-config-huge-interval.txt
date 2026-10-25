@@ -1,6 +1,6 @@
 # 整数範囲を超える桁数の間引き間隔。clamp が上限へ丸め、`[ -lt ]` の
 # "integer expression expected" を出さずに描画を継続する。出力は 01 と同一。
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13 \| · --$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
 matches_line1: ^statusline-demo$
 not_contains: integer
 exit_code: 0

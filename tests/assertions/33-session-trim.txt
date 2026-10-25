@@ -1,7 +1,7 @@
 # session トリムテスト: session_name="my-project-refactoring-and-cleanup-project" (42 文字 > 40)
 # 先頭 39 文字 + … でトリム -> "my-project-refactoring-and-cleanup-proj…"
 # cwd は git 外なので branch 列は省略され、1 行目は directory + session になる
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13 \| · --$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
 matches_line1: ^statusline-demo \| my-project-refactoring-and-cleanup-proj…$
 contains: | my-project-refactoring-and-cleanup-proj…
 not_contains: cleanup-project

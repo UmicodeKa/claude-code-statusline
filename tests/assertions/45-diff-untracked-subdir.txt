@@ -1,6 +1,6 @@
 # untracked=src/sub/new.txt:7: サブディレクトリ付き未追跡 1 ファイル
 # -> パスをリポジトリ相対 (basename ではない) で照合し、ファイル数 1 + 全行を追加 +7 (緑)
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13 \| · --$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
 matches_line1: ^new\.txt:7;ab=0,0 \| main \\e\[38;2;255;255;255m1\\e\[0m\\e\[38;2;78;186;101m\+7\\e\[0m$
 contains: main \e[38;2;255;255;255m1\e[0m\e[38;2;78;186;101m+7\e[0m
 not_contains_line1: -

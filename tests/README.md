@@ -82,12 +82,12 @@ PR の状態表示の取得も投げっぱなしの非同期処理のため、fa
 | --- | --- |
 | `init-fill` | 空の履歴に 1 回描画すると、現在値が 20 行 (`RATE_CHART_LEN_MAX`) 書かれる |
 | `throttle` | 間隔内 (10 秒前に更新) の描画では追記しない |
-| `append-after-interval` | mtime が間隔 (480 秒) より古ければ 1 行追記する |
+| `append-after-interval` | mtime が間隔 (既定 300 秒) より古ければ 1 行追記する |
 | `storage-cap` | 25 行のファイルに追記すると末尾 20 行に切り詰める |
 | `poll-max-follows-chart-len` | conf の `RATE_CHART_LEN=20` と `POLL_INTERVAL_SEC=3000` で、1000 秒前の履歴に追記する (上限が 900 に丸められている) |
-| `poll-max-default:*` | conf の `POLL_INTERVAL_SEC=99999` で、2000 秒前には追記せず、3100 秒前には追記する (上限 3000) |
+| `poll-max-default:*` | conf の `POLL_INTERVAL_SEC=99999` で、1400 秒前には追記せず、1600 秒前には追記する (既定のチャート長 12 での上限 1500) |
 | `poll-clamp-zero` | conf の `POLL_INTERVAL_SEC=0` で、30 秒前の履歴に追記しない (下限 60) |
-| `poll-invalid-default:*` | conf の `POLL_INTERVAL_SEC=abc` で、400 秒前には追記せず、500 秒前には追記する (既定 480) |
+| `poll-invalid-default:*` | conf の `POLL_INTERVAL_SEC=abc` で、250 秒前には追記せず、350 秒前には追記する (既定 300) |
 
 conf は一時ファイルに書いて渡します。`RATE_CHART_LEN` と `POLL_INTERVAL_SEC` には env の上書き口が無いため、開発者のシェルの環境変数で結果は変わりません。
 
@@ -216,7 +216,7 @@ glibc の正規表現は UTF-8 マルチバイト文字の範囲指定 (例 `[�
 
 ```text
 # branch=main の git リポジトリ。session_name は空なので 1 行目の session 列は省略
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13 \| · --$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
 matches_line1: ^sl-repo#branch=main;ab=0… \| main ·$
 contains: | main
 ```

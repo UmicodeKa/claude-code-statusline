@@ -114,7 +114,7 @@ effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の�
     - `pr_str` は同じ case 節で直前に呼ぶ `pr_token` が設定する。連結を `pr_token` より前に移すと PR が出なくなる
 - `model` と `ctx` を別トークンに分けないのは、トークン間の区切りが組み合わせごとに変わり、実装とテストの両方が複雑になるためです
 - `build_layout` の第 3 引数で｢空の値を積むか｣を切り替えます。1 行目は `0` (空なら列ごと省略)、2 行目は `1` (空でも積む)
-- 2 行目は走査対象の末尾に既定の全トークン (`LAYOUT_LINE2_TOKENS`、`model_ctx|rate|weekly`) を足し、書かれなかったトークンを既定順で補います。これにより `✻` を含む `model_ctx` は消せません。以前の既定値 `model_ctx|rate` を写した conf でも、`weekly` は末尾に補われます
+- 2 行目は走査対象の末尾に既定の全トークン (`LAYOUT_LINE2_TOKENS`、`model_ctx|rate|weekly`) を足し、書かれなかったトークンを既定順で補います。これにより `✻` を含む `model_ctx` は消せず、`weekly` を書かない conf でも `weekly` は末尾に補われます
 - 各行のトークンの一覧 (`LAYOUT_LINE1_TOKENS` / `LAYOUT_LINE2_TOKENS`) は、既定値、補完、有効なトークンの判定に共通で使います。トークンを足すときは 1 か所だけを直します
 - 未知のトークンは黙って無視し、重複は最初の 1 回だけ採ります。前後の空白 (タブを含む) はパラメータ展開で除去し、`tr` や `awk` は使いません
 - トークンから値への対応は連想配列ではなく `case` で引き、値はグローバル変数 `token_value` で返します。macOS の `/bin/bash` 3.2 には連想配列が無く、`$(...)` で受けると fork が増えるためです
@@ -124,11 +124,11 @@ effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の�
 
 ### rate チャートの土台と右端の現在値
 
-rate チャートは `RATE_CHART_LEN` (既定 6) 文字で、左 `RATE_CHART_LEN − 1` 文字が履歴、右端 1 文字が現在値です。
+rate チャートは `RATE_CHART_LEN` (既定 12) 文字で、左 `RATE_CHART_LEN − 1` 文字が履歴、右端 1 文字が現在値です。
 
-- `rate_chart` はまず `history_chart /dev/null` (履歴なしのパディング `······`) で初期化し、`HISTORY_DIR` が有効なときだけ実際の履歴で上書きします
+- `rate_chart` はまず `history_chart /dev/null` (履歴なしのパディング。`RATE_CHART_LEN` 個の `·`) で初期化し、`HISTORY_DIR` が有効なときだけ実際の履歴で上書きします
 - そのうえで、残量 (`rate_remaining`) があれば右端 1 文字を `spark_of` の現在値に差し替えます。`rate_chart` は土台のおかげで常に空でないため、分岐条件は `rate_remaining` の有無だけです
-- 履歴の追記は `POLL_INTERVAL_SEC` (既定 480 秒) で間引かれるので、差し替えが無いとリセット直後でも右端が古い値のまま残ります
+- 履歴の追記は `POLL_INTERVAL_SEC` (既定 300 秒) で間引かれるので、差し替えが無いとリセット直後でも右端が古い値のまま残ります
 - `${rate_chart:0:$((RATE_CHART_LEN - 1))}` の切り出しは、`LC_ALL=C.UTF-8` で文字数換算になることが前提です (スパーク文字は 3 バイト)
 
 ### スパークと残量の計算を fork せずに行う
@@ -147,7 +147,7 @@ rate チャートは `RATE_CHART_LEN` (既定 6) 文字で、左 `RATE_CHART_LEN
 - 保存する件数は表示長 (`RATE_CHART_LEN`) ではなく、その上限の `RATE_CHART_LEN_MAX` (20) 件で固定します
   - チャート長を伸ばしたとき、保存済みの履歴がすぐ表示に出ます。表示長で切り詰めると、伸ばした直後は `·` が並びます
   - 履歴ファイルは全セッション共通なので、`CLAUDE_STATUSLINE_CONFIG` で別の conf を読むセッションがあっても、短いチャートのセッションが長いチャートのセッションの履歴を切り詰めません
-  - 以前の 6 件のファイルはそのまま読めるため、移行処理は要りません
+  - 保存件数より少ない履歴ファイルもそのまま読めるため、移行処理は要りません
 - 空の履歴ファイルへの初回追記では、現在値を `RATE_CHART_LEN_MAX` 件書き込みます。初回表示で `·` が並ぶのを避けるためです
 - 追記後は `tail -n RATE_CHART_LEN_MAX` を一時ファイルへ書いて `mv` で置き換えます。読み出し側は `tail -n RATE_CHART_LEN` で末尾だけを読むので、切り詰めに失敗してファイルが伸びても表示幅は崩れません
 - 複数の statusline が同時に書き込むことがあるため、追記はロックの中で行います。ロック待ちは `LOCK_TIMEOUT_SEC` (2 秒) までで、取れなければその回の追記を飛ばします。statusline は頻繁に呼ばれるので、次の呼び出しで反映されます
@@ -165,7 +165,7 @@ rate チャートは `RATE_CHART_LEN` (既定 6) 文字で、左 `RATE_CHART_LEN
     - rate のチャート (`RATE_CHART_LEN` 文字) と右端の現在値の分の command substitution と `awk`
     - ctx のスパークを包む command substitution が 1 つ
     - 色の決定 (`model_color` / `effort_color` / `ctx_color` / rate の `limit_color`) の command substitution が 4 つ
-  - 既定のチャート長 6 では、全体として以前より fork が減ります
+  - チャート長によらず、増える分より減る分のほうが多い
 
 ### 入力 JSON の読み取り
 
@@ -290,7 +290,7 @@ head のブランチ名とオーナーを push 先 (`@{push}`) から決める�
   - `-r` だけで判定すると、ディレクトリを `.` してエラーが出る
   - `./` を付けないと、`.` が `$PATH` からファイルを探し、`[ -f ]` で確認したものとは別のファイルを読むことがある
   - `\r` を取り除かないと、CRLF で保存した conf の値が `light\r` のようになり、黙って既定値扱いになる
-  - 設定を `X=480` のような無条件代入に戻すと、conf の値が上書きされる
+  - 設定を `X=300` のような無条件代入にすると、conf の値が上書きされる
 - 守っているテスト:
   - `79-config-show-model-off`〜`86-config-template`、`94-config-layout`〜`96-config-layout-crlf`
   - `tests/script-parity.sh` の `block:config-load` / `block:settings`
@@ -304,9 +304,9 @@ conf はシェルスクリプトとして読み込みます。JSON や YAML に�
 - 箇所: `RATE_CHART_LEN_MIN/MAX` / `RATE_WINDOW_SEC` / `POLL_INTERVAL_MIN_SEC` / `GIT_FETCH_INTERVAL_MIN/MAX_SEC` と、直後の `clamp_int` (`clamp_int <変数名> <既定値> <下限> <上限>`) とその呼び出し
 - 何をしているか:
   - `RATE_CHART_LEN` を 2〜20、`POLL_INTERVAL_SEC` を 60〜(18000 ÷ `RATE_CHART_LEN`)、`GIT_FETCH_INTERVAL_SEC` を 60〜1800 に丸める
-  - `POLL_INTERVAL_SEC` の上限 `POLL_INTERVAL_MAX_SEC` は、丸めた後の `RATE_CHART_LEN` から `RATE_WINDOW_SEC / RATE_CHART_LEN` で求める。チャート全体で 5 時間の窓を覆う間隔で、既定のチャート長 6 では従来と同じ 3000。上限 20 でも 900 で、下限 60 を下回らない (範囲が逆転しない)
+  - `POLL_INTERVAL_SEC` の上限 `POLL_INTERVAL_MAX_SEC` は、丸めた後の `RATE_CHART_LEN` から `RATE_WINDOW_SEC / RATE_CHART_LEN` で求める。チャート全体で 5 時間の窓を覆う間隔で、既定のチャート長 12 では 1500。上限 20 でも 900 で、下限 60 を下回らない (範囲が逆転しない)
   - 呼び出しは `RATE_CHART_LEN` → `POLL_INTERVAL_MAX_SEC` の計算 → `POLL_INTERVAL_SEC` の順に置く
-  - 非数値･空･負値は既定値 (6 / 480 / 900) に戻す。既定値はこの呼び出しの引数だけに置く
+  - 非数値･空･負値は既定値 (12 / 300 / 900) に戻す。既定値はこの呼び出しの引数だけに置く
   - 9 桁以上は比較せずに上限へ丸める
   - 先頭の 0 は `10#` で 10 進数に直す (`08` → `8`)
   - command substitution を使わず、`printf -v` で変数へ直接書き戻す
@@ -562,7 +562,7 @@ CI 記号は `statusCheckRollup.state` (GitHub が集約した値) をそのま�
 
 - `HISTORY_LEN` をそのまま公開する: `HISTORY_LEN` は｢conf で変えられない内部定数｣の例として SPEC とテスト `82` が保証していたため、同じ名前を公開すると意味が逆になる。公開する名前は `RATE_CHART_LEN` にし、`HISTORY_LEN` は廃止した
 - 履歴ファイルを表示長で切り詰める: 伸ばした直後は `·` が並び、短いチャートのセッションが長いチャートのセッションの履歴を削る。保存件数は `RATE_CHART_LEN_MAX` で固定している ([履歴ファイルと排他制御](#履歴ファイルと排他制御))
-- `POLL_INTERVAL_SEC` の上限を 3000 のまま固定する / 上限をなくす: 前者はチャート長を変えると根拠 (チャート全体で 5 時間を覆う) がなくなり、後者は間引きの意味がなくなる値も通る
+- `POLL_INTERVAL_SEC` の上限を固定値にする / 上限をなくす: 前者はチャート長を変えると根拠 (チャート全体で 5 時間を覆う) がなくなり、後者は間引きの意味がなくなる値も通る
 - `POLL_INTERVAL_SEC` や `RATE_CHART_LEN` に env の上書き口を付ける: 全セッション共通の履歴ファイルの間引きの基準がセッションごとに変わり、最も短い間隔のセッションが追記を支配する。チャート長も `POLL_INTERVAL_SEC` の上限を決めるため同じ理由で付けない。env を付けたうえで上限だけ env の効かない値から決める案も、チャート長と上限の対応が崩れて上限の根拠がなくなる
 
 ### weekly の表示

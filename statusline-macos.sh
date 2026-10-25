@@ -160,11 +160,11 @@ clamp_int() {
   printf -v "$1" '%s' "$_ci_value"
 }
 
-clamp_int RATE_CHART_LEN 6 "$RATE_CHART_LEN_MIN" "$RATE_CHART_LEN_MAX"
-# チャート全体 (RATE_CHART_LEN サンプル) で 5 時間の窓を覆う間隔を上限にする。既定の 6 なら 3000。
+clamp_int RATE_CHART_LEN 12 "$RATE_CHART_LEN_MIN" "$RATE_CHART_LEN_MAX"
+# チャート全体 (RATE_CHART_LEN サンプル) で 5 時間の窓を覆う間隔を上限にする。既定の 12 なら 1500。
 # 丸めた後の RATE_CHART_LEN を使うので、RATE_CHART_LEN の clamp より後に置く (順序を入れ替えない)。
 POLL_INTERVAL_MAX_SEC=$((RATE_WINDOW_SEC / RATE_CHART_LEN))
-clamp_int POLL_INTERVAL_SEC 480 "$POLL_INTERVAL_MIN_SEC" "$POLL_INTERVAL_MAX_SEC"
+clamp_int POLL_INTERVAL_SEC 300 "$POLL_INTERVAL_MIN_SEC" "$POLL_INTERVAL_MAX_SEC"
 clamp_int GIT_FETCH_INTERVAL_SEC 900 "$GIT_FETCH_INTERVAL_MIN_SEC" "$GIT_FETCH_INTERVAL_MAX_SEC"
 
 # --- カラースキーム ---
@@ -1341,7 +1341,7 @@ set_remaining rate_remaining "$rate_pct"
 # グローバルな 1 ファイルに集約し、セッションを跨いで観測を継続する。
 # ctx は現在値の 1 文字 spark のみで描画するため履歴は持たない。
 # 右端 = 現在値の不変条件を HISTORY_DIR の状態と独立に保つため、まず履歴なしの
-# パディング (······) を土台に置く。HISTORY_DIR が安全性チェックで無効化された
+# パディング (RATE_CHART_LEN 個の ·) を土台に置く。HISTORY_DIR が安全性チェックで無効化された
 # ケースでもこの土台が残り、右端 1 文字を現在値に差し替えられる。
 rate_chart=$(history_chart /dev/null)
 if [ -n "$HISTORY_DIR" ]; then
@@ -1351,7 +1351,7 @@ if [ -n "$HISTORY_DIR" ]; then
 fi
 
 # チャート右端 1 文字は履歴サンプリング間隔 (POLL_INTERVAL_SEC) と独立に常に現在値を描く。
-# history_push は 480 秒間引きするため、リセットで残量が戻った直後はチャートが古い値の
+# history_push は POLL_INTERVAL_SEC 秒で間引くため、リセットで残量が戻った直後はチャートが古い値の
 # まま据え置かれる。右端だけ現在値 spark に差し替えて最新残量を即時反映する。
 # (左 RATE_CHART_LEN-1 文字は履歴の遷移、右端 1 文字だけが現在値)
 # rate_chart は history_chart /dev/null で必ず非空なので、rate_remaining の有無だけで分岐する。

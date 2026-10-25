@@ -10,9 +10,9 @@
 #   append-after-interval      : mtime が間隔より古ければ 1 行追記する
 #   storage-cap                : 20 行を超えるファイルに追記しても末尾 20 行に切り詰める
 #   poll-max-follows-chart-len : POLL_INTERVAL_SEC の上限が 18000 / RATE_CHART_LEN に従う
-#   poll-max-default           : 既定のチャート長では上限が 3000
+#   poll-max-default           : 既定のチャート長 (12) では上限が 1500
 #   poll-clamp-zero            : POLL_INTERVAL_SEC=0 は下限 60 に丸められる
-#   poll-invalid-default       : POLL_INTERVAL_SEC=abc は既定 480 に戻る
+#   poll-invalid-default       : POLL_INTERVAL_SEC=abc は既定 300 に戻る
 #
 # conf は一時ファイルに書いて CLAUDE_STATUSLINE_CONFIG で渡し、開発者の ~/.claude/statusline.conf は
 # 読ませない。RATE_CHART_LEN と POLL_INTERVAL_SEC には env の口が無いので、開発者のシェルの環境変数で
@@ -131,7 +131,7 @@ case_init_fill() {
   fi
 }
 
-# --- throttle: 間隔 (既定 480 秒) 内の描画では追記しない ---
+# --- throttle: 間隔 (既定 300 秒) 内の描画では追記しない ---
 case_throttle() {
   local bash_bin=$1 script=$2 label=$3
   setup_case ""
@@ -185,19 +185,19 @@ case_poll_max_follows_chart_len() {
     "上限が 900 に下がらず、1000 秒前の履歴に追記しなかった"
 }
 
-# --- poll-max-default: 既定のチャート長 (6) では上限 3000 ---
+# --- poll-max-default: 既定のチャート長 (12) では上限 18000 / 12 = 1500 ---
 case_poll_max_default() {
   local bash_bin=$1 script=$2 label=$3
   setup_case 'POLL_INTERVAL_SEC=99999'
   trap 'cleanup_case; trap - RETURN' RETURN
 
-  seed_history "$STORAGE_LEN" 2000
+  seed_history "$STORAGE_LEN" 1400
   run_sl "$bash_bin" "$script"
-  expect_append "poll-max-default:2000s [$label]" skipped "上限 3000 より短い 2000 秒で追記した"
+  expect_append "poll-max-default:1400s [$label]" skipped "上限 1500 より短い 1400 秒で追記した"
 
-  seed_history "$STORAGE_LEN" 3100
+  seed_history "$STORAGE_LEN" 1600
   run_sl "$bash_bin" "$script"
-  expect_append "poll-max-default:3100s [$label]" appended "上限 3000 を過ぎた 3100 秒で追記しなかった"
+  expect_append "poll-max-default:1600s [$label]" appended "上限 1500 を過ぎた 1600 秒で追記しなかった"
 }
 
 # --- poll-clamp-zero: POLL_INTERVAL_SEC=0 は下限 60 に丸められ、30 秒前の履歴には追記しない ---
@@ -211,19 +211,19 @@ case_poll_clamp_zero() {
   expect_append "poll-clamp-zero [$label]" skipped "下限 60 に丸められず、30 秒前の履歴に追記した"
 }
 
-# --- poll-invalid-default: POLL_INTERVAL_SEC=abc は既定 480 に戻る ---
+# --- poll-invalid-default: POLL_INTERVAL_SEC=abc は既定 300 に戻る ---
 case_poll_invalid_default() {
   local bash_bin=$1 script=$2 label=$3
   setup_case 'POLL_INTERVAL_SEC=abc'
   trap 'cleanup_case; trap - RETURN' RETURN
 
-  seed_history "$STORAGE_LEN" 400
+  seed_history "$STORAGE_LEN" 250
   run_sl "$bash_bin" "$script"
-  expect_append "poll-invalid-default:400s [$label]" skipped "既定 480 より短い 400 秒で追記した"
+  expect_append "poll-invalid-default:250s [$label]" skipped "既定 300 より短い 250 秒で追記した"
 
-  seed_history "$STORAGE_LEN" 500
+  seed_history "$STORAGE_LEN" 350
   run_sl "$bash_bin" "$script"
-  expect_append "poll-invalid-default:500s [$label]" appended "既定 480 を過ぎた 500 秒で追記しなかった"
+  expect_append "poll-invalid-default:350s [$label]" appended "既定 300 を過ぎた 350 秒で追記しなかった"
 }
 
 run_all_cases() {

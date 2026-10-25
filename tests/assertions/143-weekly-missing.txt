@@ -1,3 +1,3 @@
 # rate_limits に five_hour だけがあり seven_day が無い -> weekly は無色の `· --`。rate は従来どおり
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| ▆{6} 22:13 \| · --$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| ▆{12} 22:13 \| · --$
 exit_code: 0

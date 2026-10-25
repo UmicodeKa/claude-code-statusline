@@ -1,4 +1,4 @@
 # seven_day: 残量 41 (境界の外) -> 無色で数値なし
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| ▆{6} 22:13 \| ▃ Tue$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| ▆{12} 22:13 \| ▃ Tue$
 not_contains_line2: 41%
 exit_code: 0

@@ -1,4 +1,4 @@
 # 25 文字超のディレクトリ名 (very-long-project-name-here) -> 先頭 24 文字 + …
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13 \| · --$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
 matches_line1: ^very-long-project-name-h…$
 not_contains: name-here

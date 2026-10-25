@@ -1,6 +1,6 @@
 # 読み込み先がディレクトリ (= 通常ファイルとして読めない)。黙って無視し、
 # エラーを出さずに既定値で描画する。出力は 01-rate-normal-with-reset と同一。
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13 \| · --$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
 matches_line1: ^statusline-demo$
 not_contains: directory
 exit_code: 0

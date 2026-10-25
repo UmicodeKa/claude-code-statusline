@@ -1,5 +1,5 @@
 # CRLF 改行の conf で RATE_CHART_LEN=10 を書く。値末尾の \r を剥がすので 10 が効く
-# (剥がさないと数字以外を含む値として既定の 6 文字に戻る)。
+# (剥がさないと数字以外を含む値として既定の 12 文字に戻る)。
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{10} 22:13 \| · --$
 matches_line1: ^statusline-demo$
 exit_code: 0

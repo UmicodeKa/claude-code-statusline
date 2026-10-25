@@ -2,7 +2,7 @@
 # ab=2,0 (upstream あり ahead のみ) -> branch 名の右に ↑2 を青で併記。
 # fetch は fake git の no-op として実際に投げられるが (初回は間引きを通過)、投げっぱなしで
 # 描画には影響しない。60-ab-ahead と同一出力になることが描画経路非改変の回帰保証。
-matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{6} 22:13 \| · --$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
 matches_line1: ^sl-repo#branch=main;ab=2… \| main \\e\[38;2;106;155;204m↑2\\e\[0m ·$
 contains: main \e[38;2;106;155;204m↑2\e[0m
 not_contains: *
