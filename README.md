@@ -29,11 +29,11 @@ my-project | main ↑2↓3 | c9b8fce 3+13-5 | my-session
 | OS | macOS | GNU coreutils を使う Linux (動作確認は Debian/Ubuntu) |
 | bash | `/bin/bash` (3.2 以上) | 4.1 以上 |
 | 必須コマンド | `jq` | `jq`, `flock` (util-linux に含まれる) |
-| 任意 | `git` | `git` |
+| 任意 | `git` (2.22 以上) | `git` (2.22 以上) |
 | 任意 (`PR_STATUS=1`) | `gh` (最新版) | `gh` (最新版) |
 | ロケール | `C.UTF-8` (現行 macOS は標準搭載) | `C.UTF-8` (Debian 11 以降は標準搭載) |
 
-- `git` が無い場合や git 管理外のディレクトリでは、ブランチ列と commit 列が省略されるだけで他は表示される
+- `git` が無い場合や git 管理外のディレクトリでは、ブランチ列と commit 列が省略されるだけで他は表示される。2.22 より古い git は `git branch --show-current` が無いため、git 管理外と同じ表示になる
 - `gh` は `PR_STATUS=1` のときだけ必要。最新版を前提にしている (動作確認は 2.103)
 - ログインシェル (zsh など) は問わない
 - 上記以外は `awk`, `date`, `stat`, `mkdir` など各 OS の標準コマンドだけを使う

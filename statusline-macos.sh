@@ -1305,13 +1305,13 @@ layout_token() {
       ;;
     commit)
       # ハッシュと変更行数はこの列を組み立てるときだけ取る (LAYOUT_LINE1 に commit が無ければ git を呼ばない)。
-      # detached では main で取った短縮 sha が commit に入っているので取り直さない。unborn ではハッシュが空になり、
+      # detached では main で取った detached_sha を使い、取り直さない。unborn ではハッシュが空になり、
       # diff だけを出す。ハッシュは core.abbrev で決まる桁数のまま出し、トリムしない。
       if [ -n "$branch" ]; then
-        [ "$branch_detached" = "1" ] || commit=$(git -C "$cwd" rev-parse --short HEAD 2>/dev/null)
-        local diff_str
+        local hash=$detached_sha diff_str
+        [ "$branch_detached" = "1" ] || hash=$(git -C "$cwd" rev-parse --short HEAD 2>/dev/null)
         diff_str=$(git_diff_stat "$cwd")
-        highlight commit "$commit"
+        highlight commit "$hash"
         token_value="${hl_out}${hl_out:+ }${diff_str}"
       fi
       ;;
@@ -1449,15 +1449,15 @@ fi
 # 重要: $cwd 空チェックは必須。空のまま `git -C ""` を呼ぶとカレントディレクトリ扱いになり、
 # 無関係なリポジトリのブランチが表示されてしまうため。
 # detached HEAD (show-current が成功して空を返し、rev-parse が成功する) では branch に HEAD を入れ、
-# 取った短縮 sha を commit に残す (commit 列で取り直さない)。git 外では show-current が非ゼロ終了するので
+# 取った短縮 sha を detached_sha に残す (commit 列で取り直さない)。git 外では show-current が非ゼロ終了するので
 # rev-parse を呼ばない。unborn (まだコミットが無い) では show-current がブランチ名を返す。
 branch=""
 branch_detached=0
-commit=""
+detached_sha=""
 if [ -n "$cwd" ] && command -v git >/dev/null 2>&1; then
   if branch=$(git -C "$cwd" branch --show-current 2>/dev/null) && [ -z "$branch" ]; then
-    commit=$(git -C "$cwd" rev-parse --short HEAD 2>/dev/null)
-    if [ -n "$commit" ]; then
+    detached_sha=$(git -C "$cwd" rev-parse --short HEAD 2>/dev/null)
+    if [ -n "$detached_sha" ]; then
       branch=HEAD
       branch_detached=1
     fi
