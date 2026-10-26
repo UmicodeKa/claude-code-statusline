@@ -1,3 +1,5 @@
+日本語 | [🌍 English version here](./DEVELOPMENT.en.md)
+
 # 開発ガイド
 
 このドキュメントは、オーナーとコーディングエージェント向けに、開発環境の準備と変更の進め方をまとめたものです。このリポジトリは Issue や Pull Request を受け付けていません (方針は [README.md](../README.md#開発者向け) を参照)。
@@ -71,7 +73,7 @@ git config commit.template .gitmessage
 
 | コマンド | 内容 |
 | --- | --- |
-| `npm test` | 回帰テスト (`tests/regression.sh`) 、バックグラウンド fetch の挙動テスト (`tests/git-fetch-behavior.sh`)、PR の状態表示の取得の挙動テスト (`tests/pr-status-behavior.sh`)、rate 履歴の挙動テスト (`tests/rate-history-behavior.sh`)、両版の静的一致チェック (`tests/script-parity.sh`) を順に実行 |
+| `npm test` | 回帰テスト (`tests/regression.sh`) 、バックグラウンド fetch の挙動テスト (`tests/git-fetch-behavior.sh`)、PR の状態表示の取得の挙動テスト (`tests/pr-status-behavior.sh`)、rate 履歴の挙動テスト (`tests/rate-history-behavior.sh`)、両版の静的一致チェック (`tests/script-parity.sh`)、日本語版と英語版のドキュメントの同期チェック (`tests/translation-parity.sh`) を順に実行 |
 | `npm run preview` | 各 fixture の実出力を ANSI 色付きのまま端末に表示 (`tests/e2e-preview.sh`)。`--macos` / `--linux` で片方だけ表示できる (`bash tests/e2e-preview.sh --linux`) |
 | `npm run check` | Markdown の整形チェックと lint を実行 |
 | `npm run fix` | Markdown の整形と lint の自動修正を実行 |
@@ -84,7 +86,9 @@ git config commit.template .gitmessage
 2. 変更する箇所に関係する [SPEC.md](SPEC.md) の節と [DESIGN.md](DESIGN.md) の注意点を確認します。
 3. 両方のスクリプトに変更を入れます。
 4. 出力を変える場合は、[SPEC.md](SPEC.md) と assertion を更新し、必要に応じて fixture を追加します。
-5. 次の 3 つで確認します。
+5. 英語版のある日本語のドキュメント (`README.md`、`docs/SPEC.md`、`docs/DESIGN.md`、`docs/DEVELOPMENT.md`、`tests/README.md`) を変えたら、対応する `*.en.md` も同じ変更で更新します。日本語版が正本で、食い違ったときは日本語版を正とします。見出し･表の行数･コードスパン･箇条書きの入れ子の食い違いは `tests/translation-parity.sh` (`npm test` に含まれる) が検出します。
+   `statusline.conf` のコメントは日英併記で、自動検出がないため、コメントを変えたら日本語と英語の両方の行を更新します。
+6. 次の 3 つで確認します。
    - `npm test` がすべて通る
    - `npm run check` が通る (エラーがあれば `npm run fix` で直せるものが大半です)
    - `npm run preview` で、色を含む実際の表示を目で確認する

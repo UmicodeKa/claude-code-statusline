@@ -19,8 +19,10 @@ Claude Code の statusline を描画するシェルスクリプトです。macOS
 2. 共通仕様に関わる変更は macOS 版と Linux 版の両方に入れる。
 3. 出力が変わる変更では、[docs/SPEC.md](docs/SPEC.md) と `tests/assertions/` の期待値を同じ変更で更新する。
 4. 出力を変えないリファクタでは、既存のアサーションを書き換えない。既存ケースがそのまま pass することで出力不変を確認する。
-5. 仕上げに `npm test`、`npm run check`、`npm run preview` (ANSI 色を含む実出力の目視確認) を実行する。
-6. PR の説明には、影響する SPEC のセクションと、出力が変わるかどうかを書く。
+5. 英語版のある日本語のドキュメント (`README.md`、`docs/SPEC.md`、`docs/DESIGN.md`、`docs/DEVELOPMENT.md`、`tests/README.md`) を変えたら、対応する `*.en.md` も同じ変更で更新する。日本語版が正本。見出し･表の行数･コードスパン･箇条書きの入れ子の食い違いは `tests/translation-parity.sh` が検出する。`CLAUDE.md` は英語版を作らない。
+   `statusline.conf` のコメントは日英併記で、自動検出がないため、コメントを変えたら日本語と英語の両方の行を更新する。
+6. 仕上げに `npm test`、`npm run check`、`npm run preview` (ANSI 色を含む実出力の目視確認) を実行する。
+7. PR の説明には、影響する SPEC のセクションと、出力が変わるかどうかを書く。
 
 CI は Linux 版のみを実行します。macOS 版の変更はローカルの `npm test` で確認してください。回帰テストは実行できる側のスクリプトだけを検証するため、両版のドリフトは `npm test` に含まれる `tests/script-parity.sh` (OS 非依存、CI でも実行) で検出します。
 
@@ -60,7 +62,7 @@ CI は Linux 版のみを実行します。macOS 版の変更はローカルの 
 
 | コマンド | 内容 |
 | --- | --- |
-| `npm test` | 回帰テスト (`tests/regression.sh`) 、fetch 挙動テスト (`tests/git-fetch-behavior.sh`)、PR 取得の挙動テスト (`tests/pr-status-behavior.sh`)、rate 履歴の挙動テスト (`tests/rate-history-behavior.sh`)、両版の静的一致チェック (`tests/script-parity.sh`) |
+| `npm test` | 回帰テスト (`tests/regression.sh`) 、fetch 挙動テスト (`tests/git-fetch-behavior.sh`)、PR 取得の挙動テスト (`tests/pr-status-behavior.sh`)、rate 履歴の挙動テスト (`tests/rate-history-behavior.sh`)、両版の静的一致チェック (`tests/script-parity.sh`)、日英ドキュメントの同期チェック (`tests/translation-parity.sh`) |
 | `npm run preview` | ANSI 色付きの実出力を端末に表示する (`tests/e2e-preview.sh`) |
 | `npm run check` | Markdown の整形チェックと markdownlint |
 | `npm run fix` | Markdown の整形と markdownlint の自動修正 |

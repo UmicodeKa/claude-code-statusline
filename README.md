@@ -1,3 +1,5 @@
+日本語 | [🌍 English version here](./README.en.md)
+
 # claude-code-statusline
 
 Claude Code のステータスラインをカスタマイズするスクリプト集。macOS 版 (`statusline-macos.sh`) と Linux 版 (`statusline-linux.sh`) があり、どちらも同じ表示内容を出力する。
