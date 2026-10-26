@@ -1,2 +1,2 @@
 # light テーマ: 既存の色定義ブロックの light の値で塗る (error = 171;43;63、warning = 150;108;30)
-matches_line1: ^\\e\[38;2;0;0;0mmain\\e\[0m · \\e\]8;;https://github\.com/my-org/my-project/pull/12\\a\\e\[4m\\e\[38;2;171;43;63m#12\\e\[0m\\e\]8;;\\a\\e\[38;2;150;108;30m●\\e\[0m 1$
+matches_line1: ^\\e\[38;2;0;0;0mmain\\e\[0m \\e\]8;;https://github\.com/my-org/my-project/pull/12\\a\\e\[4m\\e\[38;2;171;43;63m#12\\e\[0m\\e\]8;;\\a\\e\[38;2;150;108;30m●\\e\[0m 1$

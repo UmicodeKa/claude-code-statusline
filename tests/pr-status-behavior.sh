@@ -154,7 +154,7 @@ case_invoked() {
   local out
   out=$(run_sl "$bash_bin" "$script")
   case "$out" in
-    *'\e[38;2;255;255;255mmain\e[0m · \e[4m\e[38;2;78;186;101m#12\e[0m\e[38;2;78;186;101m✓\e[0m 2'*)
+    *'\e[38;2;255;255;255mmain\e[0m \e[4m\e[38;2;78;186;101m#12\e[0m\e[38;2;78;186;101m✓\e[0m 2'*)
       pass_case "invoked [$label]" ;;
     *) fail_case "invoked [$label]" "2 回目の描画に PR が出ない: $out" ;;
   esac
@@ -321,7 +321,7 @@ case_branch_switch() {
   out=$(run_sl "$bash_bin" "$script" STATUSLINE_TEST_BRANCH=feature/other \
     STATUSLINE_TEST_GH_RESPONSE="$RESPONSES_DIR/merged-head-mismatch.json")
   case "${out%%$'\n'*}" in
-    'feature/\e[38;2;255;255;255mother\e[0m ·') ;;
+    'feature/\e[38;2;255;255;255mother\e[0m') ;;
     *)
       fail_case "branch-switch [$label]" "切り替え直後に前のブランチの PR が出た: ${out%%$'\n'*}"
       return
@@ -446,7 +446,7 @@ case_no_gh() {
   # env は後に書いた PATH が勝つので、run_sl の PATH を差し替えられる。
   local out
   out=$(run_sl "$bash_bin" "$script" PATH="$GIT_SHIM_DIR:$bin")
-  if [ "${out%%$'\n'*}" = '\e[38;2;255;255;255mmain\e[0m ·' ] && [ ! -e "$(cache_path main).marker" ]; then
+  if [ "${out%%$'\n'*}" = '\e[38;2;255;255;255mmain\e[0m' ] && [ ! -e "$(cache_path main).marker" ]; then
     pass_case "no-gh [$label]"
   else
     fail_case "no-gh [$label]" "gh がないのに PR が出た、またはマーカーが作られた: ${out%%$'\n'*}"
@@ -555,7 +555,7 @@ case_comment_count() {
     line=$(run_sl "$bash_bin" "$script")
     line=${line%%$'\n'*}
     cleanup_case
-    if [ "$line" != '\e[38;2;255;255;255mmain\e[0m · \e[4m\e[38;2;78;186;101m#12\e[0m\e[38;2;78;186;101m✓\e[0m'"$want" ]; then
+    if [ "$line" != '\e[38;2;255;255;255mmain\e[0m \e[4m\e[38;2;78;186;101m#12\e[0m\e[38;2;78;186;101m✓\e[0m'"$want" ]; then
       fail_case "comment-count [$label]" "件数 '${comments}' の表示が違う: $line"
       return
     fi

@@ -23,8 +23,8 @@ macOS 版 (`statusline-macos.sh`) と Linux 版 (`statusline-linux.sh`) は同�
 6. 依存コマンドを確認し、履歴ディレクトリを安全に用意する
 7. 入力 JSON を `jq` 1 回で読み取り、`HIGHLIGHT` のトークンを照合用の `hl_set` にまとめる
 8. rate 履歴を更新してチャートを作り、weekly の 1 文字のスパークを求める
-9. git のブランチ、変更行数、ahead/behind を取得する (`GIT_FETCH=1` のときはここでバックグラウンド fetch を投げる)
-10. 各フィールドを着色し、レイアウトに従って 1 行目と 2 行目を組み立てて出力する (`PR_STATUS=1` で branch 列を組み立てるときだけ、PR のキャッシュを読み、必要ならバックグラウンドで取得を投げる)
+9. git のブランチと ahead/behind を取得する (`GIT_FETCH=1` のときはここでバックグラウンド fetch を投げる)
+10. 各フィールドを着色し、レイアウトに従って 1 行目と 2 行目を組み立てて出力する (`PR_STATUS=1` で branch 列を組み立てるときだけ、PR のキャッシュを読み、必要ならバックグラウンドで取得を投げる。コミットハッシュと変更行数は commit 列を組み立てるときだけ取得する)
 
 Linux 版はステップ 1 の前に bash 4.1+ ゲートを置き、ステップ 6 では履歴ディレクトリの準備を先に行ってから `jq` / `flock` を確認します (macOS 版は `jq` の確認が先です)。また `LOCK_TIMEOUT_SEC` は、Linux 版では内部定数のブロックに、macOS 版ではロック取得関数 (`acquire_lock`) の直前にあります。
 
@@ -104,7 +104,7 @@ effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の�
 
 - 要素が 1 つ以上あるときだけ `join_by` の結果に改行を付けて出力します
 - 改行は 1 行目の末尾に置きます。2 行目の先頭に置く (`printf '\n%s'`) と、1 行目が省略されたときに先頭へ空行が出ます
-- directory･branch･session がすべて空のときは改行も出しません。空行でも statusline の高さを 1 行分占有するためです
+- directory･branch･commit･session がすべて空のときは改行も出しません。空行でも statusline の高さを 1 行分占有するためです
 
 ### レイアウトのトークン設計
 
@@ -112,15 +112,18 @@ effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の�
 
 - トークン間の区切りは常に ` | ` です。トークンの内側で別の区切りを使う要素は 1 トークンにまとめています
   - `model_ctx` は `✻ <model>∙<effort> <ctx>` (`∙` とスペース 1 個を内包)
-  - `branch` は `truncate_branch 25` でトリムした名前 (末尾のセグメントだけを `highlight` に通す) に `${ab_str:+ $ab_str}${diff_str:+ $diff_str}${pr_str:+ $pr_str}` を続ける (ab / PR が空のときに余分なスペースを残さないよう `:+` で条件付き連結。diff は作業ツリーがクリーンでも `·` を返すため、ブランチがあれば常に出る)
+  - `branch` は `truncate_branch 25` でトリムした名前 (末尾のセグメントだけを `highlight` に通す) に `${ab_str:+ $ab_str}${pr_str:+ $pr_str}` を続ける (ab / PR が空のときに余分なスペースを残さないよう `:+` で条件付き連結)
     - `pr_str` は同じ case 節で直前に呼ぶ `pr_token` が設定する。連結を `pr_token` より前に移すと PR が出なくなる
+  - `commit` は `highlight commit` に通したハッシュに `${hl_out:+ }` と `diff_str` を続ける (unborn でハッシュが空のときに先頭のスペースを残さない。diff は作業ツリーがクリーンでも `·` を返すため、ブランチがあれば常に出る)
+    - ハッシュと `diff_str` はこの case 節の中で取る。`pr_token` と同じく、列を組み立てるときにだけ git を呼ぶ形にして、`LAYOUT_LINE1` に `commit` が無ければ `rev-parse` も変更行数の集計もしない
+    - 表示の条件は branch と同じ `[ -n "$branch" ]`。git 管理内かどうかの判定を別に持たない
 - `model` と `ctx` を別トークンに分けないのは、トークン間の区切りが組み合わせごとに変わり、実装とテストの両方が複雑になるためです
 - `build_layout` の第 3 引数で｢空の値を積むか｣を切り替えます。1 行目は `0` (空なら列ごと省略)、2 行目は `1` (空でも積む)
 - 2 行目は走査対象の末尾に既定の全トークン (`LAYOUT_LINE2_TOKENS`、`model_ctx|rate|weekly`) を足し、書かれなかったトークンを既定順で補います。これにより `✻` を含む `model_ctx` は消せず、`weekly` を書かない conf でも `weekly` は末尾に補われます
 - 各行のトークンの一覧 (`LAYOUT_LINE1_TOKENS` / `LAYOUT_LINE2_TOKENS`) は、既定値、補完、有効なトークンの判定に共通で使います。トークンを足すときは、この一覧と `layout_token` の `case` の両方を直します (一覧だけに足すと、値が空の列が 2 行目に出ます)
 - 未知のトークンは黙って無視し、重複は最初の 1 回だけ採ります。`|` での分割と前後の空白 (タブを含む) の除去は `split_tokens` がパラメータ展開だけで行い、`tr` や `awk` は使いません。`split_tokens` は `HIGHLIGHT` の解析と共有しています。同じ規則のループを 2 か所に書くと、片方だけ直したときに同じ文字列の解釈がずれるためです
 - トークンから値への対応は連想配列ではなく `case` で引き、値はグローバル変数 `token_value` で返します。macOS の `/bin/bash` 3.2 には連想配列が無く、`$(...)` で受けると fork が増えるためです
-  - 例外として、branch / session のトリムは `truncate_branch` / `truncate_label` の command substitution を伴います
+  - 例外として、branch / session のトリムは `truncate_branch` / `truncate_label` の command substitution を伴います。commit も `rev-parse` と `git_diff_stat` の command substitution を伴います
   - `PR_STATUS=1` のときは branch で呼ぶ `pr_token` もキャッシュの読み取りで fork します ([PR の状態表示の取得とキャッシュ](#pr-の状態表示の取得とキャッシュ))
 - `SHOW_CWD=0` は `directory` トークンが空を返すことで実現しています。フラグとレイアウトで二重に判定する箇所を作らないためです
 
@@ -133,8 +136,9 @@ effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の�
 - `hl_out` は 1 つのグローバル変数なので、続けて呼ぶと上書きされます。`format_limit` の無色の分岐では、チャートの結果を `chart_out` に移してから時刻を通します
 - 空の文字列は塗りません。塗ると空の列が ESC だけの空でない値になり、1 行目の｢値が空の列は省略する｣が崩れます。空のときも終了ステータスは 0 にして、呼び出し側が `&&` / `||` でつないでも失敗と取り違えないようにしています
 - トリムしてから塗ります。`truncate_label` / `truncate_branch` の文字数に ANSI エスケープを含めないためです
-- 1 行目の要素 (directory / branch / session) は `layout_token` で塗ります。`layout_token` は main の末尾の `build_layout` からだけ呼ばれるので、`hl_set` を組み立てた後に塗ることがここで決まります。directory も `dir_field` を作る箇所では塗らず、1 行目の塗りを 1 か所に集めています
+- 1 行目の要素 (directory / branch / commit / session) は `layout_token` で塗ります。`layout_token` は main の末尾の `build_layout` からだけ呼ばれるので、`hl_set` を組み立てた後に塗ることがここで決まります。directory も `dir_field` を作る箇所では塗らず、1 行目の塗りを 1 か所に集めています
 - branch は表示中の名前の最後の `/` で分け、後ろだけを塗ります。`/` が無い名前で `${label%/*}` を使うと名前全体が返り `main/main` のように重なるため、`case` で分けます。塗る範囲は表示中の名前から決めるので、トリムの規則が変わってもこの規則は変わりません
+- commit はハッシュだけを `highlight` に通し、`<diff>` は通しません。`<diff>` は `git_diff_stat` が自分の色で塗っているためです
 - ctx / rate / weekly は `format_ctx` / `format_limit` の無色の分岐 (と欠落の分岐) だけで呼びます。`format_limit` は第 5 引数の列の名前 (`rate` / `weekly`) から `<列の名前>_chart` / `<列の名前>_reset` のトークンを組み立て、rate と weekly で同じコードを使います
 - model は `model_effect` が無色 (`static`) のときだけ `highlight` を通し、色付きのときは `paint` で塗ります。無色のモデルは `paint` の `$(...)` を通らないので、その分の fork がありません
 - PR のコメントの件数は `format_pr` で `pr_comments` として通します
@@ -197,13 +201,15 @@ rate チャートは `RATE_CHART_LEN` (既定 12) 文字で、左 `RATE_CHART_LE
 - 追跡ファイルは `git diff HEAD --numstat` の 1 回で、ステージ済みと未ステージをまとめて集計します
 - 未追跡ファイルは `git status -z` で NUL 区切りに列挙します。パスがクォートされないため、空白や改行を含むパスも扱えます
 - 未追跡ファイルごとに `git diff --no-index --numstat -- /dev/null <path>` を呼ぶため、件数に比例して fork が増えます。`UNTRACKED_DIFF_LIMIT` (50) 件を超えた分は行数を取らず、ファイル数だけを数えます
+- 集計は commit 列を組み立てるときにだけ行います (`layout_token` の `commit`)。`LAYOUT_LINE1` に `commit` が無ければ、上の git 呼び出しはどれも起きません
 
 ### ahead/behind と `*` の判定
 
 - ahead/behind は `git rev-list --left-right --count '@{upstream}...HEAD'` の 1 回で取ります。ローカルにあるリモート追跡ブランチとの比較なので、ネットワークには出ません
 - rev-list が失敗したときは `*` を出します。detached HEAD かどうかは main 側でブランチ取得時に判定済みの値 (`is_detached`) を引数で受け取り、関数内で git を呼び直しません
+- detached HEAD では `branch` に `HEAD` が入り、`<ab>` は無色の `*` になります (`HEAD *`)。`branch` を受け取る `maybe_git_fetch` / `pr_token` / `git_ahead_behind` は `branch_detached` で detached を見分けるので、`HEAD` という文字列そのものは判定に使いません
 - ｢upstream 未設定｣と｢ブランチは取れるのに rev-list だけ失敗するリポジトリ内の異常｣は終了コードで区別できません。区別のために git 呼び出しを足すことはせず、どちらも青の `*` として扱います
-- ahead の色に `success` (緑) を使わないのは、すぐ右に並ぶ変更行数の `+N` が緑で、境目が分かりにくくなるためです。upstream 未設定の `*` も、ローカルが先行している状態の一種として ahead と同じ青にしています
+- ahead の色に `success` (緑) を使わないのは、同じ 1 行目の隣の列に並ぶ変更行数の `+N` が緑で、見分けにくくなるためです。upstream 未設定の `*` も、ローカルが先行している状態の一種として ahead と同じ青にしています
 
 ### directory 列
 
@@ -361,8 +367,8 @@ conf はシェルスクリプトとして読み込みます。JSON や YAML に�
 
 ### 描画経路にネットワーク I/O と余分な git 呼び出しを入れない
 
-- 箇所: `git_ahead_behind` と main の git 呼び出し
-- 何をしているか: ahead/behind は `rev-list` だけで求め、同期の `git fetch` は呼ばない。detached 判定や directory 名の取得のために git を追加で呼ばない
+- 箇所: `git_ahead_behind`、main の git 呼び出し、`layout_token` の `commit`
+- 何をしているか: ahead/behind は `rev-list` だけで求め、同期の `git fetch` は呼ばない。detached 判定や directory 名の取得のために git を追加で呼ばない。ハッシュと変更行数は commit 列を組み立てるときにだけ取る。ブランチ上ではハッシュのために `rev-parse --short HEAD` を 1 回呼ぶが、detached では main で取った値を使い、呼び直さない。それ以外の git 呼び出しは足さない
 - 外すと何が起きるか: 同期の fetch は数秒から数分かかることがあり、その間 statusline が更新されない。git の呼び出しを 1 つ足すごとに、描画のたびの fork が 1 つ増える
 - 守っているテスト: テストなし (fake git は fetch を即座に返すため、同期 fetch を足しても出力は変わらない)。`GIT_FETCH=1` で描画結果が変わらないことは `67-git-fetch-ahead` / `68-git-fetch-detached` / `69-git-fetch-no-upstream` で確認している
 
@@ -522,7 +528,7 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 - 箇所: `highlight` の `[ -n "$2" ] || return 0`
 - 何をしているか: 空の文字列は `COLOR_text` で囲まずに空のまま返す
 - 外すと何が起きるか: 空の session や `SHOW_CWD=0` の directory が ESC だけの空でない値になり、1 行目に余分な ` | ` が出る。1 行目の列がすべて空のときも 1 行目が出るようになる。`HIGHLIGHT` に `directory` や `session` を書いたときに起きる
-- 守っているテスト: `163-highlight-empty-columns`、`164-highlight-empty-line1`
+- 守っているテスト: `163-highlight-empty-columns`、`164-highlight-empty-line1`、unborn で空のハッシュを渡す `177-commit-highlight-unborn`
 
 ### トリムしてから `highlight` に通す
 
@@ -537,7 +543,7 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 - 何をしているか: [ハイライト (`HIGHLIGHT`)](#ハイライト-highlight) を参照
 - 外すと何が起きるか: `hl_set` を要素の組み立てより後に置くと、その要素のハイライトが黙って効かなくなる。`format_limit` で `chart_out` に移さずに時刻を通すと、チャートの代わりに時刻が 2 回出る。branch の `case` を外すと `/` の無い名前が `main/main` になる
 - 守っているテスト:
-  - `146-highlight-all-dark`〜`170-highlight-pr-comments`
+  - `146-highlight-all-dark`〜`170-highlight-pr-comments`、`175-commit-highlight`〜`177-commit-highlight-unborn`
   - 順序は `149-highlight-directory-only`、`chart_out` は `160-highlight-rate-reset-only`、branch の `case` は `150-highlight-branch-no-slash` / `151-highlight-branch-detached`
   - 両版のずれは `tests/script-parity.sh` の `block:paint` / `block:pr-common` / `block:format-layout` / `block:main-render`
 
@@ -576,7 +582,7 @@ directory 列は `workspace.current_dir` の basename から取ります。次�
 
 ### PR の状態を独立したレイアウトのトークンにする
 
-PR の状態を `LAYOUT_LINE1` の独立したトークンにする案は採りませんでした。PR はブランチに紐付く情報なので、branch 列の中 (diff の右) に半角スペースで区切って置き、有効化は `GIT_FETCH` と同じ形のフラグ `PR_STATUS` で行います。`gh` を起動するのは `PR_STATUS=1` で branch 列を組み立てるときだけなので、branch をレイアウトから外せば `gh` も起動しません。
+PR の状態を `LAYOUT_LINE1` の独立したトークンにする案は採りませんでした。PR はブランチに紐付く情報なので、branch 列の中 (ab の右) に半角スペースで区切って置き、有効化は `GIT_FETCH` と同じ形のフラグ `PR_STATUS` で行います。`gh` を起動するのは `PR_STATUS=1` で branch 列を組み立てるときだけなので、branch をレイアウトから外せば `gh` も起動しません。
 
 ### stdin の `pr` フィールド
 

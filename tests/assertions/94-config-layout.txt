@@ -1,4 +1,4 @@
-# conf に LAYOUT_LINE1="session|branch" / LAYOUT_LINE2="rate|model_ctx" を書く (| を含むためクォート必須)
-matches_line1: ^my-session \| \\e\[38;2;255;255;255mmain\\e\[0m ·$
+# conf に LAYOUT_LINE1="session|branch" / LAYOUT_LINE2="rate|model_ctx" を書く (| を含むためクォート必須)。commit を書かないので commit 列 (ハッシュと diff) は出ない
+matches_line1: ^my-session \| \\e\[38;2;255;255;255mmain\\e\[0m$
 matches_line2: ^[▁▂▃▄▅▆▇█]{12} 22:13 \| ✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| · --$
 exit_code: 0

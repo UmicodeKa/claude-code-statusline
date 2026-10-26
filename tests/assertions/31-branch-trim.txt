@@ -3,6 +3,6 @@
 # 中間省略に収まらないので、先頭 24 文字 + … の規則のまま (末尾が長いときの回帰ガード)
 # 期待: 1 行目が "<directory> | feature/improve-awesome-…"
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
-matches_line1: ^improve-awesome-statusli… \| feature/\\e\[38;2;255;255;255mimprove-awesome-…\\e\[0m ·$
+matches_line1: ^improve-awesome-statusli… \| feature/\\e\[38;2;255;255;255mimprove-awesome-…\\e\[0m \| a1b2c3d ·$
 contains: feature/\e[38;2;255;255;255mimprove-awesome-…\e[0m
 not_contains: feature/improve-awesome-statusline

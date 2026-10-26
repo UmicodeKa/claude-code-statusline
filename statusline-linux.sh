@@ -63,7 +63,7 @@ COLOR_SCHEME="${CLAUDE_STATUSLINE_COLOR_SCHEME:-${COLOR_SCHEME:-dark}}"
 GIT_FETCH="${CLAUDE_STATUSLINE_GIT_FETCH:-${GIT_FETCH:-0}}"
 
 # PR の状態表示のオプトイン設定。既定 0=無効。
-# 1 のとき、branch 列の末尾 (diff の右) に、現在のブランチに紐付く GitHub の PR の状態を半角スペース区切りで出す。
+# 1 のとき、branch 列の末尾 (ab の右) に、現在のブランチに紐付く GitHub の PR の状態を半角スペース区切りで出す。
 # 取得は gh で行い、描画経路とは分離した投げっぱなし子プロセスに任せる (gh のインストールと gh auth login が必要)。
 # env CLAUDE_STATUSLINE_PR_STATUS でも上書き可。
 PR_STATUS="${CLAUDE_STATUSLINE_PR_STATUS:-${PR_STATUS:-0}}"
@@ -75,21 +75,21 @@ PR_STATUS="${CLAUDE_STATUSLINE_PR_STATUS:-${PR_STATUS:-0}}"
 SHOW_CWD="${CLAUDE_STATUSLINE_SHOW_CWD:-${SHOW_CWD:-1}}"
 
 # 表示要素の並び。トークンを `|` で区切って並べる (前後の空白は無視)。
-# 1 行目: directory / branch / session。値が空のトークンは列ごと省略し、全て空なら 1 行目ごと出さない。
+# 1 行目: directory / branch / commit / session。値が空のトークンは列ごと省略し、全て空なら 1 行目ごと出さない。
 # 2 行目: model_ctx / rate / weekly。並び順だけを変えられる (書かなかったトークンは既定順で末尾に補い、常に 3 つとも出す)。
 # 未知のトークンは黙って無視する。空文字は既定値扱い (1 行目を消したいときは none 等の未知トークンを書く)。
 # SHOW_CWD=0 は 1 行目から directory を外すのと等価 (directory トークンが空を返す)。
 # env CLAUDE_STATUSLINE_LAYOUT_LINE1 / CLAUDE_STATUSLINE_LAYOUT_LINE2 でも上書き可。
 # 各行で使えるトークンの一覧 (既定の並びを兼ねる)。既定値、2 行目の補完、有効なトークンの判定は
 # この 1 か所から組み立てる。トークンを足すときは、この一覧と layout_token の case の両方を直す。
-LAYOUT_LINE1_TOKENS="directory|branch|session"
+LAYOUT_LINE1_TOKENS="directory|branch|commit|session"
 LAYOUT_LINE2_TOKENS="model_ctx|rate|weekly"
 LAYOUT_LINE1="${CLAUDE_STATUSLINE_LAYOUT_LINE1:-${LAYOUT_LINE1:-$LAYOUT_LINE1_TOKENS}}"
 LAYOUT_LINE2="${CLAUDE_STATUSLINE_LAYOUT_LINE2:-${LAYOUT_LINE2:-$LAYOUT_LINE2_TOKENS}}"
 
 # 無色で表示する要素のうち、目立たせたいものを text 色 (dark は白、light は黒) で塗る。
 # トークンを `|` で区切って並べる (区切りと空白の扱いは LAYOUT_LINE* と同じ。未知のトークンは黙って無視する)。
-#   directory / branch (表示中の名前の最後の `/` より後ろ) / session / model (✻ とモデル名) /
+#   directory / branch (表示中の名前の最後の `/` より後ろ) / commit (コミットハッシュ) / session / model (✻ とモデル名) /
 #   ctx_chart / rate_chart / rate_reset / weekly_chart / weekly_reset / pr_comments (PR のコメントの件数)
 # 色が付いている状態 (Fable/Opus/Haiku、ctx 70% 以上、rate/weekly 残量 40% 以下) ではその色を優先して塗らない。
 # 既定は branch (ブランチ名の末尾だけを塗る)。conf では `|` を含むため値をクォートで囲む。
@@ -648,9 +648,9 @@ git_diff_stat() {
 #   git fetch は呼ばない (数秒ブロックし得るため)。最後に fetch/pull した時点で
 #   ローカルが把握しているリモート追跡ブランチとの差を出す (git status の ahead/behind と同義)。
 #   ahead=professionalBlue (青)、behind=warning (黄)。ahead に success (緑) は使わない
-#   (隣接する diff の +add が緑を使っており混ざるため)。ahead/behind は別 paint で塗る。
+#   (同じ 1 行目の diff の +add が緑を使っており紛らわしいため)。ahead/behind は別 paint で塗る。
 #   COLOR_* は実 ESC 化済みなので $(printf ...) でラップせずそのまま static へ渡す。
-#   第2引数 is_detached (main で検出済み: branch --show-current 空→rev-parse 代替) を受け、
+#   第2引数 is_detached (main で検出済み: branch --show-current 空かつ rev-parse 成功) を受け、
 #   関数内で git を再呼び出ししない (fork を増やさない)。
 #   rev-list が非ゼロ終了する (ab を出せない) とき、ブランチ未発行を * で可視化する:
 #     - detached HEAD (@{upstream} が無く rev-list 失敗) -> 無色 * (前景色)
@@ -1249,7 +1249,7 @@ format_ctx() {
 
 # レイアウトのトークンを描画済み文字列に引く。値は token_value に返す (呼び出し側で $(...) を
 # 挟まないため。branch/session のトリムは truncate_branch / truncate_label の command substitution を伴う)。
-# トークン内部の区切り (branch の ab/diff/PR 前のスペース、model_ctx の ∙/スペース) は
+# トークン内部の区切り (branch の ab/PR 前のスペース、commit のハッシュと diff の間のスペース、model_ctx の ∙/スペース) は
 # トークン間の " | " とは別ルールなので、ここで組み立て済みの 1 塊として返す。
 # 1 行目の値の HIGHLIGHT の塗りもここで行う (トリムした後に塗る)。layout_token は main の末尾の build_layout からだけ
 # 呼ばれるので、hl_set の組み立てより後に塗ることがここで決まる。directory も dir_field を作る箇所ではなくここで塗り、
@@ -1270,7 +1270,19 @@ layout_token() {
         label=$(truncate_branch 25 "$branch")
         case "$label" in */*) head="${label%/*}/" ;; esac
         highlight branch "${label##*/}"
-        token_value="${head}${hl_out}${ab_str:+ $ab_str}${diff_str:+ $diff_str}${pr_str:+ $pr_str}"
+        token_value="${head}${hl_out}${ab_str:+ $ab_str}${pr_str:+ $pr_str}"
+      fi
+      ;;
+    commit)
+      # ハッシュと変更行数はこの列を組み立てるときだけ取る (LAYOUT_LINE1 に commit が無ければ git を呼ばない)。
+      # detached では main で取った detached_sha を使い、取り直さない。unborn ではハッシュが空になり、
+      # diff だけを出す。ハッシュは core.abbrev で決まる桁数のまま出し、トリムしない。
+      if [ -n "$branch" ]; then
+        local hash=$detached_sha diff_str
+        [ "$branch_detached" = "1" ] || hash=$(git -C "$cwd" rev-parse --short HEAD 2>/dev/null)
+        diff_str=$(git_diff_stat "$cwd")
+        highlight commit "$hash"
+        token_value="${hl_out}${hl_out:+ }${diff_str}"
       fi
       ;;
     session)
@@ -1405,25 +1417,25 @@ fi
 # cwd から git ブランチ名を取得する。空文字 / git 外 / git 未インストール時は空のまま。
 # 重要: $cwd 空チェックは必須。空のまま `git -C ""` を呼ぶとカレントディレクトリ扱いになり、
 # 無関係なリポジトリのブランチが表示されてしまうため。
+# detached HEAD (show-current が成功して空を返し、rev-parse が成功する) では branch に HEAD を入れ、
+# 取った短縮 sha を detached_sha に残す (commit 列で取り直さない)。git 外では show-current が非ゼロ終了するので
+# rev-parse を呼ばない。unborn (まだコミットが無い) では show-current がブランチ名を返す。
 branch=""
 branch_detached=0
+detached_sha=""
 if [ -n "$cwd" ] && command -v git >/dev/null 2>&1; then
-  branch=$(git -C "$cwd" branch --show-current 2>/dev/null)
-  if [ -z "$branch" ]; then
-    branch=$(git -C "$cwd" rev-parse --short HEAD 2>/dev/null)
-    [ -n "$branch" ] && branch_detached=1
+  if branch=$(git -C "$cwd" branch --show-current 2>/dev/null) && [ -z "$branch" ]; then
+    detached_sha=$(git -C "$cwd" rev-parse --short HEAD 2>/dev/null)
+    if [ -n "$detached_sha" ]; then
+      branch=HEAD
+      branch_detached=1
+    fi
   fi
 fi
 
 # GIT_FETCH=1 のとき、描画とは独立にバックグラウンド fetch を投げる (↓behind の自動最新化)。
-# branch/branch_detached/cwd が揃った直後・ab_str/diff_str を計算する前に置く。
+# branch/branch_detached/cwd が揃った直後・ab_str を計算する前に置く。
 maybe_git_fetch "$cwd" "$branch" "$branch_detached"
-
-# ブランチが取れたときだけ作業ツリーの変更行数を集計する (git 外なら diff も不要)。
-diff_str=""
-if [ -n "$branch" ]; then
-  diff_str=$(git_diff_stat "$cwd")
-fi
 
 # ブランチが取れたときだけ ahead/behind を集計する (git fetch はしない。ローカル完結)。
 # 同期済みのときは空になり列で省略。upstream 未設定 / detached のときは * を返す
@@ -1507,7 +1519,7 @@ fi
 build_layout "${LAYOUT_LINE2}|${LAYOUT_LINE2_TOKENS}" "|${LAYOUT_LINE2_TOKENS}|" 1
 parts=("${layout_parts[@]}")
 
-# 1 行目の列順: LAYOUT_LINE1 (既定 directory? → branch? → session?)
+# 1 行目の列順: LAYOUT_LINE1 (既定 directory? → branch? → commit? → session?)
 # 2 行目の parts とは別の配列で組み立て、空でないときだけ「join + 改行」を出す。
 # 値が空のトークンと未知のトークンは列ごと省略する (区切りも出さない)。
 # 全部空のときは改行そのものを出さない (空行が statusline の高さを 1 行占有するため)。

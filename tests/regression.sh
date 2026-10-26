@@ -372,7 +372,7 @@ run_case() {
       SHOW_MODEL_NAME=0 COLOR_SCHEME=light GIT_FETCH=1 PR_STATUS=1 SHOW_CWD=0 \
       RATE_CHART_LEN=3 POLL_INTERVAL_SEC=0 GIT_FETCH_INTERVAL_SEC=0 \
       LAYOUT_LINE1="session" LAYOUT_LINE2="rate|model_ctx" \
-      HIGHLIGHT="directory|branch|session|model|ctx_chart|rate_chart|rate_reset|weekly_chart|weekly_reset|pr_comments" \
+      HIGHLIGHT="directory|branch|commit|session|model|ctx_chart|rate_chart|rate_reset|weekly_chart|weekly_reset|pr_comments" \
       CLAUDE_STATUSLINE_SHOW_MODEL_NAME="$show_model_name" \
       CLAUDE_STATUSLINE_GIT_FETCH="$git_fetch" \
       CLAUDE_STATUSLINE_PR_STATUS="$pr_status" \

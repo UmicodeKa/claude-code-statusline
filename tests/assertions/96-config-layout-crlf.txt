@@ -1,4 +1,5 @@
 # CRLF 保存の conf でも末尾の \r で最後のトークン (branch / model_ctx) が未知扱いにならず落ちない (\r は conf 読み込み直後の剥がしと build_layout の空白除去の二段で消える)
-matches_line1: ^my-session \| \\e\[38;2;255;255;255mmain\\e\[0m ·$
+# LAYOUT_LINE1 に commit を書かないので commit 列 (ハッシュと diff) は出ない
+matches_line1: ^my-session \| \\e\[38;2;255;255;255mmain\\e\[0m$
 matches_line2: ^[▁▂▃▄▅▆▇█]{12} 22:13 \| ✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| · --$
 exit_code: 0

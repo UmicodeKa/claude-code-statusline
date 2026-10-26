@@ -1,7 +1,7 @@
-# ab=0,0: 同期済み (ahead も behind も 0) -> ab フィールドごと省略 (main ·、= 30-branch-on と同じ出力)
+# ab=0,0: 同期済み (ahead も behind も 0) -> ab フィールドごと省略 (main | a1b2c3d ·、= 30-branch-on と同じ出力)
 # 同期済みは * を出さない (upstream 未設定/detached の * と区別する回帰防止)
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
-matches_line1: ^sl-repo#branch=main;ab=0… \| \\e\[38;2;255;255;255mmain\\e\[0m ·$
+matches_line1: ^sl-repo#branch=main;ab=0… \| \\e\[38;2;255;255;255mmain\\e\[0m \| a1b2c3d ·$
 not_contains: ↑
 not_contains: ↓
 not_contains: *

@@ -1,0 +1,4 @@
+# git 管理外: branch 列と同じく commit 列も出ない
+matches_line1: ^my-project \| my-session$
+not_contains_line1: a1b2c3d
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$

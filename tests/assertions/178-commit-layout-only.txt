@@ -1,0 +1,3 @@
+# LAYOUT_LINE1=commit: 1 行目は commit 列だけになる
+matches_line1: ^a1b2c3d ·$
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$

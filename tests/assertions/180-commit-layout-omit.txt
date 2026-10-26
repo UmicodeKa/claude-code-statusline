@@ -1,0 +1,4 @@
+# LAYOUT_LINE1=directory|branch|session: commit を書かないとハッシュも diff も出ない
+matches_line1: ^sl-repo#branch=main;ab=0… \| \\e\[38;2;255;255;255mmain\\e\[0m \| my-session$
+not_contains_line1: a1b2c3d
+matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
