@@ -1,4 +1,4 @@
-# SHOW_CWD=0 + LAYOUT_LINE1=session|directory|branch -> directory 列だけが消え、残りは指定順
-matches_line1: ^my-session \| \\e\[38;2;255;255;255mmain\\e\[0m ·$
+# SHOW_CWD=0 + LAYOUT_LINE1=session|directory|branch -> directory 列だけが消え、残りは指定順。commit を書かないので commit 列 (ハッシュと diff) は出ない
+matches_line1: ^my-session \| \\e\[38;2;255;255;255mmain\\e\[0m$
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
 not_contains: sl-repo

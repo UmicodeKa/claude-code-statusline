@@ -1,0 +1,2 @@
+# HIGHLIGHT=commit + COLOR_SCHEME=light: ハッシュは light の text (0;0;0) で塗られる
+matches_line1: ^sl-repo#branch=main;ab=0… \| main \| \\e\[38;2;0;0;0ma1b2c3d\\e\[0m \\e\[38;2;0;0;0m1\\e\[0m\\e\[38;2;44;122;57m\+12\\e\[0m\\e\[38;2;171;43;63m-3\\e\[0m$

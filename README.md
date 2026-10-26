@@ -13,11 +13,11 @@ Claude Code のステータスラインをカスタマイズするスクリプ�
 ステータスラインを次のような 2 行で表示する。
 
 ```text
-my-project | main ↑2↓3 3+13-5 | my-session
+my-project | main ↑2↓3 | c9b8fce 3+13-5 | my-session
 ✻ Opus 4.7∙high ▆ 72% | ▇▇▇▆▆▆▅▅▄▄▃▃ 35% - 18:30 | ▅ Thu
 ```
 
-- 1 行目: ディレクトリ名 / git ブランチ (リモートとの差･変更行数つき。[`PR_STATUS=1`](#pr_status1-で-pr-の状態を表示する) で GitHub の PR の状態も表示) / セッション名
+- 1 行目: ディレクトリ名 / git ブランチ (リモートとの差つき。[`PR_STATUS=1`](#pr_status1-で-pr-の状態を表示する) で GitHub の PR の状態も表示) / コミットハッシュと作業ツリーの変更行数 / セッション名
 - 2 行目: モデル名と推論強度 (effort) / コンテキスト使用率 / 5 時間のレートリミット残量の推移とリセット時刻 / 週間 (7 日間) のレートリミット残量とリセットの曜日
 
 コンテキスト使用率が高まる、またはレートリミット残量が減ると、色と数値で知らせる。
@@ -33,7 +33,7 @@ my-project | main ↑2↓3 3+13-5 | my-session
 | 任意 (`PR_STATUS=1`) | `gh` (最新版) | `gh` (最新版) |
 | ロケール | `C.UTF-8` (現行 macOS は標準搭載) | `C.UTF-8` (Debian 11 以降は標準搭載) |
 
-- `git` が無い場合や git 管理外のディレクトリでは、ブランチ列が省略されるだけで他は表示される
+- `git` が無い場合や git 管理外のディレクトリでは、ブランチ列と commit 列が省略されるだけで他は表示される
 - `gh` は `PR_STATUS=1` のときだけ必要。最新版を前提にしている (動作確認は 2.103)
 - ログインシェル (zsh など) は問わない
 - 上記以外は `awk`, `date`, `stat`, `mkdir` など各 OS の標準コマンドだけを使う
@@ -107,7 +107,7 @@ cp statusline.conf ~/.claude/statusline.conf
 ```bash
 COLOR_SCHEME=light
 GIT_FETCH=1
-LAYOUT_LINE1="session|directory|branch"
+LAYOUT_LINE1="session|directory|branch|commit"
 ```
 
 | 設定 | 既定値 | 内容 |
@@ -115,7 +115,7 @@ LAYOUT_LINE1="session|directory|branch"
 | `SHOW_MODEL_NAME` | `1` | `0` でモデル名を隠し `✻` (モデル別の色) と effort だけにする |
 | `COLOR_SCHEME` | `dark` | `dark` / `light` で配色を切替える |
 | `SHOW_CWD` | `1` | `0` で 1 行目のディレクトリ名を隠す |
-| `LAYOUT_LINE1` | `directory\|branch\|session` | 1 行目の要素と並び |
+| `LAYOUT_LINE1` | `directory\|branch\|commit\|session` | 1 行目の要素と並び |
 | `LAYOUT_LINE2` | `model_ctx\|rate\|weekly` | 2 行目の並び |
 | `HIGHLIGHT` | `branch` | 無色の要素のうち目立たせるもの ([詳細](#ハイライト)) |
 | `GIT_FETCH` | `0` | `1` でバックグラウンド `git fetch` を有効にする |
@@ -144,13 +144,14 @@ LAYOUT_LINE1="session|directory|branch"
 | 行 | トークン | 内容 |
 | --- | --- | --- |
 | 1 行目 | `directory` | ディレクトリ名 |
-| 1 行目 | `branch` | ブランチ名 + リモートとの差 + 変更行数 (+ `PR_STATUS=1` なら PR の状態) |
+| 1 行目 | `branch` | ブランチ名 + リモートとの差 (+ `PR_STATUS=1` なら PR の状態) |
+| 1 行目 | `commit` | コミットハッシュ + 変更行数 |
 | 1 行目 | `session` | セッション名 |
 | 2 行目 | `model_ctx` | モデル名･effort･コンテキスト使用率 |
 | 2 行目 | `rate` | 5 時間のレートリミット |
 | 2 行目 | `weekly` | 週間 (7 日間) のレートリミット |
 
-- 1 行目は書いたトークンだけが出る。`LAYOUT_LINE1="none"` のように既知でないトークンだけを書くと 1 行目ごと消える
+- 1 行目は書いたトークンだけが出る。`commit` を書かなければコミットハッシュも変更行数も出ない。`LAYOUT_LINE1="none"` のように既知でないトークンだけを書くと 1 行目ごと消える
 - 2 行目は並び順だけを変えられる。書かなかったトークンは末尾に補われ、常に 3 つとも出る (`weekly` を書かなくても末尾に出る)
 - 1 行構成へ戻す設定は無い
 
@@ -166,6 +167,7 @@ HIGHLIGHT="directory|branch|session|rate_chart|rate_reset"
 | --- | --- |
 | `directory` | ディレクトリ名 |
 | `branch` | ブランチ名の最後の `/` より後ろ (`feature/xxx/yyy` なら `yyy`) |
+| `commit` | コミットハッシュ (変更行数は塗らない) |
 | `session` | セッション名 |
 | `model` | `✻` とモデル名 (Sonnet など色の付かないモデルのとき) |
 | `ctx_chart` | コンテキスト使用率のスパーク |
@@ -198,14 +200,14 @@ HIGHLIGHT="directory|branch|session|rate_chart|rate_reset"
 
 ### `PR_STATUS=1` で PR の状態を表示する
 
-`PR_STATUS=1` にすると、現在のブランチに紐付く GitHub の PR をブランチ列の右端 (変更行数の右) に半角スペースで区切って表示する。既定 (`0`) では表示せず、`gh` で GitHub に問い合わせることもない。
+`PR_STATUS=1` にすると、現在のブランチに紐付く GitHub の PR をブランチ列の末尾 (リモートとの差の右) に半角スペースで区切って表示する。既定 (`0`) では表示せず、`gh` で GitHub に問い合わせることもない。
 
 ```bash
 PR_STATUS=1
 ```
 
 ```text
-my-project | feature/login ↑1 3+10-2 #12✓ 3 | my-session
+my-project | feature/login ↑1 #12✓ 3 | c9b8fce 3+10-2 | my-session
 ```
 
 - `#12` には下線が付き、色は PR の状態を表す (approved 緑、レビュー待ち青紫、changes requested 赤、draft 無色、merged 紫 + 取り消し線、closed 無色 + 取り消し線)
@@ -234,11 +236,12 @@ my-project | feature/login ↑1 3+10-2 #12✓ 3 | my-session
 | 要素 | 内容 |
 | --- | --- |
 | ディレクトリ名 | カレントディレクトリ名。25 文字を超えると `…` で省略 |
-| ブランチ名 | git ブランチ名。25 文字を超えると `…` で省略。最後の `/` より後ろが 22 文字以下なら、そこを残して中間を省略 (`feature/improve-sta…/trim`)。detached HEAD では短縮 sha |
+| ブランチ名 | git ブランチ名。25 文字を超えると `…` で省略。最後の `/` より後ろが 22 文字以下なら、そこを残して中間を省略 (`feature/improve-sta…/trim`)。detached HEAD では `HEAD` |
 | `↑N↓M` | リモート追跡ブランチとの差。`↑` が push 待ち、`↓` が pull 待ち。同期済みなら出ない |
 | `*` | リモート追跡ブランチが無い (青) / detached HEAD (無色) |
-| `3+13-5` | 作業ツリーの変更 (ファイル数 / 追加行 / 削除行)。未追跡ファイルを含む。変更が無ければ `·` |
 | `#12✓ 3` | PR の番号･CI･コメントの件数 (`PR_STATUS=1` のときだけ) |
+| コミットハッシュ | HEAD の短縮ハッシュ。桁数は git の `core.abbrev` に従い、省略しない。まだコミットが無いリポジトリでは出ない |
+| `3+13-5` | 作業ツリーの変更 (ファイル数 / 追加行 / 削除行)。未追跡ファイルを含む。変更が無ければ `·` |
 | セッション名 | 設定されているときだけ表示。40 文字を超えると `…` で省略 |
 | `✻ モデル名` | モデル別の色で表示。13 文字を超えると `…` で省略 |
 | effort | 推論強度 (`low` / `medium` / `high` / `xhigh` / `max`)。対応しないモデルでは出ない |
@@ -254,35 +257,35 @@ my-project | feature/login ↑1 3+10-2 #12✓ 3 | my-session
 通常 (警告なし、変更なし):
 
 ```text
-my-project | main · | my-session
+my-project | main | c9b8fce · | my-session
 ✻ Opus 4.7∙high ▄ | ▇▇▇▆▆▆▆▅▅▅▄▄ 18:30 | ▅ Thu
 ```
 
 ブランチに変更と PR あり (`PR_STATUS=1`)、コンテキストとレートリミットが警告域:
 
 ```text
-my-project | main ↑2↓3 3+13-5 #12✓ 3 | my-session
+my-project | main ↑2↓3 #12✓ 3 | c9b8fce 3+13-5 | my-session
 ✻ Opus 4.7∙high ▆ 72% | ▇▇▇▆▆▆▅▅▄▄▃▃ 35% - 18:30 | ▅ Thu
 ```
 
 週間リミットが警告域 (残量 22%):
 
 ```text
-my-project | main · | my-session
+my-project | main | c9b8fce · | my-session
 ✻ Opus 4.7∙high ▄ | ▇▇▇▆▆▆▆▅▅▅▄▄ 18:30 | ▂ 22% - Thu
 ```
 
-長い名前は省略される (変更行数は省略されない):
+長い名前は省略される (コミットハッシュと変更行数は省略されない):
 
 ```text
-my-project | feature/improve-sta…/trim 1+8 | my-project-refactoring-and-cleanup-work…
+my-project | feature/improve-sta…/trim | c9b8fce 1+8 | my-project-refactoring-and-cleanup-work…
 ✻ Opus 4.7∙high ▄ | ▇▇▇▆▆▆▆▅▅▅▄▄ 18:30 | ▅ Thu
 ```
 
 `SHOW_MODEL_NAME=0`:
 
 ```text
-my-project | main · | my-session
+my-project | main | c9b8fce · | my-session
 ✻ xhigh ▄ | ▇▇▇▆▆▆▆▅▅▅▄▄ 18:30 | ▅ Thu
 ```
 
@@ -303,7 +306,8 @@ my-project
 | effort | `low` 黄、`medium` 緑、`high` 青、`xhigh` 紫、`max` は 1 文字ずつ虹色 |
 | コンテキスト使用率 | 70% 以上で黄、80% 以上でオレンジ、90% 以上で赤の点滅 |
 | レートリミット残量 (5 時間 / 週間) | 40% 以下で黄、15% 以下でオレンジ、5% 以下で赤の点滅 |
-| ブランチ列 | `↑` 青、`↓` 黄、追加行 緑、削除行 赤 |
+| ブランチ列 | `↑` 青、`↓` 黄 |
+| commit 列 | ハッシュは無色、変更のファイル数は文字色、追加行 緑、削除行 赤 |
 | PR 番号 | 下線付き。approved 緑、pending 青紫、changes requested 赤、draft 無色、merged 紫 + 取り消し線、closed 無色 + 取り消し線 |
 | PR の CI | `✓` 緑、`✗` 赤、`●` 黄 |
 
@@ -311,7 +315,7 @@ my-project
 
 ### 更新
 
-リポジトリを最新化し、使っている版のスクリプトを再度コピーする。`~/.claude/statusline.conf` はそのまま引き継がれる。設定ファイルに書いた値は既定値より優先されるため、既定値に従わせたい項目は設定ファイルから行を消す。
+リポジトリを最新化し、使っている版のスクリプトを再度コピーする。`~/.claude/statusline.conf` はそのまま引き継がれる。設定ファイルに書いた値は既定値より優先されるため、既定値に従わせたい項目は設定ファイルから行を消す。テンプレート (`statusline.conf`) から設定ファイルを作ったときは、更新後のテンプレートと見比べ、増えたトークン (`LAYOUT_LINE1` や `HIGHLIGHT` の値) や項目を取り込む。`LAYOUT_LINE1` に書いていないトークンは表示されない。
 
 ```bash
 cd claude-code-statusline

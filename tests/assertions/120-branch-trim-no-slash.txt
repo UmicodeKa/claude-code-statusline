@@ -1,2 +1,2 @@
 # / を含まない 26 文字以上の名前: 先頭 24 文字 + … の規則のまま
-matches_line1: ^\\e\[38;2;255;255;255mimprove-awesome-statusli…\\e\[0m ·$
+matches_line1: ^\\e\[38;2;255;255;255mimprove-awesome-statusli…\\e\[0m$

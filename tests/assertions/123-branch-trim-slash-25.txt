@@ -1,2 +1,2 @@
 # / を含むちょうど 25 文字のブランチ名は省略しない (上限ちょうどは超過ではない)
-matches_line1: ^feature/aaaaaaaaaaaaaa/\\e\[38;2;255;255;255myy\\e\[0m ·$
+matches_line1: ^feature/aaaaaaaaaaaaaa/\\e\[38;2;255;255;255myy\\e\[0m$

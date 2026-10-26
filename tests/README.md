@@ -115,7 +115,7 @@ conf は一時ファイルに書いて渡します。`RATE_CHART_LEN` と `POLL_
 | `block:history-chart` | 履歴ファイルの読み出し (`history_chart`) が両版で一致する。ロックの取り方が違う `history_push` は対象外 |
 | `block:paint` | 色付け、ハイライト、トリム、git の集計 (`paint` / `highlight` / `*_color` / `truncate_label` / `truncate_branch` / `git_diff_stat` / `git_ahead_behind`) が両版で一致する |
 | `block:format-layout` | rate / ctx の整形とレイアウトの組み立て (`format_limit` / `format_ctx` / `layout_token` / `split_tokens` / `build_layout` / `join_by`) が両版で一致する |
-| `block:main-render` | main の描画部分 (`hl_set` の組み立て、rate チャート、branch / diff / ab の取得、model と effort の組み立て、directory、`build_layout` の呼び出し) が両版で一致する。手前の jq の読み取りはコメントが両版で違うので対象外 |
+| `block:main-render` | main の描画部分 (`hl_set` の組み立て、rate チャート、branch / ab の取得、model と effort の組み立て、directory、`build_layout` の呼び出し) が両版で一致する。手前の jq の読み取りはコメントが両版で違うので対象外 |
 | `static:locale` | 先頭 20 行に `export LC_ALL=C.UTF-8` がある |
 | `static:no-prompt:<関数>:*` | `maybe_git_fetch` と `pr_spawn_refresh` のそれぞれに、`GIT_TERMINAL_PROMPT=0` / `GIT_ASKPASS=/bin/true` / `SSH_ASKPASS=/bin/true` / `SSH_ASKPASS_REQUIRE=force` が残っている |
 | `static:fetch-fd-redirect` | `maybe_git_fetch` に `>/dev/null 2>&1 </dev/null` が残っている |
@@ -208,7 +208,7 @@ conf は一時ファイルに書いて渡します。`RATE_CHART_LEN` と `POLL_
 出力は 2 行構成のため、行ごとに検証する種別を用意しています。
 
 - `matches` は出力全体を 1 つの文字列として評価します。`.` が改行にも一致し、`^…$` も行単位には効かないため、行の形をそのまま固定したいときは `matches_line1` / `matches_line2` を使います。
-- `matches_line2` を書かないことは｢2 行目が無い｣ことの検証になりません。1 行目 (directory / branch / session_name) が省略されて 1 行だけになるケースには `no_line2` を付け、残った唯一の行 (モデル行) を `matches_line1` で検証します。
+- `matches_line2` を書かないことは｢2 行目が無い｣ことの検証になりません。1 行目 (directory / branch / commit / session_name) が省略されて 1 行だけになるケースには `no_line2` を付け、残った唯一の行 (モデル行) を `matches_line1` で検証します。
 - `no_line2` は、末尾の改行を保持した出力 (`output_raw`) で判定します。コマンド置換は末尾の改行をすべて取り除くため、そのままでは｢1 行目の後に空行だけを出す｣退行を検出できません。ハーネスはセンチネル文字を付けて出力を取得し、末尾の改行を残しています。
 - `not_contains_line1` / `not_contains_line2` は、特定の行に出ないことを確かめます。たとえば `not_contains_line2` を使うと、1 行目の directory 列に含まれうる文字 (ハイフンや色シーケンス) を誤検知せずに、モデル行に出ないことを検証できます。
 
@@ -221,13 +221,13 @@ glibc の正規表現は UTF-8 マルチバイト文字の範囲指定 (例 `[�
 ```text
 # branch=main の git リポジトリ。session_name は空なので 1 行目の session 列は省略
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
-matches_line1: ^sl-repo#branch=main;ab=0… \| main ·$
+matches_line1: ^sl-repo#branch=main;ab=0… \| main \| a1b2c3d ·$
 contains: | main
 ```
 
 ## fake git (`lib/git-shim/git`)
 
-実際の git リポジトリを作らずに branch･変更行数･ahead/behind の経路を検証するため、ハーネスは `PATH` の先頭に `lib/git-shim/` を差し込み、本物の git を隠します。
+実際の git リポジトリを作らずに branch･コミットハッシュ･変更行数･ahead/behind の経路を検証するため、ハーネスは `PATH` の先頭に `lib/git-shim/` を差し込み、本物の git を隠します。
 fake git は statusline が使うサブコマンド (`branch --show-current` / `rev-parse --short HEAD` / `diff HEAD --numstat` / `status -z` / `diff --no-index --numstat` / `rev-list --left-right --count` / `fetch`) だけを実装しています。
 PR の状態表示の子プロセスが使う `rev-parse HEAD` / `rev-parse --abbrev-ref '@{push}'` / `remote get-url` も実装しています。
 
@@ -241,6 +241,8 @@ PR の状態表示の子プロセスが使う `rev-parse HEAD` / `rev-parse --ab
 | --- | --- |
 | `branch=<name>` | `branch --show-current` が `<name>` を返す |
 | `detached` | detached HEAD。`rev-parse` が短縮 sha を返し、`rev-list` は常に失敗する |
+| `unborn` | まだコミットが無い (`branch=<name>` と併用する)。`rev-parse --short HEAD` / `rev-parse HEAD` / `diff HEAD --numstat` / `rev-list` は失敗する (`ab` があっても失敗する)。`status -z` は動く |
+| `short=<hex>` | `rev-parse --short HEAD` が返す値 (既定 `a1b2c3d`)。`core.abbrev` を大きくしたときの長いハッシュを再現する |
 | `diff=<add>,<del>` | 追跡ファイルの変更行数 |
 | `diff=bin` | バイナリの変更 1 件 |
 | `diff=<add>,<del>+bin` | 数値の変更とバイナリの変更の両方 |

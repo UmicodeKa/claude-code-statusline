@@ -1,3 +1,3 @@
-# LAYOUT_LINE1=session|directory|branch -> 1 行目が指定順で並ぶ (2 行目は既定のまま)
-matches_line1: ^my-session \| sl-repo#branch=main;ab=0… \| \\e\[38;2;255;255;255mmain\\e\[0m ·$
+# LAYOUT_LINE1=session|directory|branch -> 1 行目が指定順で並ぶ (2 行目は既定のまま)。commit を書かないので commit 列 (ハッシュと diff) は出ない
+matches_line1: ^my-session \| sl-repo#branch=main;ab=0… \| \\e\[38;2;255;255;255mmain\\e\[0m$
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$

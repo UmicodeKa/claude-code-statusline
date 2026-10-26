@@ -19,6 +19,11 @@
 #   branch=<name>  -> branch --show-current が <name> を返す
 #   detached       -> branch --show-current は空、rev-parse が短縮 sha を返す。
 #                     rev-list は @{upstream} 解決不能で非ゼロ終了 (ab 規約より優先)
+#   unborn         -> まだコミットが無いリポジトリ (branch=<name> と併用する)。
+#                     rev-parse --short HEAD / rev-parse HEAD / diff HEAD --numstat / rev-list は
+#                     非ゼロ終了する (rev-list は ab 規約より優先)。status -z は動く
+#   short=<hex>    -> rev-parse --short HEAD が返す値 (既定 a1b2c3d)。
+#                     core.abbrev を大きくしたときの長いハッシュを再現する
 #   diff=<add>,<del> -> numstat に "<add>\t<del>\tsrc/main.sh" を1行出す
 #   diff=bin         -> numstat にバイナリ行 "-\t-\tassets/logo.png" を出す
 #   diff=<add>,<del>+bin -> 数値行 + バイナリ行の両方を出す
@@ -75,6 +80,8 @@ diff_spec=""
 untracked_spec=""
 ab_spec=""
 head_spec="0123456789abcdef0123456789abcdef01234567"
+short_spec="a1b2c3d"
+unborn=0
 push_spec=""
 owner_spec=""
 urlform_spec="https"
@@ -92,6 +99,8 @@ while [ -n "$rest" ]; do
     untracked=*) untracked_spec=${token#untracked=} ;;
     ab=*)        ab_spec=${token#ab=} ;;
     head=*)      head_spec=${token#head=} ;;
+    short=*)     short_spec=${token#short=} ;;
+    unborn)      unborn=1 ;;
     push=*)      push_spec=${token#push=} ;;
     owner=*)     owner_spec=${token#owner=} ;;
     urlform=*)   urlform_spec=${token#urlform=} ;;
@@ -119,16 +128,24 @@ case "$subcommand" in
       *) exit 128 ;;
     esac
     case "${2:-}" in
-      # rev-parse --short HEAD: detached HEAD のフォールバック用。7 桁 hex を返す。
-      --short) printf 'a1b2c3d\n'; exit 0 ;;
+      # rev-parse --short HEAD: commit 列のハッシュと detached の判定に使う。unborn は HEAD を解決できない。
+      --short)
+        [ "$unborn" = "1" ] && exit 128
+        printf '%s\n' "$short_spec"
+        exit 0
+        ;;
       # rev-parse --abbrev-ref '@{push}': push 規約があればそれを返す。
       --abbrev-ref)
         [ -n "$push_spec" ] || exit 128
         printf '%s\n' "${push_spec//\~//}"
         exit 0
         ;;
-      # rev-parse HEAD: ローカルの HEAD (40 桁)。
-      HEAD) printf '%s\n' "$head_spec"; exit 0 ;;
+      # rev-parse HEAD: ローカルの HEAD (40 桁)。unborn は HEAD を解決できない。
+      HEAD)
+        [ "$unborn" = "1" ] && exit 128
+        printf '%s\n' "$head_spec"
+        exit 0
+        ;;
       *) exit 128 ;;
     esac
     ;;
@@ -170,10 +187,11 @@ case "$subcommand" in
         *)   printf '%s\t0\t%s\n' "$lines" "$target"; exit 1 ;;
       esac
     fi
-    # diff HEAD --numstat を模す。git 外 (branch_spec 空) は本物の git に合わせ失敗する。
+    # diff HEAD --numstat を模す。git 外 (branch_spec 空) と unborn (HEAD が無い) は本物の git に合わせ失敗する。
     case "$branch_spec" in
       '') exit 128 ;;
     esac
+    [ "$unborn" = "1" ] && exit 128
     case "$diff_spec" in
       '')    exit 0 ;;                                       # 規約なし: 出力なし (クリーン)
       bin)   printf -- '-\t-\tassets/logo.png\n'; exit 0 ;;  # バイナリのみ
@@ -210,9 +228,10 @@ case "$subcommand" in
     # ab=<ahead>,<behind> 規約ありなら "<behind>\t<ahead>" を返す
     # (左 = @{upstream} 側 = behind、右 = HEAD 側 = ahead)。
     # 規約なしは upstream 未設定として本物の git 同様に非ゼロ終了・無出力にする。
-    # detached HEAD は @{upstream} を解決できないため、ab 規約の有無に関わらず
+    # detached HEAD と unborn は upstream との差を出せないため、ab 規約の有無に関わらず
     # 本物の git 同様に非ゼロ終了する (ab 規約が誤って矢印を出さないよう先に落とす)。
     [ "$branch_spec" = "detached" ] && exit 128
+    [ "$unborn" = "1" ] && exit 128
     case "$ab_spec" in
       '') exit 128 ;;
       *)

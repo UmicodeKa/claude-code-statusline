@@ -33,7 +33,7 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 | `rate_limits.seven_day.used_percentage` | 週間 (7 日間) のレートリミット使用率 | weekly を `· --` と表示 |
 | `rate_limits.seven_day.resets_at` | 週間のリセット時刻 (epoch 秒) | 曜日を表示しない (`0` と同じ) |
 | `session_name` | セッション名 | セッション列を省略 |
-| `workspace.current_dir` | ディレクトリ名とブランチ取得 | ディレクトリ列とブランチ列を省略 |
+| `workspace.current_dir` | ディレクトリ名、ブランチ、コミットハッシュの取得 | ディレクトリ列、ブランチ列、commit 列を省略 |
 
 - 文字列フィールド (`model.display_name` / `session_name` / `workspace.current_dir` / `effort.level`) に含まれる制御文字 (改行･タブ･CR･ESC など) は半角スペースに置き換える。値に紛れた ANSI エスケープで後続の列の色が変わるのを防ぐ
 - 値は加工せずそのまま出力する (`-n` で始まるセッション名なども文字どおり表示する)
@@ -46,7 +46,7 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 出力は **2 行構成**。
 
 ```text
-<directory> | <branch><ab><diff><pr> | <session_name>
+<directory> | <ブランチ名>[ <ab>][ <pr>] | [<hash> ]<diff> | <session_name>
 ✻ <model>∙<effort> <ctx> | <rate> | <weekly>
 ```
 
@@ -59,12 +59,12 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 | 列と列の間 (両行共通) | ` \| ` (スペース･パイプ･スペース) |
 | `<model>` と `<effort>` の間 | `∙` (U+2219、前後スペースなし、無色) |
 | `<effort>` (または `<model>`) と `<ctx>` の間 | 半角スペース 1 個 (パイプは出さない) |
-| ブランチ名と `<ab>`、`<ab>` と `<diff>` の間 | 半角スペース 1 個 (空の要素の前には置かない) |
-| `<diff>` と `<pr>` の間 | 半角スペース 1 個 (`<pr>` が空なら置かない) |
+| ブランチ名と `<ab>`、`<ab>` と `<pr>` の間 | 半角スペース 1 個 (空の要素の前には置かない) |
+| `<hash>` と `<diff>` の間 | 半角スペース 1 個 (`<hash>` が空なら置かない) |
 
 ### 1 行目
 
-- 既定の並びは `directory` → `branch` → `session`
+- 既定の並びは `directory` → `branch` → `commit` → `session`
 - 値が空の列は**列ごと省略**し、区切りも出さない
 - すべての列が空のときは**1 行目ごと出さない**。改行も出さず、出力は 2 行目だけの 1 行になる
 - 改行は 1 行目の末尾に付く。1 行目が無いときに出力の先頭へ空行が出ることはない
@@ -90,20 +90,20 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 
 ### branch 列
 
-`<ブランチ名>[ <ab>] <diff>[ <pr>]` を 1 つの列として出す。
+`<ブランチ名>[ <ab>][ <pr>]` を 1 つの列として出す。
 
 ブランチ名:
 
 - `workspace.current_dir` で `git branch --show-current` を実行した結果
-- 結果が空 (detached HEAD) のときは `git rev-parse --short HEAD` の短縮 sha を使う
-- git 外、`current_dir` が空、git が未インストールのときは**列ごと省略**する (`<ab>`、`<diff>`、`<pr>` も出ない)
+- 結果が空で `git rev-parse --short HEAD` が成功する (detached HEAD) ときは、ブランチ名の代わりに `HEAD` を出す。`<ab>` は無色の `*` になる (`HEAD *`)。短縮 sha は [commit 列](#commit-列) に出る
+- git 外、`current_dir` が空、git が未インストールのときは**列ごと省略**する (`<ab>`、`<pr>` も出ない)
 - 25 文字でトリムする。`/` を含み末尾のセグメント (最後の `/` より後ろ) が 22 文字以下なら、末尾を残して中間を省略する ([トリム規則](#トリム規則))
-- `<ab>`、`<diff>`、`<pr>` はトリムの対象外で、ブランチ名が切れても残る
-- トリム後の名前の最後の `/` より後ろ (`/` が無ければ全体) を `text` で塗り、それより前は無色にする。`HIGHLIGHT` の既定値 `branch` による表示で、`HIGHLIGHT` から `branch` を外すと名前全体が無色になる ([ハイライト](#ハイライト-highlight))
+- `<ab>`、`<pr>` はトリムの対象外で、ブランチ名が切れても残る
+- トリム後の名前の最後の `/` より後ろ (`/` が無ければ全体) を `text` で塗り、それより前は無色にする。`HIGHLIGHT` の既定値 `branch` による表示で、`HIGHLIGHT` から `branch` を外すと名前全体が無色になる ([ハイライト](#ハイライト-highlight))。detached の `HEAD` は `/` を含まないので全体を塗る
 
 #### ahead/behind (`<ab>`)
 
-ブランチ名の右、`<diff>` の左に置く。`git rev-list --left-right --count '@{upstream}...HEAD'` の結果から求め、ネットワークにはアクセスしない (直近の fetch/pull 時点の差になる)。
+ブランチ名の右に置く。`git rev-list --left-right --count '@{upstream}...HEAD'` の結果から求め、ネットワークにはアクセスしない (直近の fetch/pull 時点の差になる)。
 
 | 状態 | 表示 | 色 |
 | --- | --- | --- |
@@ -116,11 +116,28 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 
 - `↑` は U+2191、`↓` は U+2193、`*` は ASCII の U+002A
 - ブランチ名は取れるが別の理由で rev-list が失敗する場合も、upstream 未設定と同じ青 `*` になる
-- ahead に緑は使わない (隣の `<diff>` の `+add` と同じ色になるため)
+- ahead に緑は使わない (同じ 1 行目の `<diff>` の `+add` と同じ色になり、紛らわしいため)
+
+#### PR の状態 (`<pr>`)
+
+現在のブランチに紐付く GitHub の PR を `#<番号>[<CI記号>][ <件数>]` で、`<ab>` の右 (`<ab>` が空ならブランチ名の右) に半角スペース区切りで出す (例 `main ↑1 #12✓ 3`)。`PR_STATUS=1` のときだけ表示する。詳細は [PR の状態 (`PR_STATUS=1`)](#pr-の状態-pr_status1)。
+
+### commit 列
+
+`[<hash> ]<diff>` を 1 つの列として出す。
+
+コミットハッシュ (`<hash>`):
+
+- `workspace.current_dir` で `git rev-parse --short HEAD` を実行した結果。桁数は git が決める (既定は一意になる最短で 7 桁以上、`core.abbrev` で変えられる)
+- トリムしない
+- 無色。`HIGHLIGHT` に `commit` を書くと、ハッシュだけを `text` で塗る。`<diff>` の色は変わらない ([ハイライト](#ハイライト-highlight))
+- まだコミットが無い (unborn) ときはハッシュが取れず、`<diff>` だけを出す。前にスペースは置かない
+- 表示の条件は branch 列と同じ。git 外、`current_dir` が空、git が未インストールのときは**列ごと省略**する
+- `LAYOUT_LINE1` に `commit` が無いときは、ハッシュも `<diff>` も出ない
 
 #### 変更行数 (`<diff>`)
 
-`<ファイル数><+追加><-削除>` を区切りなしで詰めて出す (例 `3+13-5` = 3 ファイル、+13 行、-5 行)。
+ハッシュの右に、`<ファイル数><+追加><-削除>` を区切りなしで詰めて出す (例 `3+13-5` = 3 ファイル、+13 行、-5 行)。
 
 | 項目 | 仕様 |
 | --- | --- |
@@ -134,9 +151,7 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 | 片方が 0 | その側を省略する (`3+8`、`2-5`)。ファイル数は変更があれば常に出す |
 | すべて 0 (クリーン) | `·` (U+00B7、無色) |
 
-#### PR の状態 (`<pr>`)
-
-現在のブランチに紐付く GitHub の PR を `#<番号>[<CI記号>][ <件数>]` で、`<diff>` の右に半角スペース区切りで出す (例 `main ↑1 3+10-2 #12✓ 3`)。`PR_STATUS=1` のときだけ表示する。詳細は [PR の状態 (`PR_STATUS=1`)](#pr-の状態-pr_status1)。
+- unborn では `git diff HEAD --numstat` が失敗し、`git status -z` のステージ済みのエントリ (`A  path`) は数えないので、ステージ済みのファイルしか無いときは `·` になる
 
 ### session_name
 
@@ -226,7 +241,7 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 ### 出力例
 
 ```text
-my-project | main ↑2↓3 3+13-5 | my-session
+my-project | main ↑2↓3 | c9b8fce 3+13-5 | my-session
 ✻ Opus 4.7∙high ▆ 72% | ▇▇▇▆▆▆▅▅▄▄▃▃ 35% - 18:30 | ▅ Thu
 ```
 
@@ -259,14 +274,13 @@ my-project | main ↑2↓3 3+13-5 | my-session
 
 - 22 文字は、先頭を最低 1 文字残せる上限 (`1 + "…" + "/" + 22 = 25`)
 - 先頭を切った位置が `/` の直後でも、そのまま `…` を続ける (`feature/…/yyy` のようになりうる)
-- detached HEAD の短縮 sha は `/` を含まないので中間省略にはならない。`core.abbrev` を大きくして 25 文字を超えたときは先頭 24 文字 + `…` になる
-
 共通:
 
 - `…` は U+2026
 - 文字数は両版とも `LC_ALL=C.UTF-8` 下の文字単位で数える。CJK 文字も 1 文字として数える
 - 表示幅 (CJK が 2 桁を占めること) は考慮しない
 - effort、`<ab>`、`<diff>` はトリムしない
+- コミットハッシュはトリムしない。桁数は `core.abbrev` で利用者が選んだ値で、切るとハッシュとして使えなくなるため
 
 ## 色
 
@@ -437,7 +451,7 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 | `SHOW_CWD` | `1` | `CLAUDE_STATUSLINE_SHOW_CWD` | `1` で directory 列を表示。それ以外は非表示 |
 | `GIT_FETCH` | `0` | `CLAUDE_STATUSLINE_GIT_FETCH` | `1` でバックグラウンド fetch を有効化。それ以外は無効 |
 | `PR_STATUS` | `0` | `CLAUDE_STATUSLINE_PR_STATUS` | `1` で [PR の状態](#pr-の状態-pr_status1) を branch 列に表示。それ以外は無効 |
-| `LAYOUT_LINE1` | `directory\|branch\|session` | `CLAUDE_STATUSLINE_LAYOUT_LINE1` | [レイアウト](#レイアウト-layout_line1--layout_line2) |
+| `LAYOUT_LINE1` | `directory\|branch\|commit\|session` | `CLAUDE_STATUSLINE_LAYOUT_LINE1` | [レイアウト](#レイアウト-layout_line1--layout_line2) |
 | `LAYOUT_LINE2` | `model_ctx\|rate\|weekly` | `CLAUDE_STATUSLINE_LAYOUT_LINE2` | [レイアウト](#レイアウト-layout_line1--layout_line2) |
 | `HIGHLIGHT` | `branch` | `CLAUDE_STATUSLINE_HIGHLIGHT` | [ハイライト](#ハイライト-highlight) |
 | `RATE_CHART_LEN` | `12` | なし | rate チャートの文字数。[推奨レンジ](#間引き間隔の推奨レンジ) |
@@ -467,7 +481,8 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 | 行 | トークン | 内容 |
 | --- | --- | --- |
 | 1 行目 | `directory` | ディレクトリ名 |
-| | `branch` | `<ブランチ名>[ <ab>] <diff>[ <pr>]` |
+| | `branch` | `<ブランチ名>[ <ab>][ <pr>]` |
+| | `commit` | `[<hash> ]<diff>` |
 | | `session` | セッション名 |
 | 2 行目 | `model_ctx` | `✻ <model>∙<effort> <ctx>` |
 | | `rate` | 5 時間のレートリミット |
@@ -479,7 +494,7 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 - その行で使えないトークン (未知のもの、他方の行のもの) は無視する
 - 同じトークンが複数回あるときは最初の 1 回だけ採る
 - 値が空文字のときは既定値を使う
-- 1 トークンに束ねた要素 (`model` と `ctx`、ブランチ名と `<ab>`･`<diff>`･`<pr>`) は個別に並べ替えられない
+- 1 トークンに束ねた要素 (`model` と `ctx`、ブランチ名と `<ab>`･`<pr>`、ハッシュと `<diff>`) は個別に並べ替えられない
 
 1 行目:
 
@@ -506,6 +521,7 @@ HIGHLIGHT="directory|branch|session|rate_chart|rate_reset"
 | --- | --- | --- | --- |
 | `directory` | ディレクトリ名 | 常に | トリム後の全体 |
 | `branch` | ブランチ名 | 常に | 表示中の名前の最後の `/` より後ろ。`/` が無ければ全体 |
+| `commit` | コミットハッシュ | 常に | ハッシュ全体 (`<diff>` は塗らない) |
 | `session` | セッション名 | 常に | トリム後の全体 |
 | `model` | `✻ <model>` (`SHOW_MODEL_NAME=0` では `✻`) | 名前に `Fable` / `Opus` / `Haiku` を含まない (Sonnet、`Unknown` など) | `✻` からトリム後のモデル名まで |
 | `ctx_chart` | ctx のスパーク | 使用率 70% 未満、または欠落 | スパーク 1 文字 (欠落時は `· --` の `·`) |
@@ -520,6 +536,7 @@ branch の塗る範囲の例:
 | 表示中のブランチ名 | 塗る範囲 |
 | --- | --- |
 | `main` | `main` |
+| `HEAD` (detached HEAD) | `HEAD` |
 | `feature/xxx/yyy` | `yyy` |
 | `feature/aaaaaaaaaaaa…/yyy` (中間を省略した名前) | `yyy` |
 | `feature/improve-awesome-…` (先頭を残してトリムした名前) | `improve-awesome-…` |

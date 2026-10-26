@@ -1,2 +1,2 @@
 # 末尾がちょうど 22 文字: 先頭 1 文字 + … + /<末尾 22 文字> で 25 文字に収まるので中間省略になる
-matches_line1: ^f…/\\e\[38;2;255;255;255mbbbbbbbbbbbbbbbbbbbbbb\\e\[0m ·$
+matches_line1: ^f…/\\e\[38;2;255;255;255mbbbbbbbbbbbbbbbbbbbbbb\\e\[0m$

@@ -1,6 +1,6 @@
 # branch 名が 25 文字超でトリムされても変更行数は残る (truncate はブランチ名のみに効く)
-# feature/improve-awesome-statusline -> 末尾が 26 文字 (> 22) なので先頭 24 文字 + … にトリム、その右にファイル数 1 + +12 / -3
+# feature/improve-awesome-statusline -> 末尾が 26 文字 (> 22) なので先頭 24 文字 + … にトリム、commit 列にファイル数 1 + +12 / -3
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
-matches_line1: ^improve-awesome-statusli… \| feature/\\e\[38;2;255;255;255mimprove-awesome-…\\e\[0m \\e\[38;2;255;255;255m1\\e\[0m\\e\[38;2;78;186;101m\+12\\e\[0m\\e\[38;2;255;107;128m-3\\e\[0m$
-contains: feature/\e[38;2;255;255;255mimprove-awesome-…\e[0m \e[38;2;255;255;255m1\e[0m\e[38;2;78;186;101m+12\e[0m\e[38;2;255;107;128m-3\e[0m
+matches_line1: ^improve-awesome-statusli… \| feature/\\e\[38;2;255;255;255mimprove-awesome-…\\e\[0m \| a1b2c3d \\e\[38;2;255;255;255m1\\e\[0m\\e\[38;2;78;186;101m\+12\\e\[0m\\e\[38;2;255;107;128m-3\\e\[0m$
+contains: feature/\e[38;2;255;255;255mimprove-awesome-…\e[0m | a1b2c3d \e[38;2;255;255;255m1\e[0m\e[38;2;78;186;101m+12\e[0m\e[38;2;255;107;128m-3\e[0m
 not_contains: feature/improve-awesome-statusline

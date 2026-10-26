@@ -1,6 +1,6 @@
-# diff 規約なし: numstat 出力なし・未追跡なし -> files=0,add=0,del=0 = クリーンで変更行数の代わりに無色の · を出す (main ·)
+# diff 規約なし: numstat 出力なし・未追跡なし -> files=0,add=0,del=0 = クリーンで変更行数の代わりに無色の · を出す (commit 列が a1b2c3d ·)
 # rate used 30 (残量70%・色なし) なので reset は "22:13" のみでハイフン無し -> "-" 非含有チェックが安全
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
-matches_line1: ^sl-repo#branch=main;ab=0… \| \\e\[38;2;255;255;255mmain\\e\[0m ·$
+matches_line1: ^sl-repo#branch=main;ab=0… \| \\e\[38;2;255;255;255mmain\\e\[0m \| a1b2c3d ·$
 not_contains_line1: +
 not_contains_line2: % -
