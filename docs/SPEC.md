@@ -1,3 +1,5 @@
+日本語 | [🌍 English version here](./SPEC.en.md)
+
 # 出力仕様
 
 statusline-macos.sh (macOS 版) と statusline-linux.sh (Linux 版) が満たす、外から観測できる出力の仕様をまとめる。両版は同じ入力に対して**同一の出力**を返す。実装上の理由や過去に採らなかった案は [DESIGN.md](./DESIGN.md)、テストの書き方は [tests/README.md](../tests/README.md) を参照。

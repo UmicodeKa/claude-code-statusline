@@ -1,3 +1,5 @@
+日本語 | [🌍 English version here](./README.en.md)
+
 # テスト
 
 macOS 版 (`statusline-macos.sh`) と Linux 版 (`statusline-linux.sh`) が同じ入力に対して同じ出力を返すことを確かめるテスト群です。出力の仕様は [docs/SPEC.md](../docs/SPEC.md)、各防御コードとそれを守るテストの対応は [docs/DESIGN.md](../docs/DESIGN.md)、開発環境の準備は [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md) を参照してください。
@@ -12,8 +14,9 @@ macOS 版 (`statusline-macos.sh`) と Linux 版 (`statusline-linux.sh`) が同�
 | `rate-history-behavior.sh` | `npm run test:history` | rate 履歴ファイルの書き込み (初回の埋め込み、間引き、保存件数) と、間引き間隔の丸めを検証する |
 | `e2e-preview.sh` | `npm run preview` | 実際の ANSI 色付き出力を端末に流し、目視で確認する |
 | `script-parity.sh` | `npm run test:parity` | 両スクリプトの共通ブロックの一致と、必要な記述が残っていることを静的に確かめる |
+| `translation-parity.sh` | `npm run test:translation` | 日本語のドキュメントと英語版 (`*.en.md`) の構造が食い違っていないことを静的に確かめる |
 
-`npm test` は `test:regression`、`test:fetch`、`test:pr`、`test:history`、`test:parity` を順に実行します。`e2e-preview.sh` は合否を判定しないため `npm test` には含まれません。
+`npm test` は `test:regression`、`test:fetch`、`test:pr`、`test:history`、`test:parity`、`test:translation` を順に実行します。`e2e-preview.sh` は合否を判定しないため `npm test` には含まれません。
 
 ### regression.sh
 
@@ -125,6 +128,20 @@ conf は一時ファイルに書いて渡します。`RATE_CHART_LEN` と `POLL_
 
 - `block:*` は、開始マーカーのコメント行 (行頭一致) から終了マーカー行の手前までを取り出して比較します。マーカーのコメントを書き換えるとブロックを取り出せず、失敗になります。
 - `static:*` は、両版それぞれに固定文字列が含まれることを確かめます。関数名を挙げたチェックは、その関数の範囲 (`<関数>() {` から次の行頭の `}` まで) だけを探します。
+
+### translation-parity.sh
+
+日本語のドキュメントを正本とし、英語版 (`*.en.md`) を手で同期する運用のため、日本語版だけを更新した取り残しを検出します。翻訳の質は見ず、OS に依存しない構造の比較だけを行います。対象は `README.md`、`docs/SPEC.md`、`docs/DESIGN.md`、`docs/DEVELOPMENT.md`、`tests/README.md` とそれぞれの英語版です。
+
+| チェック名 | 確かめること |
+| --- | --- |
+| `lang-link:<名前>` | 冒頭の 1 行が互いの言語版へのリンクになっている |
+| `headings:<名前>` | 見出しの数が一致する |
+| `tables:<名前>` | 表の行数が一致する |
+| `spans:<名前>` | 日本語版のコードスパン (設定変数名やコマンド) が英語版にすべて含まれる。英語版にだけあるスパンは翻訳で生じるため比べない |
+| `lists:<名前>` | 箇条書きの項目の数と字下げ (入れ子の深さ) が一致する。折り返しで字下げが落ちると入れ子が崩れる |
+
+- コードブロックの中は数えません。日本語の文字やプレースホルダ (`<名前>` など) を含むコードスパンは翻訳で変わるため、比べません。
 
 ## ディレクトリ構成
 
