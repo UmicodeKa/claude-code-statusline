@@ -65,7 +65,7 @@ count_table_rows() {
 code_spans() {
   strip_code_blocks "$1" \
     | LC_ALL=C grep -o '`[^`]*`' \
-    | LC_ALL=C awk '!/[\343-\357]/ && !/</' \
+    | LC_ALL=C grep -v -e "$(printf '[\343-\357]')" -e '<' \
     | LC_ALL=C sort -u || true
 }
 
