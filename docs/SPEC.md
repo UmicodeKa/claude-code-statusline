@@ -35,7 +35,7 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 | `rate_limits.seven_day.used_percentage` | 週間 (7 日間) のレートリミット使用率 | weekly を `· --` と表示 |
 | `rate_limits.seven_day.resets_at` | 週間のリセット時刻 (epoch 秒) | 曜日を表示しない (`0` と同じ) |
 | `session_name` | セッション名 | セッション列を省略 |
-| `workspace.current_dir` | ディレクトリ名、ブランチ、コミットハッシュの取得 | ディレクトリ列、ブランチ列、commit 列を省略 |
+| `workspace.current_dir` | ディレクトリ名、ブランチ、コミットハッシュの取得。ahead/behind の取得、`GIT_FETCH` の間引きの単位、PR の状態の取得 (キャッシュキーと `gh` / `git` の実行ディレクトリ) にも使う | ディレクトリ列、ブランチ列 (`<ab>`、`<pr>` も出ない)、commit 列を省略 |
 
 - 文字列フィールド (`model.display_name` / `session_name` / `workspace.current_dir` / `effort.level`) に含まれる制御文字 (改行･タブ･CR･ESC など) は半角スペースに置き換える。値に紛れた ANSI エスケープで後続の列の色が変わるのを防ぐ
 - 値は加工せずそのまま出力する (`-n` で始まるセッション名なども文字どおり表示する)
@@ -248,6 +248,11 @@ my-project | main ↑2↓3 | c9b8fce 3+13-5 | my-session
 ```
 
 ```text
+my-project | main ↑2↓3 #12✓ 3 | c9b8fce 3+13-5 | my-session
+✻ Opus 4.7∙high ▆ 72% | ▇▇▇▆▆▆▅▅▄▄▃▃ 35% - 18:30 | ▅ Thu
+```
+
+```text
 ✻ Opus 4.7∙high ▄ | ▇▇▇▆▆▆▆▅▅▅▄▄ 18:30 | ▂ 22% - Thu
 ```
 
@@ -255,7 +260,7 @@ my-project | main ↑2↓3 | c9b8fce 3+13-5 | my-session
 ✻ Unknown · -- | ············ -- | · --
 ```
 
-1 つ目は rate が警戒域、weekly が 62% の既定の表示。2 つ目は weekly が警戒域 (22%) の表示。3 つ目は、rate 履歴が無い状態で空の JSON (`{}`) を渡したときの出力 (履歴があればチャート部分は保存済みの履歴になる)。1 行目の要素がすべて空なので 1 行だけになる。
+1 つ目は rate が警戒域、weekly が 62% の既定の表示。2 つ目は 1 つ目に PR の状態 (`#12✓ 3`) が加わった `PR_STATUS=1` の表示。3 つ目は weekly が警戒域 (22%) の表示。4 つ目は、rate 履歴が無い状態で空の JSON (`{}`) を渡したときの出力 (履歴があればチャート部分は保存済みの履歴になる)。1 行目の要素がすべて空なので 1 行だけになる。
 
 ## トリム規則
 
