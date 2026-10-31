@@ -441,7 +441,7 @@ Only the remaining rate limit is kept in history (ctx is not).
   If the chart length is increased, the saved history is reflected in the display immediately (missing entries show as `·` and are filled in with each append).
   A history file with fewer entries than the stored count can also be used as-is
 - If the lock cannot be acquired within `LOCK_TIMEOUT_SEC` seconds, no append is done for that render (rendering continues)
-- The default `HISTORY_DIR` is `/tmp/claude-statusline-<uid>/`. It can be changed with the env `CLAUDE_STATUSLINE_HISTORY_DIR` (not available in conf)
+- The default `HISTORY_DIR` is `/tmp/claude-statusline-<uid>/`. It can be changed with the env `CLAUDE_STATUSLINE_HISTORY_DIR` (not available in conf). The specified directory is created if missing and its permission is changed to 700
 - If `HISTORY_DIR` is a symlink, is not owned by the current uid, or does not have mode 700, the history feature is disabled and rendering continues
 
 ### Recommended Throttling Interval Ranges

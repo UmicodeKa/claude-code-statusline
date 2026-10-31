@@ -390,7 +390,7 @@ Linux では `statusline-linux.sh` をコピーする。
 
 Claude Code が値を渡していない間は `--` が表示される。
 
-- rate (`<チャート> --`) と weekly (`· --`): `rate_limits` は claude.ai の Pro / Max の契約者などにだけ、セッションの最初の API 応答の後から渡される。それ以外の契約では常に `--` で、設定では解消できない
+- rate (`<チャート> --`) と weekly (`· --`): `rate_limits` は claude.ai の Pro / Max の契約者などにだけ、セッションの最初の API 応答の後から渡される。渡されない間は `--` のままで、設定では解消できない
 - `five_hour` と `seven_day` は独立に欠落しうるため、rate と weekly の片方だけが `--` になることもある
 - ctx (`· --`): `context_window.used_percentage` が渡されない間は `--` になる
 
@@ -404,7 +404,7 @@ Claude Code が値を渡していない間は `--` が表示される。
 - `~/.claude/statusline.conf` はシェルスクリプトとして読み込まれ、描画のたびに実行される。信頼できない内容を書かない
 - ネットワークにアクセスするのは、`GIT_FETCH=1` (`git fetch`) と `PR_STATUS=1` (`gh` による GitHub API への問い合わせ) を有効にしたときだけ
 - レートリミットの履歴や PR のキャッシュは `/tmp/claude-statusline-<uid>/` にパーミッション 700 で保存する。他ユーザー所有やシンボリックリンクの場合は使わず、履歴と PR の状態なしで表示を続ける
-- 保存先は環境変数 `CLAUDE_STATUSLINE_HISTORY_DIR` で変えられる (設定ファイルでは変えられない)
+- 保存先は環境変数 `CLAUDE_STATUSLINE_HISTORY_DIR` で変えられる (設定ファイルでは変えられない)。指定先は無ければ作成し、パーミッションを 700 に変更するため、専用のディレクトリを指定する
 
 ## 開発者向け
 

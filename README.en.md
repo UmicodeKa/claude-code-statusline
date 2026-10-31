@@ -406,7 +406,7 @@ By default `git fetch` is not run, so `↓` is the value as of the last fetch / 
 
 `--` is shown while Claude Code does not pass the value.
 
-- rate (`<chart> --`) and weekly (`· --`): `rate_limits` is passed only to subscribers such as claude.ai Pro / Max, and only after the first API response of a session. With other plans it is always `--` and no setting can change that
+- rate (`<chart> --`) and weekly (`· --`): `rate_limits` is passed only to subscribers such as claude.ai Pro / Max, and only after the first API response of a session. While it is not passed, `--` stays and no setting can change that
 - `five_hour` and `seven_day` can be missing independently, so only one of rate and weekly may show `--`
 - ctx (`· --`): `--` is shown while `context_window.used_percentage` is not passed
 
@@ -420,7 +420,7 @@ By default `git fetch` is not run, so `↓` is the value as of the last fetch / 
 - `~/.claude/statusline.conf` is loaded as a shell script and executed on every render. Do not write untrusted content in it
 - The network is accessed only when you enable `GIT_FETCH=1` (`git fetch`) or `PR_STATUS=1` (queries to the GitHub API via `gh`)
 - The rate limit history and the PR cache are saved in `/tmp/claude-statusline-<uid>/` with permission 700. If the directory is owned by another user or is a symbolic link, it is not used and the display continues without the history and the PR status
-- The location can be changed with the environment variable `CLAUDE_STATUSLINE_HISTORY_DIR` (not with the configuration file)
+- The location can be changed with the environment variable `CLAUDE_STATUSLINE_HISTORY_DIR` (not with the configuration file). The specified directory is created if missing and its permission is changed to 700, so specify a dedicated directory
 
 ## For developers
 

@@ -426,7 +426,7 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 - 初回は現在値で 20 件 (`RATE_CHART_LEN_MAX`) を埋める。以降は前回の追記から `POLL_INTERVAL_SEC` 秒以上経っていれば 1 件追記し、末尾 20 件だけを残す
 - 保存件数は表示長によらず 20 件で、チャートには末尾の `RATE_CHART_LEN` 件を使う。チャート長を伸ばすと、保存済みの履歴がすぐに表示に反映される (足りない分は `·` になり、追記のたびに埋まる)。保存件数より少ない履歴ファイルもそのまま使える
 - ロックを `LOCK_TIMEOUT_SEC` 秒以内に取れなかったときは、その回の追記を行わない (描画は続ける)
-- `HISTORY_DIR` の既定は `/tmp/claude-statusline-<uid>/`。env `CLAUDE_STATUSLINE_HISTORY_DIR` で変えられる (conf の対象外)
+- `HISTORY_DIR` の既定は `/tmp/claude-statusline-<uid>/`。env `CLAUDE_STATUSLINE_HISTORY_DIR` で変えられる (conf の対象外)。指定先は無ければ作成し、パーミッションを 700 に変更する
 - `HISTORY_DIR` が symlink、自分の uid の所有でない、mode が 700 でない、のいずれかに当たると履歴機能を無効にして描画を続ける
 
 ### 間引き間隔の推奨レンジ
