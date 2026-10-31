@@ -341,9 +341,9 @@ The RGB values are for dark. For the light values, see [Semantic Colors](#semant
 | diff `+N` | — | `success` (green) | `\033[38;2;78;186;101m` |
 | diff `-N` | — | `error` (red) | `\033[38;2;255;107;128m` |
 | pr `#<number>` | open + approved | `success` (green) | `\033[38;2;78;186;101m` |
-| | open + pending | `permission` (blue-violet) | `\033[38;2;177;185;249m` |
+| | open + pending | Uncolored (`text` when `HIGHLIGHT` has `pr_number`) | — |
 | | open + changes requested | `error` (red) | `\033[38;2;255;107;128m` |
-| | draft | Uncolored | — |
+| | draft | `subtle` in dark, `inactive` (`102;102;102`) in light | `\033[38;2;175;175;175m` |
 | | merged | `merged` (purple) + strikethrough | `\033[4;9m\033[38;2;135;0;255m` |
 | | closed | Uncolored + strikethrough | `\033[4;9m` |
 | pr CI symbol | `✓` | `success` (green) | `\033[38;2;78;186;101m` |
@@ -552,6 +552,7 @@ HIGHLIGHT="directory|branch|session|rate_chart|rate_reset"
 | `weekly_chart` | weekly spark | Remaining over 40%, or usage missing | The one spark character (the `·` of `· --` when missing) |
 | `weekly_reset` | weekly reset weekday | Remaining over 40% | The weekday (`Mon`, etc.) |
 | `pr_comments` | PR comment count | Always | The count |
+| `pr_number` | PR number | open with a review other than approved / changes requested | `#<number>` |
 
 Examples of the painted range for branch:
 
@@ -566,7 +567,7 @@ Examples of the painted range for branch:
 | `abcdefghijklmnopqrstuvw/…` (name cut right after a `/`) | `…` |
 
 - In a state where a color is applied, only that color is used and highlighting has no effect.
-  This applies to ctx usage of 70% or more, rate / weekly remaining of 40% or less (the whole `<chart> NN% - HH:MM` takes the threshold color), and Fable / Opus / Haiku models
+  This applies to ctx usage of 70% or more, rate / weekly remaining of 40% or less (the whole `<chart> NN% - HH:MM` takes the threshold color), Fable / Opus / Haiku models, and the PR number when approved / changes requested / draft / merged
 - Separators and whitespace are handled the same as in the [Layout](#layout-layout_line1--layout_line2).
   Whitespace (spaces, tabs) around a token is ignored, and unknown tokens are silently ignored. Writing the same token more than once is the same as writing it once
 - The default is `branch`, which paints only the end of the branch name. To paint no element, write only an unknown token such as `none` (an empty value is treated as the default)
@@ -575,7 +576,8 @@ Examples of the painted range for branch:
 - Painting happens after trimming. The trim position does not change with or without highlighting
 - An element whose value is empty is not painted. An empty column on line 1 is omitted entirely even if a highlight is specified
 - Whether an element is shown is independent of highlighting. An element not written in `LAYOUT_LINE*`, or one hidden by `SHOW_CWD=0`, is not shown even if specified
-- The output has the same form as other colored elements: `\033[38;2;R;G;Bm<text>\033[0m`
+- The output has the same form as other colored elements: `\033[38;2;R;G;Bm<text>\033[0m`.
+  The exception is `pr_number`: like the PR number in other states, the underline (`\033[4m`) is placed before the color (`\033[4m\033[38;2;R;G;Bm#<number>\033[0m`), and it is wrapped in an OSC 8 link when there is a URL
 
 The following uncolored elements are not targets.
 
@@ -584,7 +586,7 @@ The following uncolored elements are not targets.
 | `NN%` and ` - ` of ctx / rate / weekly | They are shown only in a state where a color is applied |
 | effort | All known values (`low` through `max`) are colored. Only an unexpected value is uncolored |
 | `*` of a detached HEAD | Being uncolored distinguishes it from the blue `*` of no upstream |
-| `#<number>` of a PR that is draft / closed | Being uncolored distinguishes it from the colored number of open and from the purple of merged |
+| `#<number>` of a PR that is closed | Being uncolored distinguishes it from the gray of draft and from the purple of merged |
 | `--` when missing, and `·` of a clean `<diff>` | Not values but marks meaning missing or unchanged |
 | The branch name up to the last `/` | Only the end, which often describes the work, is made to stand out |
 | ` \| `, `∙`, and the spaces between elements | Separators, not elements |
@@ -621,14 +623,14 @@ Only when `PR_STATUS=1`, the GitHub PR linked to the current branch is shown in 
 | State | Color of `#<number>` | Decoration | CI symbol | Comment count |
 | --- | --- | --- | --- | --- |
 | open: approved | `success` | Underline (SGR 4) | Shown | Shown |
-| open: pending (awaiting review, or no review yet) | `permission` | Underline (SGR 4) | Shown | Shown |
+| open: pending (awaiting review, or no review yet) | Uncolored (`text` when `HIGHLIGHT` has `pr_number`) | Underline (SGR 4) | Shown | Shown |
 | open: changes requested | `error` | Underline (SGR 4) | Shown | Shown |
-| draft | Uncolored | Underline (SGR 4) | Shown | Shown |
+| draft | `subtle` in dark, `inactive` in light | Underline (SGR 4) | Shown | Shown |
 | merged | `merged` | Underline + strikethrough (SGR 4;9) | Not shown | Not shown |
 | closed (closed without merging) | Uncolored | Underline + strikethrough (SGR 4;9) | Not shown | Not shown |
 
 - The prefix `PR` is not added (`#12`)
-- Colors use the values of the existing color definitions ([Semantic Colors](#semantic-colors)). draft and closed are not colored and take the terminal foreground color.
+- Colors use the values of the existing color definitions ([Semantic Colors](#semantic-colors)). pending and closed are not colored and take the terminal foreground color (pending is painted with `text` when `HIGHLIGHT` has `pr_number`).
   The decoration is `\033[4m` (`\033[4;9m` for merged / closed) placed before the color and cleared with `\033[0m`. The decoration applies only to `#<number>`, not to the CI symbol or the comment count
 - The CI symbol follows `#<number>` directly with no separator (`#12✓`)
 - `<pr>` is not trimmed

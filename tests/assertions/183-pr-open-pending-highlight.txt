@@ -1,0 +1,2 @@
+# open + pending で HIGHLIGHT に pr_number: #12 を text (dark 純白) で塗る。下線は色より前に置く
+matches_line1: ^\\e\[38;2;255;255;255mmain\\e\[0m \\e\]8;;https://github\.com/my-org/my-project/pull/12\\a\\e\[4m\\e\[38;2;255;255;255m#12\\e\[0m\\e\]8;;\\a\\e\[38;2;255;193;7m●\\e\[0m$

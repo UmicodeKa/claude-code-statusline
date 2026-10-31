@@ -192,6 +192,7 @@ HIGHLIGHT="directory|branch|session|rate_chart|rate_reset"
 | `rate_chart` / `rate_reset` | 5-hour rate limit chart / reset time |
 | `weekly_chart` / `weekly_reset` | Weekly rate limit spark / day of the week it resets |
 | `pr_comments` | Number of PR comments |
+| `pr_number` | PR number (while awaiting review) |
 
 - An element that already has a color keeps it, such as ctx or the rate limit in a warning level, or a model color like Opus
 - The default is `branch` (only the end of the branch name). To paint nothing, write only an unknown token such as `HIGHLIGHT="none"` (unknown tokens are ignored, and an empty value falls back to the default)
@@ -230,7 +231,7 @@ PR_STATUS=1
 my-project | feature/login ↑1 #12✓ 3 | c9b8fce 3+10-2 | my-session
 ```
 
-- `#12` is underlined and its color shows the PR state (approved green, awaiting review blue-violet, changes requested red, draft uncolored, merged purple + strikethrough, closed uncolored + strikethrough)
+- `#12` is underlined and its color shows the PR state (approved green, awaiting review uncolored, changes requested red, draft gray, merged purple + strikethrough, closed uncolored + strikethrough)
 - `✓` / `✗` / `●` mean CI succeeded / failed / running, and follow `#12`. Nothing is shown if there are no checks
 - The trailing `3` is the number of PR comments (conversation, line comments and their replies, and reviews with a body). It is the same number as the speech-bubble icon in the GitHub PR list, and is not shown for 0
 - Nothing is shown if there is no PR or it cannot be fetched
@@ -330,7 +331,7 @@ The colors match the Claude Code light/dark themes and are switched with `COLOR_
 | Rate limit remaining (5-hour / weekly) | Yellow at 40% or less, orange at 15% or less, blinking red at 5% or less |
 | Branch column | `↑` blue, `↓` yellow |
 | Commit column | Hash uncolored, number of changed files in the text color, added lines green, deleted lines red |
-| PR number | Underlined. approved green, pending blue-violet, changes requested red, draft uncolored, merged purple + strikethrough, closed uncolored + strikethrough |
+| PR number | Underlined. approved green, pending uncolored (text color with `pr_number` in `HIGHLIGHT`), changes requested red, draft gray, merged purple + strikethrough, closed uncolored + strikethrough |
 | PR CI | `✓` green, `✗` red, `●` yellow |
 
 ## Update and uninstall

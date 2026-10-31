@@ -143,7 +143,8 @@ effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の�
 - commit はハッシュだけを `highlight` に通し、`<diff>` は通しません。`<diff>` は `git_diff_stat` が自分の色で塗っているためです
 - ctx / rate / weekly は `format_ctx` / `format_limit` の無色の分岐 (と欠落の分岐) だけで呼びます。`format_limit` は第 5 引数の列の名前 (`rate` / `weekly`) から `<列の名前>_chart` / `<列の名前>_reset` のトークンを組み立て、rate と weekly で同じコードを使います
 - model は `model_effect` が無色 (`static`) のときだけ `highlight` を通し、色付きのときは `paint` で塗ります。無色のモデルは `paint` の `$(...)` を通らないので、その分の fork がありません
-- PR のコメントの件数は `format_pr` で `pr_comments` として通します
+- PR のコメントの件数は `format_pr` で `pr_comments` として通します。PR 番号は例外で、`highlight` を通さず `hl_has pr_number` で判定します。下線を色の前に置く必要があり、`highlight` を通すと `\e[0m` が二重になるためです ([PR 番号の配色](#pr-番号の配色))
+- `hl_has <トークン>` は `hl_set` との照合だけを行う述語で、`highlight` もこれを使います。照合のロジックを 1 か所に収め、`format_pr` が `highlight` の出力の形に頼らずに済むようにしています
 
 ### rate チャートの土台と右端の現在値
 
@@ -262,6 +263,16 @@ head のブランチ名とオーナーを push 先 (`@{push}`) から決める�
 `MERGED` / `CLOSED` を選ぶのは `headRefOid` がローカルの HEAD と一致するときだけです。マージ済みの PR と同じ名前のブランチを使い回して新しいコミットを積んだときに、古い PR を表示しないためです。
 
 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` は見ません。Claude Code 標準の PR バッジを消すためにこの変数を設定した人でも、PR の状態表示は使えるようにするためです。`PR_STATUS=1` にすること自体が明示的なオプトインになっています。
+
+### PR 番号の配色
+
+pending (レビューがまだない open) と draft は、どちらも｢動きのない open｣です。この 2 つは互いの色の差を小さくし、approved / changes requested / merged だけが色で目立つようにしています。
+
+- pending は無色で、`HIGHLIGHT` に `pr_number` があるときだけ `text` で塗ります。`text` は｢`HIGHLIGHT` で選んだ要素｣を表す色なので、pending の状態の色に固定で使うと 1 つの色に 2 つの意味が乗ります。ハイライトの対象にすれば、`text` の意味は 1 つのままです
+- draft はテーマ別のグレー `COLOR_prDraft` (dark は `subtle`、light は `inactive`) で塗ります。`subtle` と `inactive` はどちらも両テーマで同じ値なので、1 色に決めるとどちらかのテーマで読みにくくなります (`inactive` は黒背景で約 2.9:1、`subtle` は白背景で約 2.2:1)。背景とのコントラストよりも pending との差が小さいことを優先して、dark では白に近い `subtle` を選んでいます
+- テーマごとの色の判断は色定義ブロック (`case "$COLOR_SCHEME"`) に集め、`format_pr` では `COLOR_SCHEME` を見ません。両版のずれは `tests/script-parity.sh` で検出します
+- closed は無色のままで、`pr_number` を指定しても塗りません。無色であることで draft のグレーや merged の紫と区別しているためです
+- `format_pr` は PR 番号を `highlight` に通さず、`hl_has pr_number` で判定して `color` に `COLOR_text` を入れます。下線 (`\e[4m`) を色より前に置く必要があり、`highlight` が付ける `\e[0m` と番号の末尾の `\e[0m` が二重になるためです。`color` に入れれば ESC 列の形は他の状態と同じになります
 
 ## 壊れやすい箇所と守っているテスト
 
@@ -594,6 +605,14 @@ Claude Code が statusline に渡す `pr` フィールドは使いません。�
 
 Claude Code のフッターの PR バッジは下線に色を付けていますが、PR の状態表示は `#<番号>` の文字色で表し、下線 (SGR 4) は文字と同じ色のまま付けます。下線色 (SGR 58) を Claude Code の statusline 描画がそのまま通すかを確認できていないためです。
 
+### PR 番号の pending と draft の色
+
+- pending を固定で `text` にする: `text` は `HIGHLIGHT` で選んだ要素の色で、状態の色にも使うと 2 つの意味が乗る
+- draft を `subtle` または `inactive` の 1 色にする: 両テーマで同じ値のため、どちらかのテーマで読みにくい
+- draft を `secondaryText` (dark `153;153;153` / light `102;102;102`) にする: テーマ別の既存色だが、dark で `subtle` より白から遠く、pending との差が大きくなる
+- draft をイタリック (SGR 3) にする: 斜体が他の要素から浮いて見える
+- draft を dim (SGR 2) にする: 薄くなる程度が端末に依存し、グレーと同じく見にくくなりうる
+
 ### `gh pr list --json` とほかのコメントの数え方
 
 `gh pr list --json` / `gh pr view --json` は使いません。どちらも `comments` で返すのは会話タブのコメントだけで ([cli/cli#11477](https://github.com/cli/cli/issues/11477))、行コメントや本文付きのレビューを含みません。件数を知りたいだけなのに本文まで取るため、重くもなります。
@@ -626,7 +645,7 @@ CI 記号は `statusCheckRollup.state` (GitHub が集約した値) をそのま�
 - 色を決める関数 (`ctx_color` / `limit_color` / `model_color`) の無色の戻り値をハイライト色にする: `format_ctx` と `format_limit` は｢色が付いているか｣(effect 指定が `static` でないか) で数値 `NN%` を出すかを決めているため、ハイライトしただけで数値が出るようになる。無色のときは要素ごと (チャートと時刻を別々)、色付きのときは全体を 1 色で塗るので、塗る単位も合わない
 - model の｢無色なら `highlight`、色付きなら `paint`｣を汎用のヘルパーにする: 分岐が 1 か所にしか無いので、ヘルパーを足しても重複は減らない
 - `HIGHLIGHT` をトークンごとの真偽値の設定 (`HIGHLIGHT_BRANCH=1` など) にする: 設定の数がトークンの数だけ増え、conf の読み込みブロックの一覧も増える。`LAYOUT_LINE*` と同じ書式の 1 変数にし、分割も `split_tokens` で共有した
-- 対象外にした無色の要素 (detached の `*`、draft / closed の PR 番号、`--` など) と理由は [SPEC.md](SPEC.md#ハイライト-highlight) にまとめている
+- 対象外にした無色の要素 (detached の `*`、closed の PR 番号、`--` など) と理由は [SPEC.md](SPEC.md#ハイライト-highlight) にまとめている
 
 ### その他
 

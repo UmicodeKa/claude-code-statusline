@@ -1,0 +1,2 @@
+# closed で HIGHLIGHT に pr_number: #12 は塗らず無色のまま (draft のグレーや merged の紫と区別する)
+matches_line1: ^\\e\[38;2;255;255;255mmain\\e\[0m \\e\]8;;https://github\.com/my-org/my-project/pull/12\\a\\e\[4;9m#12\\e\[0m\\e\]8;;\\a$

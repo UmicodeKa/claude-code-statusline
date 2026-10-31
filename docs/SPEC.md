@@ -328,9 +328,9 @@ RGB は dark の値。light の値は [セマンティックカラー](#セマ�
 | diff `+N` | — | `success` (緑) | `\033[38;2;78;186;101m` |
 | diff `-N` | — | `error` (赤) | `\033[38;2;255;107;128m` |
 | pr `#<番号>` | open + approved | `success` (緑) | `\033[38;2;78;186;101m` |
-| | open + pending | `permission` (青紫) | `\033[38;2;177;185;249m` |
+| | open + pending | 無色 (`HIGHLIGHT` に `pr_number` があれば `text`) | — |
 | | open + changes requested | `error` (赤) | `\033[38;2;255;107;128m` |
-| | draft | 無色 | — |
+| | draft | dark は `subtle`、light は `inactive` (`102;102;102`) | `\033[38;2;175;175;175m` |
 | | merged | `merged` (紫) + 取り消し線 | `\033[4;9m\033[38;2;135;0;255m` |
 | | closed | 無色 + 取り消し線 | `\033[4;9m` |
 | pr CI 記号 | `✓` | `success` (緑) | `\033[38;2;78;186;101m` |
@@ -537,6 +537,7 @@ HIGHLIGHT="directory|branch|session|rate_chart|rate_reset"
 | `weekly_chart` | weekly のスパーク | 残量 40% 超、または使用率の欠落 | スパーク 1 文字 (欠落時は `· --` の `·`) |
 | `weekly_reset` | weekly のリセットの曜日 | 残量 40% 超 | 曜日 (`Mon` など) |
 | `pr_comments` | PR のコメントの件数 | 常に | 件数 |
+| `pr_number` | PR 番号 | open で review が approved / changes requested 以外のとき | `#<番号>` |
 
 branch の塗る範囲の例:
 
@@ -550,7 +551,7 @@ branch の塗る範囲の例:
 | `platform-infrastructure-…` (`/` より前で切れた名前) | `platform-infrastructure-…` |
 | `abcdefghijklmnopqrstuvw/…` (`/` の直後で切れた名前) | `…` |
 
-- 色が付いている状態ではその色だけを使い、ハイライトは効かない。ctx の使用率 70% 以上、rate / weekly の残量 40% 以下 (`<chart> NN% - HH:MM` 全体がしきい値の色)、Fable / Opus / Haiku のモデルが該当する
+- 色が付いている状態ではその色だけを使い、ハイライトは効かない。ctx の使用率 70% 以上、rate / weekly の残量 40% 以下 (`<chart> NN% - HH:MM` 全体がしきい値の色)、Fable / Opus / Haiku のモデル、approved / changes requested / draft / merged の PR 番号が該当する
 - 区切りと空白の扱いは [レイアウト](#レイアウト-layout_line1--layout_line2) と同じ。トークン前後の空白 (スペース･タブ) は無視し、未知のトークンは黙って無視する。同じトークンを複数回書いても 1 回と同じ
 - 既定は `branch` で、ブランチ名の末尾だけを塗る。どの要素も塗らないときは `none` などの未知のトークンだけを書く (空の値は既定値として扱う)
 - 設定ファイルでは値に `|` を含むため、クォートで囲む。囲まないとパイプとして解釈され、描画のたびに `command not found` が出て `HIGHLIGHT` も設定されない
@@ -558,7 +559,7 @@ branch の塗る範囲の例:
 - 塗るのはトリムの後。トリムの位置はハイライトの有無で変わらない
 - 値が空の要素は塗らない。1 行目の空の列は、ハイライトを指定していても列ごと省略する
 - 表示の有無はハイライトと独立している。`LAYOUT_LINE*` に書かれていない要素や `SHOW_CWD=0` で消えた要素は、指定しても表示されない
-- 出力の形は他の色付きの要素と同じ `\033[38;2;R;G;Bm<text>\033[0m`
+- 出力の形は他の色付きの要素と同じ `\033[38;2;R;G;Bm<text>\033[0m`。例外は `pr_number` で、他の状態の PR 番号と同じく下線 (`\033[4m`) を色の前に置き (`\033[4m\033[38;2;R;G;Bm#<番号>\033[0m`)、URL があれば OSC 8 のリンクで囲む
 
 次の無色の要素は対象にしない。
 
@@ -567,7 +568,7 @@ branch の塗る範囲の例:
 | ctx / rate / weekly の `NN%` と ` - ` | 色が付く状態でしか表示されない |
 | effort | 既知の値 (`low` から `max`) はすべて色付き。無色になるのは想定外の値だけ |
 | detached HEAD の `*` | 無色であることで、upstream 未設定の青い `*` と区別している |
-| PR の draft / closed の `#<番号>` | 無色であることで、open の色付きの番号や merged の紫と区別している |
+| PR の closed の `#<番号>` | 無色であることで、draft のグレーや merged の紫と区別している |
 | 欠落時の `--`、クリーンな `<diff>` の `·` | 値ではなく、欠落や変更なしを表す印 |
 | ブランチ名の最後の `/` まで | 作業内容を表すことが多い末尾だけを目立たせる |
 | ` \| `、`∙`、要素の間のスペース | 要素ではなく区切り |
@@ -603,14 +604,14 @@ branch の塗る範囲の例:
 | 状態 | `#<番号>` の色 | 装飾 | CI 記号 | コメントの件数 |
 | --- | --- | --- | --- | --- |
 | open: approved | `success` | 下線 (SGR 4) | 表示する | 表示する |
-| open: pending (レビュー待ち、またはレビューがまだない) | `permission` | 下線 (SGR 4) | 表示する | 表示する |
+| open: pending (レビュー待ち、またはレビューがまだない) | 無色 (`HIGHLIGHT` に `pr_number` があれば `text`) | 下線 (SGR 4) | 表示する | 表示する |
 | open: changes requested | `error` | 下線 (SGR 4) | 表示する | 表示する |
-| draft | 無色 | 下線 (SGR 4) | 表示する | 表示する |
+| draft | dark は `subtle`、light は `inactive` | 下線 (SGR 4) | 表示する | 表示する |
 | merged | `merged` | 下線 + 取り消し線 (SGR 4;9) | 出さない | 出さない |
 | closed (マージされずに閉じた) | 無色 | 下線 + 取り消し線 (SGR 4;9) | 出さない | 出さない |
 
 - `PR` という接頭辞は付けない (`#12`)
-- 色は既存の色定義 ([セマンティックカラー](#セマンティックカラー)) の値を使う。draft と closed は色を付けず、端末の前景色に任せる。装飾は `\033[4m` (merged / closed は `\033[4;9m`) を色の前に置き、`\033[0m` で解除する。装飾は `#<番号>` だけに掛かり、CI 記号とコメントの件数には掛からない
+- 色は既存の色定義 ([セマンティックカラー](#セマンティックカラー)) の値を使う。pending と closed は色を付けず、端末の前景色に任せる (pending は `HIGHLIGHT` に `pr_number` があれば `text` で塗る)。装飾は `\033[4m` (merged / closed は `\033[4;9m`) を色の前に置き、`\033[0m` で解除する。装飾は `#<番号>` だけに掛かり、CI 記号とコメントの件数には掛からない
 - CI 記号は `#<番号>` の直後に区切りなしで続ける (`#12✓`)
 - `<pr>` はトリムしない
 

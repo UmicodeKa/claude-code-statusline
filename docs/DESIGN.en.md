@@ -169,7 +169,9 @@ The processing that paints uncolored elements with `COLOR_text` is collected in 
 - ctx / rate / weekly call it only in the uncolored branch (and the missing-value branch) of `format_ctx` / `format_limit`. `format_limit` builds the `<column name>_chart` / `<column name>_reset` tokens from the column name passed as the
   fifth argument (`rate` / `weekly`), so rate and weekly share the same code
 - model passes through `highlight` only when `model_effect` is uncolored (`static`), and is painted with `paint` when colored. An uncolored model does not go through the `$(...)` in `paint`, so that fork is avoided
-- The PR comment count is passed through as `pr_comments` in `format_pr`
+- The PR comment count is passed through as `pr_comments` in `format_pr`. The PR number is an exception: it does not go through `highlight` and is checked with `hl_has pr_number` instead.
+  The underline must come before the color, and going through `highlight` would double the `\e[0m` ([PR Number Colors](#pr-number-colors))
+- `hl_has <token>` is a predicate that only matches against `hl_set`, and `highlight` uses it too. This keeps the matching logic in one place, so that `format_pr` does not depend on the shape of `highlight`'s output
 
 ### rate Chart Base and the Rightmost Current Value
 
@@ -309,6 +311,20 @@ The head branch name and owner are decided from the push target (`@{push}`) beca
 `MERGED` / `CLOSED` is selected only when `headRefOid` matches the local HEAD. This avoids showing an old PR when a branch with the same name as a merged PR is reused with new commits.
 
 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is not checked. This keeps the PR status display usable for people who set that variable to hide Claude Code's built-in PR badge. Setting `PR_STATUS=1` is itself an explicit opt-in.
+
+### PR Number Colors
+
+pending (an open PR with no review yet) and draft are both "an open PR with no activity". The color difference between these two is kept small, so that only approved / changes requested / merged stand out by color.
+
+- pending is uncolored, and is painted with `text` only when `HIGHLIGHT` has `pr_number`. `text` is the color that means "an element chosen with `HIGHLIGHT`", so using it as the fixed state color of pending would give one color two meanings.
+  Making it a highlight target keeps `text` to a single meaning
+- draft is painted with the theme-dependent gray `COLOR_prDraft` (`subtle` in dark, `inactive` in light).
+  `subtle` and `inactive` each have the same value in both themes, so picking one color makes it hard to read in one of the themes
+  (`inactive` is about 2.9:1 on a black background, `subtle` is about 2.2:1 on a white background). A small difference from pending is preferred over contrast against the background, so dark uses `subtle`, which is close to white
+- Theme-dependent color decisions are gathered in the color definition block (`case "$COLOR_SCHEME"`), and `format_pr` does not look at `COLOR_SCHEME`. Drift between the two versions is detected by `tests/script-parity.sh`
+- closed stays uncolored and is not painted even when `pr_number` is specified. Being uncolored distinguishes it from the gray of draft and the purple of merged
+- `format_pr` does not pass the PR number through `highlight`; it checks `hl_has pr_number` and puts `COLOR_text` into `color`.
+  The underline (`\e[4m`) must come before the color, and the `\e[0m` added by `highlight` would be doubled with the `\e[0m` at the end of the number. Putting it into `color` keeps the ESC sequence in the same form as the other states
 
 ## Fragile Spots and the Tests That Guard Them
 
@@ -683,6 +699,14 @@ an open PR, and has no CI information. Fetching it ourselves with `gh` displays 
 Claude Code's footer PR badge colors the underline, but the PR status display expresses state with the text color of `#<number>`, and the underline (SGR 4) is applied in the same color as the text. This is because it has not been confirmed
 whether Claude Code's statusline rendering passes the underline color (SGR 58) through as-is.
 
+### Colors for pending and draft PR Numbers
+
+- Fixing pending to `text`: `text` is the color of elements chosen with `HIGHLIGHT`, and using it as a state color too would give it two meanings
+- Using a single color, `subtle` or `inactive`, for draft: each has the same value in both themes, so it is hard to read in one of them
+- Using `secondaryText` (dark `153;153;153` / light `102;102;102`) for draft: it is an existing theme-dependent color, but in dark it is farther from white than `subtle`, making the difference from pending larger
+- Making draft italic (SGR 3): italics look out of place among the other elements
+- Making draft dim (SGR 2): how faint it becomes depends on the terminal, and like gray it can become hard to read
+
 ### `gh pr list --json` and Other Ways of Counting Comments
 
 `gh pr list --json` / `gh pr view --json` are not used. For `comments`, both return only conversation-tab comments ([cli/cli#11477](https://github.com/cli/cli/issues/11477)) and do not include line comments or reviews with a body. They are
@@ -730,7 +754,7 @@ checks beyond the fetch limit would be dropped.
 - Make model's "`highlight` if uncolored, `paint` if colored" a general-purpose helper: there is only one such branch, so adding a helper would not reduce duplication
 - Make `HIGHLIGHT` a per-token boolean setting (such as `HIGHLIGHT_BRANCH=1`): the number of settings would grow with the number of tokens, and so would the list in the conf-loading block. It is a single variable in the same format as
   `LAYOUT_LINE*`, and splitting is shared via `split_tokens`
-- The uncolored elements that are excluded (the detached `*`, draft / closed PR numbers, `--`, and so on) and the reasons are summarized in [SPEC.en.md](SPEC.en.md#highlight-highlight)
+- The uncolored elements that are excluded (the detached `*`, closed PR numbers, `--`, and so on) and the reasons are summarized in [SPEC.en.md](SPEC.en.md#highlight-highlight)
 
 ### Other
 
