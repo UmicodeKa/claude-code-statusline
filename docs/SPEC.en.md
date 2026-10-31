@@ -494,7 +494,7 @@ Configuration file:
 - Internal constants such as `RATE_CHART_LEN_MAX` have no effect even if written, because they are redefined after loading
 - For numeric settings, [rounding](#recommended-throttling-interval-ranges) is applied after loading
 
-The distributed template [`statusline.conf`](../statusline.conf) lists every item with its default value.
+The distributed template [`statusline.conf`](../statusline.conf) lists every item with its default value, except `HIGHLIGHT`, which is set to the recommended `branch|pr_number`.
 
 ### Layout (`LAYOUT_LINE1` / `LAYOUT_LINE2`)
 
