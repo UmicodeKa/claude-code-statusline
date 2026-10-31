@@ -90,8 +90,10 @@ LAYOUT_LINE2="${CLAUDE_STATUSLINE_LAYOUT_LINE2:-${LAYOUT_LINE2:-$LAYOUT_LINE2_TO
 # 無色で表示する要素のうち、目立たせたいものを text 色 (dark は白、light は黒) で塗る。
 # トークンを `|` で区切って並べる (区切りと空白の扱いは LAYOUT_LINE* と同じ。未知のトークンは黙って無視する)。
 #   directory / branch (表示中の名前の最後の `/` より後ろ) / commit (コミットハッシュ) / session / model (✻ とモデル名) /
-#   ctx_chart / rate_chart / rate_reset / weekly_chart / weekly_reset / pr_comments (PR のコメントの件数)
-# 色が付いている状態 (Fable/Opus/Haiku、ctx 70% 以上、rate/weekly 残量 40% 以下) ではその色を優先して塗らない。
+#   ctx_chart / rate_chart / rate_reset / weekly_chart / weekly_reset / pr_comments (PR のコメントの件数) /
+#   pr_number (open で review が approved / changes_requested 以外の PR 番号)
+# 色が付いている状態 (Fable/Opus/Haiku、ctx 70% 以上、rate/weekly 残量 40% 以下、PR の approved/changes requested/draft/merged)
+# ではその色を優先して塗らない。closed の PR 番号は無色だが塗らない (draft のグレーや merged の紫と区別するため)。
 # 既定は branch (ブランチ名の末尾だけを塗る)。conf では `|` を含むため値をクォートで囲む。
 # env CLAUDE_STATUSLINE_HIGHLIGHT でも上書き可。空の値は既定値扱いなので、どれも塗らないときは none 等の未知のトークンを書く。
 HIGHLIGHT="${CLAUDE_STATUSLINE_HIGHLIGHT:-${HIGHLIGHT:-branch}}"
@@ -194,6 +196,7 @@ clamp_int GIT_FETCH_INTERVAL_SEC 900 "$GIT_FETCH_INTERVAL_MIN_SEC" "$GIT_FETCH_I
 # セマンティック名 (success/error/warning/claude/permission ...) は公式キーをそのまま維持し、
 # 未使用キーも将来用に保持する。各使用箇所はこの定数を参照する。
 # COLOR_subagent_* は公式キー <color>_FOR_SUBAGENTS_ONLY に対応する (名前のみ短縮)。
+# 各分岐の末尾の COLOR_prDraft は公式キーではなく、このスクリプトが定める別名 (テーマごとに上の公式キーの値を参照する)。
 
 # R;G;B を truecolor 前景 ESC (\033[38;2;R;G;Bm) に変換する。定義時のみ使う。
 _fg() { printf '\033[38;2;%sm' "$1"; }

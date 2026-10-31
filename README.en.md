@@ -194,7 +194,7 @@ HIGHLIGHT="directory|branch|session|rate_chart|rate_reset"
 | `pr_comments` | Number of PR comments |
 | `pr_number` | PR number (while awaiting review) |
 
-- An element that already has a color keeps it, such as ctx or the rate limit in a warning level, or a model color like Opus
+- An element that already has a color keeps it, such as ctx or the rate limit in a warning level, a model color like Opus, or a PR number such as approved
 - The default is `branch` (only the end of the branch name). To paint nothing, write only an unknown token such as `HIGHLIGHT="none"` (unknown tokens are ignored, and an empty value falls back to the default)
 - Keep `COLOR_SCHEME` matched to the Claude Code theme. If they differ, the text becomes unreadable, for example white text on a light background
 - Emptying the environment variable `CLAUDE_STATUSLINE_HIGHLIGHT` does not clear the value from the configuration file. To disable it temporarily, pass an unknown token such as `none`

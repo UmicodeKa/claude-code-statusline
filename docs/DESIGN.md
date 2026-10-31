@@ -269,7 +269,7 @@ head のブランチ名とオーナーを push 先 (`@{push}`) から決める�
 pending (レビューがまだない open) と draft は、どちらも｢動きのない open｣です。この 2 つは互いの色の差を小さくし、approved / changes requested / merged だけが色で目立つようにしています。
 
 - pending は無色で、`HIGHLIGHT` に `pr_number` があるときだけ `text` で塗ります。`text` は｢`HIGHLIGHT` で選んだ要素｣を表す色なので、pending の状態の色に固定で使うと 1 つの色に 2 つの意味が乗ります。ハイライトの対象にすれば、`text` の意味は 1 つのままです
-- draft はテーマ別のグレー `COLOR_prDraft` (dark は `subtle`、light は `inactive`) で塗ります。`subtle` と `inactive` はどちらも両テーマで同じ値なので、1 色に決めるとどちらかのテーマで読みにくくなります (`inactive` は黒背景で約 2.9:1、`subtle` は白背景で約 2.2:1)。背景とのコントラストよりも pending との差が小さいことを優先して、dark では白に近い `subtle` を選んでいます
+- draft はテーマ別のグレー `COLOR_prDraft` (dark は `subtle`、light は `inactive`) で塗ります。`subtle` と `inactive` はどちらも両テーマで同じ値なので、1 色に決めるとどちらかのテーマで読みにくくなります (`inactive` は黒背景で約 3.7:1、`subtle` は白背景で約 2.2:1)。背景とのコントラストよりも pending との差が小さいことを優先して、dark では白に近い `subtle` を選んでいます
 - テーマごとの色の判断は色定義ブロック (`case "$COLOR_SCHEME"`) に集め、`format_pr` では `COLOR_SCHEME` を見ません。両版のずれは `tests/script-parity.sh` で検出します
 - closed は無色のままで、`pr_number` を指定しても塗りません。無色であることで draft のグレーや merged の紫と区別しているためです
 - `format_pr` は PR 番号を `highlight` に通さず、`hl_has pr_number` で判定して `color` に `COLOR_text` を入れます。下線 (`\e[4m`) を色より前に置く必要があり、`highlight` が付ける `\e[0m` と番号の末尾の `\e[0m` が二重になるためです。`color` に入れれば ESC 列の形は他の状態と同じになります

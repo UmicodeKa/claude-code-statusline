@@ -320,7 +320,7 @@ pending (an open PR with no review yet) and draft are both "an open PR with no a
   Making it a highlight target keeps `text` to a single meaning
 - draft is painted with the theme-dependent gray `COLOR_prDraft` (`subtle` in dark, `inactive` in light).
   `subtle` and `inactive` each have the same value in both themes, so picking one color makes it hard to read in one of the themes
-  (`inactive` is about 2.9:1 on a black background, `subtle` is about 2.2:1 on a white background). A small difference from pending is preferred over contrast against the background, so dark uses `subtle`, which is close to white
+  (`inactive` is about 3.7:1 on a black background, `subtle` is about 2.2:1 on a white background). A small difference from pending is preferred over contrast against the background, so dark uses `subtle`, which is close to white
 - Theme-dependent color decisions are gathered in the color definition block (`case "$COLOR_SCHEME"`), and `format_pr` does not look at `COLOR_SCHEME`. Drift between the two versions is detected by `tests/script-parity.sh`
 - closed stays uncolored and is not painted even when `pr_number` is specified. Being uncolored distinguishes it from the gray of draft and the purple of merged
 - `format_pr` does not pass the PR number through `highlight`; it checks `hl_has pr_number` and puts `COLOR_text` into `color`.

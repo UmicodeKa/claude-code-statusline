@@ -186,7 +186,7 @@ HIGHLIGHT="directory|branch|session|rate_chart|rate_reset"
 | `pr_comments` | PR のコメントの件数 |
 | `pr_number` | PR 番号 (レビュー待ちのとき) |
 
-- 警戒域の ctx やレートリミット、Opus などのモデル色のように、もともと色が付いている状態ではその色が優先される
+- 警戒域の ctx やレートリミット、Opus などのモデル色、approved などの PR 番号のように、もともと色が付いている状態ではその色が優先される
 - 既定は `branch` (ブランチ名の末尾だけ)。どれも塗らないときは `HIGHLIGHT="none"` のように未知のトークンだけを書く (未知のトークンは無視され、空の値は既定値になる)
 - `COLOR_SCHEME` を Claude Code のテーマに合わせておく。食い違うと、明るい背景に白い文字が重なるなどして読めなくなる
 - 環境変数 `CLAUDE_STATUSLINE_HIGHLIGHT` を空にしても設定ファイルの値は消えない。一時的に無効にするときは `none` などの未知のトークンを渡す
