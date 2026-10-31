@@ -479,7 +479,7 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 - `RATE_CHART_LEN_MAX` などの内部定数は、書いても読み込み後に定義し直されるため効かない
 - 数値の設定は読み込み後に [丸め](#間引き間隔の推奨レンジ) を適用する
 
-配布テンプレート [`statusline.conf`](../statusline.conf) は全項目を既定値で記載している。
+配布テンプレート [`statusline.conf`](../statusline.conf) は全項目を既定値で記載している。ただし `HIGHLIGHT` は、おすすめの設定として `branch|pr_number` にしている。
 
 ### レイアウト (`LAYOUT_LINE1` / `LAYOUT_LINE2`)
 

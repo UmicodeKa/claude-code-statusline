@@ -107,7 +107,7 @@ mkdir -p ~/.claude
 
 ### 設定ファイル
 
-`~/.claude/statusline.conf` に設定を書くと、スクリプト本体を編集せずに挙動を変えられる。ファイルが無ければ既定値で動く。全項目を既定値で埋めたテンプレート [`statusline.conf`](statusline.conf) をコピーし、変えたい行だけ書き換えるのが手早い。
+`~/.claude/statusline.conf` に設定を書くと、スクリプト本体を編集せずに挙動を変えられる。ファイルが無ければ既定値で動く。全項目を記載したテンプレート [`statusline.conf`](statusline.conf) (値は既定値。`HIGHLIGHT` だけはおすすめの設定 `branch|pr_number`) をコピーし、変えたい行だけ書き換えるのが手早い。
 
 ```bash
 cp statusline.conf ~/.claude/statusline.conf
