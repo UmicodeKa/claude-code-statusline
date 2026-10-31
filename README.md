@@ -19,6 +19,13 @@ my-project | main ↑2↓3 | c9b8fce 3+13-5 | my-session
 ✻ Opus 4.7∙high ▆ 72% | ▇▇▇▆▆▆▅▅▄▄▃▃ 35% - 18:30 | ▅ Thu
 ```
 
+[`PR_STATUS=1`](#pr_status1-で-pr-の状態を表示する) にすると、ブランチ列に PR の番号が出る。CI のチェックがあれば状態を、コメントがあれば件数を添える。
+
+```text
+my-project | main ↑2↓3 #12✓ 3 | c9b8fce 3+13-5 | my-session
+✻ Opus 4.7∙high ▆ 72% | ▇▇▇▆▆▆▅▅▄▄▃▃ 35% - 18:30 | ▅ Thu
+```
+
 - 1 行目: ディレクトリ名 / git ブランチ (リモートとの差つき。[`PR_STATUS=1`](#pr_status1-で-pr-の状態を表示する) で GitHub の PR の状態も表示) / コミットハッシュと作業ツリーの変更行数 / セッション名
 - 2 行目: モデル名と推論強度 (effort) / コンテキスト使用率 / 5 時間のレートリミット残量の推移とリセット時刻 / 週間 (7 日間) のレートリミット残量とリセットの曜日
 
@@ -136,6 +143,7 @@ LAYOUT_LINE1="session|directory|branch|commit"
 同じ設定を複数の場所で指定したときは、環境変数 > 設定ファイル > 既定値 の順に優先される。
 
 - 環境変数は `CLAUDE_STATUSLINE_<名前>` (例 `CLAUDE_STATUSLINE_COLOR_SCHEME=light`)。主にテストや一時的な切替向け
+- 設定ファイルのパスは環境変数 `CLAUDE_STATUSLINE_CONFIG` で差し替えられる (既定は `~/.claude/statusline.conf`)。主にテスト向け
 - `RATE_CHART_LEN`、`POLL_INTERVAL_SEC`、`GIT_FETCH_INTERVAL_SEC` には環境変数が無く、設定ファイルでだけ変えられる
 - 設定ファイルには短縮名 (`COLOR_SCHEME`) を書く。環境変数名で書くと環境変数側の値を上書きしてしまう
 
@@ -378,6 +386,14 @@ Linux では `statusline-linux.sh` をコピーする。
 - ブランチを push していない、または push 先のブランチに PR が無いときは表示されない。マージ済み･クローズ済みの PR は、ローカルの HEAD がその PR の最後のコミットと一致するときだけ表示する
 - 取得に失敗し続けると、最後に成功してから 30 分で表示が消える
 
+### ctx、rate、weekly が `--` になる
+
+Claude Code が値を渡していない間は `--` が表示される。
+
+- rate (`<チャート> --`) と weekly (`· --`): `rate_limits` は claude.ai の Pro / Max の契約者などにだけ、セッションの最初の API 応答の後から渡される。渡されない間は `--` のままで、設定では解消できない
+- `five_hour` と `seven_day` は独立に欠落しうるため、rate と weekly の片方だけが `--` になることもある
+- ctx (`· --`): `context_window.used_percentage` が渡されない間は `--` になる
+
 ### 色がおかしい
 
 - 端末が truecolor (24bit カラー) に対応しているか確認する。非対応の端末では近似色になったり、制御文字がそのまま見えたりする
@@ -388,6 +404,7 @@ Linux では `statusline-linux.sh` をコピーする。
 - `~/.claude/statusline.conf` はシェルスクリプトとして読み込まれ、描画のたびに実行される。信頼できない内容を書かない
 - ネットワークにアクセスするのは、`GIT_FETCH=1` (`git fetch`) と `PR_STATUS=1` (`gh` による GitHub API への問い合わせ) を有効にしたときだけ
 - レートリミットの履歴や PR のキャッシュは `/tmp/claude-statusline-<uid>/` にパーミッション 700 で保存する。他ユーザー所有やシンボリックリンクの場合は使わず、履歴と PR の状態なしで表示を続ける
+- 保存先は環境変数 `CLAUDE_STATUSLINE_HISTORY_DIR` で変えられる (設定ファイルでは変えられない)。指定先は無ければ作成し、パーミッションを 700 に変更するため、専用のディレクトリを指定する
 
 ## 開発者向け
 

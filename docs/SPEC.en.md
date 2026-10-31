@@ -38,7 +38,7 @@ The following fields are used from the JSON that Claude Code passes on stdin.
 | `rate_limits.seven_day.used_percentage` | Weekly (7-day) rate limit usage | weekly is shown as `· --` |
 | `rate_limits.seven_day.resets_at` | Weekly reset time (epoch seconds) | The weekday is not shown (same as `0`) |
 | `session_name` | Session name | The session column is omitted |
-| `workspace.current_dir` | Used to get the directory name, branch, and commit hash | The directory, branch, and commit columns are omitted |
+| `workspace.current_dir` | Used to get the directory name, branch, and commit hash. Also used to get ahead/behind, as the unit for throttling `GIT_FETCH`, and to get the PR status (cache key and the directory where `gh` / `git` run) | The directory column, the branch column (`<ab>` and `<pr>` are not shown either), and the commit column are omitted |
 
 - Control characters (newline, tab, CR, ESC, etc.) in string fields (`model.display_name` / `session_name` / `workspace.current_dir` / `effort.level`) are replaced with a space.
   This prevents an ANSI escape hidden in a value from changing the color of the columns that follow
@@ -256,6 +256,11 @@ my-project | main ↑2↓3 | c9b8fce 3+13-5 | my-session
 ```
 
 ```text
+my-project | main ↑2↓3 #12✓ 3 | c9b8fce 3+13-5 | my-session
+✻ Opus 4.7∙high ▆ 72% | ▇▇▇▆▆▆▅▅▄▄▃▃ 35% - 18:30 | ▅ Thu
+```
+
+```text
 ✻ Opus 4.7∙high ▄ | ▇▇▇▆▆▆▆▅▅▅▄▄ 18:30 | ▂ 22% - Thu
 ```
 
@@ -264,8 +269,9 @@ my-project | main ↑2↓3 | c9b8fce 3+13-5 | my-session
 ```
 
 The first is the default display with rate in the warning range and weekly at 62%.
-The second is the display with weekly in the warning range (22%).
-The third is the output when an empty JSON (`{}`) is passed with no rate history (if history exists, the chart part would be the saved history). All line 1 elements are empty, so there is only one line.
+The second is the `PR_STATUS=1` display, which adds the PR status (`#12✓ 3`) to the first.
+The third is the display with weekly in the warning range (22%).
+The fourth is the output when an empty JSON (`{}`) is passed with no rate history (if history exists, the chart part would be the saved history). All line 1 elements are empty, so there is only one line.
 
 ## Trimming Rules
 
@@ -435,7 +441,7 @@ Only the remaining rate limit is kept in history (ctx is not).
   If the chart length is increased, the saved history is reflected in the display immediately (missing entries show as `·` and are filled in with each append).
   A history file with fewer entries than the stored count can also be used as-is
 - If the lock cannot be acquired within `LOCK_TIMEOUT_SEC` seconds, no append is done for that render (rendering continues)
-- The default `HISTORY_DIR` is `/tmp/claude-statusline-<uid>/`. It can be changed with the env `CLAUDE_STATUSLINE_HISTORY_DIR` (not available in conf)
+- The default `HISTORY_DIR` is `/tmp/claude-statusline-<uid>/`. It can be changed with the env `CLAUDE_STATUSLINE_HISTORY_DIR` (not available in conf). The specified directory is created if missing and its permission is changed to 700
 - If `HISTORY_DIR` is a symlink, is not owned by the current uid, or does not have mode 700, the history feature is disabled and rendering continues
 
 ### Recommended Throttling Interval Ranges

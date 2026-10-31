@@ -24,6 +24,13 @@ my-project | main ↑2↓3 | c9b8fce 3+13-5 | my-session
 ✻ Opus 4.7∙high ▆ 72% | ▇▇▇▆▆▆▅▅▄▄▃▃ 35% - 18:30 | ▅ Thu
 ```
 
+With [`PR_STATUS=1`](#showing-pr-status-with-pr_status1), the PR number appears in the branch column, followed by the CI state if there are checks and the number of comments if there are any.
+
+```text
+my-project | main ↑2↓3 #12✓ 3 | c9b8fce 3+13-5 | my-session
+✻ Opus 4.7∙high ▆ 72% | ▇▇▇▆▆▆▅▅▄▄▃▃ 35% - 18:30 | ▅ Thu
+```
+
 - Line 1: directory name / git branch (with the difference from the remote; [`PR_STATUS=1`](#showing-pr-status-with-pr_status1) also shows the GitHub PR status) / commit hash and the number of changed lines in the working tree / session name
 - Line 2: model name and reasoning effort / context usage / trend of the 5-hour rate limit remaining and its reset time / weekly (7-day) rate limit remaining and the day of the week it resets
 
@@ -143,6 +150,7 @@ LAYOUT_LINE1="session|directory|branch|commit"
 When the same setting is specified in several places, the order of precedence is environment variable > configuration file > default.
 
 - The environment variable is `CLAUDE_STATUSLINE_<NAME>` (e.g. `CLAUDE_STATUSLINE_COLOR_SCHEME=light`). It is mainly for tests and temporary switching
+- The path of the configuration file can be replaced with the environment variable `CLAUDE_STATUSLINE_CONFIG` (default `~/.claude/statusline.conf`). It is mainly for tests
 - `RATE_CHART_LEN`, `POLL_INTERVAL_SEC` and `GIT_FETCH_INTERVAL_SEC` have no environment variable and can be changed only in the configuration file
 - Write the short name (`COLOR_SCHEME`) in the configuration file. Writing the environment variable name there overwrites the value from the environment
 
@@ -394,6 +402,14 @@ By default `git fetch` is not run, so `↓` is the value as of the last fetch / 
 - It is not shown if the branch has not been pushed or the pushed branch has no PR. A merged or closed PR is shown only when the local HEAD matches that PR's last commit
 - If fetching keeps failing, the display disappears 30 minutes after the last success
 
+### ctx, rate or weekly shows `--`
+
+`--` is shown while Claude Code does not pass the value.
+
+- rate (`<chart> --`) and weekly (`· --`): `rate_limits` is passed only to subscribers such as claude.ai Pro / Max, and only after the first API response of a session. While it is not passed, `--` stays and no setting can change that
+- `five_hour` and `seven_day` can be missing independently, so only one of rate and weekly may show `--`
+- ctx (`· --`): `--` is shown while `context_window.used_percentage` is not passed
+
 ### The colors look wrong
 
 - Check that the terminal supports truecolor (24-bit color). On a terminal that does not, the colors may be approximated or the control characters may show as they are
@@ -404,6 +420,7 @@ By default `git fetch` is not run, so `↓` is the value as of the last fetch / 
 - `~/.claude/statusline.conf` is loaded as a shell script and executed on every render. Do not write untrusted content in it
 - The network is accessed only when you enable `GIT_FETCH=1` (`git fetch`) or `PR_STATUS=1` (queries to the GitHub API via `gh`)
 - The rate limit history and the PR cache are saved in `/tmp/claude-statusline-<uid>/` with permission 700. If the directory is owned by another user or is a symbolic link, it is not used and the display continues without the history and the PR status
+- The location can be changed with the environment variable `CLAUDE_STATUSLINE_HISTORY_DIR` (not with the configuration file). The specified directory is created if missing and its permission is changed to 700, so specify a dedicated directory
 
 ## For developers
 
