@@ -184,8 +184,9 @@ HIGHLIGHT="directory|branch|session|rate_chart|rate_reset"
 | `rate_chart` / `rate_reset` | 5 時間のレートリミットのチャート / リセット時刻 |
 | `weekly_chart` / `weekly_reset` | 週間のレートリミットのスパーク / リセットの曜日 |
 | `pr_comments` | PR のコメントの件数 |
+| `pr_number` | PR 番号 (レビュー待ちのとき) |
 
-- 警戒域の ctx やレートリミット、Opus などのモデル色のように、もともと色が付いている状態ではその色が優先される
+- 警戒域の ctx やレートリミット、Opus などのモデル色、approved などの PR 番号のように、もともと色が付いている状態ではその色が優先される
 - 既定は `branch` (ブランチ名の末尾だけ)。どれも塗らないときは `HIGHLIGHT="none"` のように未知のトークンだけを書く (未知のトークンは無視され、空の値は既定値になる)
 - `COLOR_SCHEME` を Claude Code のテーマに合わせておく。食い違うと、明るい背景に白い文字が重なるなどして読めなくなる
 - 環境変数 `CLAUDE_STATUSLINE_HIGHLIGHT` を空にしても設定ファイルの値は消えない。一時的に無効にするときは `none` などの未知のトークンを渡す
@@ -220,7 +221,7 @@ PR_STATUS=1
 my-project | feature/login ↑1 #12✓ 3 | c9b8fce 3+10-2 | my-session
 ```
 
-- `#12` には下線が付き、色は PR の状態を表す (approved 緑、レビュー待ち青紫、changes requested 赤、draft 無色、merged 紫 + 取り消し線、closed 無色 + 取り消し線)
+- `#12` には下線が付き、色は PR の状態を表す (approved 緑、レビュー待ち無色、changes requested 赤、draft グレー、merged 紫 + 取り消し線、closed 無色 + 取り消し線)
 - `✓` / `✗` / `●` は CI の成功 / 失敗 / 実行中で、`#12` に続けて表示する。チェックが無ければ出ない
 - 末尾の `3` は PR のコメントの件数 (会話、行コメントとその返信、本文付きのレビュー)。GitHub の PR 一覧で吹き出しアイコンに出る数と同じで、0 件なら出ない
 - PR が無い、または取得できないときは何も出ない
@@ -318,7 +319,7 @@ my-project
 | レートリミット残量 (5 時間 / 週間) | 40% 以下で黄、15% 以下でオレンジ、5% 以下で赤の点滅 |
 | ブランチ列 | `↑` 青、`↓` 黄 |
 | commit 列 | ハッシュは無色、変更のファイル数は文字色、追加行 緑、削除行 赤 |
-| PR 番号 | 下線付き。approved 緑、pending 青紫、changes requested 赤、draft 無色、merged 紫 + 取り消し線、closed 無色 + 取り消し線 |
+| PR 番号 | 下線付き。approved 緑、pending 無色 (`HIGHLIGHT` の `pr_number` で文字色)、changes requested 赤、draft グレー、merged 紫 + 取り消し線、closed 無色 + 取り消し線 |
 | PR の CI | `✓` 緑、`✗` 赤、`●` 黄 |
 
 ## 更新とアンインストール

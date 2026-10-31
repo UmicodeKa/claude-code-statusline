@@ -1,0 +1,2 @@
+# draft (light): #12 は inactive (102;102;102) で塗る。subtle は白背景で読みにくいため、dark とは別のグレーを使う
+matches_line1: ^\\e\[38;2;0;0;0mmain\\e\[0m \\e\]8;;https://github\.com/my-org/my-project/pull/12\\a\\e\[4m\\e\[38;2;102;102;102m#12\\e\[0m\\e\]8;;\\a 1$

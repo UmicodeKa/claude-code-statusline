@@ -90,8 +90,10 @@ LAYOUT_LINE2="${CLAUDE_STATUSLINE_LAYOUT_LINE2:-${LAYOUT_LINE2:-$LAYOUT_LINE2_TO
 # 無色で表示する要素のうち、目立たせたいものを text 色 (dark は白、light は黒) で塗る。
 # トークンを `|` で区切って並べる (区切りと空白の扱いは LAYOUT_LINE* と同じ。未知のトークンは黙って無視する)。
 #   directory / branch (表示中の名前の最後の `/` より後ろ) / commit (コミットハッシュ) / session / model (✻ とモデル名) /
-#   ctx_chart / rate_chart / rate_reset / weekly_chart / weekly_reset / pr_comments (PR のコメントの件数)
-# 色が付いている状態 (Fable/Opus/Haiku、ctx 70% 以上、rate/weekly 残量 40% 以下) ではその色を優先して塗らない。
+#   ctx_chart / rate_chart / rate_reset / weekly_chart / weekly_reset / pr_comments (PR のコメントの件数) /
+#   pr_number (open で review が approved / changes_requested 以外の PR 番号)
+# 色が付いている状態 (Fable/Opus/Haiku、ctx 70% 以上、rate/weekly 残量 40% 以下、PR の approved/changes requested/draft/merged)
+# ではその色を優先して塗らない。closed の PR 番号は無色だが塗らない (draft のグレーや merged の紫と区別するため)。
 # 既定は branch (ブランチ名の末尾だけを塗る)。conf では `|` を含むため値をクォートで囲む。
 # env CLAUDE_STATUSLINE_HIGHLIGHT でも上書き可。空の値は既定値扱いなので、どれも塗らないときは none 等の未知のトークンを書く。
 HIGHLIGHT="${CLAUDE_STATUSLINE_HIGHLIGHT:-${HIGHLIGHT:-branch}}"
@@ -194,6 +196,7 @@ clamp_int GIT_FETCH_INTERVAL_SEC 900 "$GIT_FETCH_INTERVAL_MIN_SEC" "$GIT_FETCH_I
 # セマンティック名 (success/error/warning/claude/permission ...) は公式キーをそのまま維持し、
 # 未使用キーも将来用に保持する。各使用箇所はこの定数を参照する。
 # COLOR_subagent_* は公式キー <color>_FOR_SUBAGENTS_ONLY に対応する (名前のみ短縮)。
+# 各分岐の末尾の COLOR_prDraft は公式キーではなく、このスクリプトが定める別名 (テーマごとに上の公式キーの値を参照する)。
 
 # R;G;B を truecolor 前景 ESC (\033[38;2;R;G;Bm) に変換する。定義時のみ使う。
 _fg() { printf '\033[38;2;%sm' "$1"; }
@@ -222,6 +225,8 @@ case "$COLOR_SCHEME" in
     COLOR_subagent_yellow=$(_fg '255;204;0');        COLOR_subagent_green=$(_fg '0;204;0')
     COLOR_subagent_cyan=$(_fg '0;178;178');          COLOR_subagent_blue=$(_fg '0;102;204')
     COLOR_subagent_purple=$(_fg '128;0;128');        COLOR_subagent_pink=$(_fg '255;102;178')
+    # PR の draft の #<番号>。subtle は白背景で、inactive は黒背景で読みにくいため、テーマ別に選ぶ
+    COLOR_prDraft=$COLOR_inactive
     ;;
   *)  # dark (既定)
     COLOR_autoAccept=$(_fg '175;135;255');           COLOR_bashBorder=$(_fg '253;93;177')
@@ -245,6 +250,8 @@ case "$COLOR_SCHEME" in
     COLOR_subagent_yellow=$(_fg '202;138;4');        COLOR_subagent_green=$(_fg '22;163;74')
     COLOR_subagent_cyan=$(_fg '8;145;178');          COLOR_subagent_blue=$(_fg '106;155;204')
     COLOR_subagent_purple=$(_fg '130;125;189');      COLOR_subagent_pink=$(_fg '196;102;134')
+    # PR の draft の #<番号>。subtle は白背景で、inactive は黒背景で読みにくいため、テーマ別に選ぶ
+    COLOR_prDraft=$COLOR_subtle
     ;;
 esac
 
@@ -491,7 +498,16 @@ paint() {
 highlight() {
   hl_out=$2
   [ -n "$2" ] || return 0
-  case "$hl_set" in *"|$1|"*) hl_out="${COLOR_text}$2"$'\033[0m' ;; esac
+  hl_has "$1" && hl_out="${COLOR_text}$2"$'\033[0m'
+  return 0
+}
+
+# hl_has <トークン>
+# トークンが HIGHLIGHT で指定されていれば 0、そうでなければ 1 を返す。
+# 色を呼び出し側で組み立てる要素 (PR 番号) は、highlight の出力の形に頼らずこれで判定する。
+hl_has() {
+  case "$hl_set" in *"|$1|"*) return 0 ;; esac
+  return 1
 }
 
 # 色を決める関数 (*_color <変数名> <値>) は、paint の effect 指定を printf -v で第 1 引数の変数に入れる
@@ -911,6 +927,9 @@ pr_cache_load() {
 
 # 読み込んだキャッシュから PR の状態表示の値を組み立てて pr_str に入れる。PR がなければ空。
 #   #<番号>: 状態の色で塗り、下線 (SGR 4) を付ける。merged / closed は取り消し線 (SGR 9) も重ねる。
+#            open で review が approved / changes_requested 以外 (pending など) は無色で、HIGHLIGHT に
+#            pr_number があれば text で塗る。下線を色より前に置くため、highlight は通さず hl_has で判定する。
+#            draft はテーマ別のグレー (COLOR_prDraft)、closed は無色
 #            url があり FORCE_HYPERLINK=0 でなければ、ここだけを OSC 8 で PR へのリンクにする
 #   CI 記号: open / draft のときだけ、#<番号> に詰めて続ける
 #   件数:    open / draft でコメントが 1 件以上のときだけ、半角スペースを挟んで続ける。
@@ -925,10 +944,10 @@ format_pr() {
       case "$pr_review" in
         approved)          color=$COLOR_success ;;
         changes_requested) color=$COLOR_error ;;
-        *)                 color=$COLOR_permission ;;
+        *)                 hl_has pr_number && color=$COLOR_text ;;
       esac
       ;;
-    draft)  ;;
+    draft)  color=$COLOR_prDraft ;;
     merged) color=$COLOR_merged; deco='4;9' ;;
     closed) deco='4;9' ;;
     *) return ;;
