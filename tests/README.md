@@ -172,6 +172,7 @@ conf は一時ファイルに書いて渡します。`RATE_CHART_LEN` と `POLL_
 - `git-fetch-on/`: fetch は fake git が受けるため、実際のネットワークには出ません。fetch 有効時も描画出力が変わらないことを確かめます。
 - `config-file/`: 通常ファイルのほか、ディレクトリ (読めない conf の再現。`83-config-unreadable`) や、配布テンプレート `statusline.conf` への symlink (`86-config-template` / `95-config-template-layout`) も置けます。
   - `86-config-template` / `95-config-template-layout` は配布テンプレート `statusline.conf` を読ませ、出力が既定値のときと一致することで、テンプレートの値が既定値とずれていないことを確かめます。`86` は branch / session の無い fixture のため、1 行目の並びの一致は `95` で確かめます。
+    - テンプレートは `HIGHLIGHT` だけをおすすめの設定 `branch|pr_number` にしています。どちらも PR を表示しない fixture のため、`pr_number` は出力に現れません。
   - レイアウトの値は `|` を含むため、テンプレートではクォートで囲んでいます。
 - `layout/`: 空行は｢指定なし｣を意味します。
 - `highlight/`: マーカーが無いケースでは空で渡します (conf → 既定値。既定は `branch`)。conf の `HIGHLIGHT` を確かめるケース (`166-highlight-config` など) は `config-file/` を使い、env が conf に勝つことは両方のマーカーを置いて確かめます。前後の空白やタブも含めて 1 行目をそのまま渡します (`165-highlight-tokens`)。

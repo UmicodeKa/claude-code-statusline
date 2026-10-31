@@ -113,7 +113,7 @@ mkdir -p ~/.claude
 ### Configuration file
 
 Write settings in `~/.claude/statusline.conf` to change the behavior without editing the script. Without the file, the defaults are used.
-The quickest way is to copy the template [`statusline.conf`](statusline.conf), which lists every option with its default, and edit only the lines you want to change.
+The quickest way is to copy the template [`statusline.conf`](statusline.conf), which lists every option with its default value (except `HIGHLIGHT`, set to the recommended `branch|pr_number`), and edit only the lines you want to change.
 
 ```bash
 cp statusline.conf ~/.claude/statusline.conf

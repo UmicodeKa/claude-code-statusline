@@ -192,6 +192,7 @@ Notes for each marker follow.
 - `git-fetch-on/`: The fetch is received by the fake git, so it never reaches the real network. This verifies that the rendered output does not change when fetch is enabled.
 - `config-file/`: Besides regular files, you can also place a directory (reproduces an unreadable conf; `83-config-unreadable`) or a symlink to the distributed template `statusline.conf` (`86-config-template` / `95-config-template-layout`).
   - `86-config-template` / `95-config-template-layout` load the distributed template `statusline.conf` and verify that its values have not drifted from the defaults, by checking that the output matches the output with default values.
+    - The template sets only `HIGHLIGHT` to the recommended `branch|pr_number`. Neither fixture displays a PR, so `pr_number` does not show up in the output.
     `86` uses a fixture with no branch / session, so the match of the line 1 order is verified by `95`.
   - Layout values contain `|`, so the template wraps them in quotes.
 - `layout/`: An empty line means "not specified".
