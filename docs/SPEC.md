@@ -153,7 +153,7 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 | 片方が 0 | その側を省略する (`3+8`、`2-5`)。ファイル数は変更があれば常に出す |
 | すべて 0 (クリーン) | 何も出さない (ハッシュの後ろのスペースも出さない) |
 
-- unborn では `git diff HEAD --numstat` が失敗し、`git status -z` のステージ済みのエントリ (`A  path`) は数えないので、ステージ済みのファイルしか無いときは何も出ない
+- unborn では `git diff HEAD --numstat` が失敗し、`git status -z` のステージ済みのエントリ (`A  path`) は数えないので、ステージ済みのファイルしか無いときは何も出ず、クリーンと同じく commit 列ごと省略される
 
 ### session_name
 

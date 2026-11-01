@@ -162,6 +162,7 @@ To the right of the hash, `<files><+added><-removed>` is output packed together 
 | All 0 (clean) | Nothing is output (nor the space after the hash) |
 
 - In an unborn repository `git diff HEAD --numstat` fails, and the staged entries of `git status -z` (`A  path`) are not counted, so when there are only staged files nothing is output
+  and, as in a clean working tree, the commit column is omitted entirely
 
 ### session_name
 

@@ -656,7 +656,8 @@ truncate_branch() {
 #       未追跡が UNTRACKED_DIFF_LIMIT 件を超えた分は diff を呼ばずファイル数のみ数える
 #       (大量未追跡時に describe ごとの fork で描画が遅延するのを防ぐ)。
 #   gitignore 対象は git status/git diff が元々除外する。
-#   ファイル数 0 かつ追加 0 かつ削除 0 (クリーン)、または HEAD 無し/git 失敗時は空を返す。
+#   ファイル数 0 かつ追加 0 かつ削除 0 (クリーン、または git 失敗) のときは空を返す。
+#   HEAD 無し (unborn) では追跡変更が数えられず未追跡だけを数えるので、未追跡が無ければ空になる。
 #   ファイル数は変更があれば常に表示する。+0/-0 はその側を省略する。
 #   ファイル数は意図的に text (dark 純白 / light 純黒) で塗る。デフォルトの前景色ではなく COLOR_SCHEME に応じた固定色。
 git_diff_stat() {
