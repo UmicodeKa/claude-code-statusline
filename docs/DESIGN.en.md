@@ -131,8 +131,9 @@ Line 1 is built in a separate array, `line1_parts`, distinct from the line 2 `pa
   - `branch` is the name trimmed by `truncate_branch 25` (only the last segment is passed through `highlight`), followed by `${ab_str:+ $ab_str}${pr_str:+ $pr_str}` (the `:+` makes the concatenation conditional so no stray space is left when
     ab / PR are empty)
     - `pr_str` is set by `pr_token`, which is called just before in the same case clause. If the concatenation is moved before `pr_token`, the PR no longer appears
-  - `commit` is the hash passed through `highlight commit`, followed by `${hl_out:+ }` and `diff_str` (so no leading space is left when the hash is empty on an unborn branch. diff returns `·` even for a clean working tree, so it always
-    appears when there is a branch)
+  - `commit` is the hash passed through `highlight commit`, followed by `${hl_out:+${diff_str:+ }}` and `diff_str` (a space is placed only when both the hash and diff are present,
+    so no stray space is left when the hash is empty on an unborn branch or when diff is empty on a clean working tree.
+    When the repository is unborn and clean, the value is empty and the column is omitted by the line 1 rule. If line 1 has only the commit column, line 1 itself is not output)
     - The hash and `diff_str` are obtained inside this case clause. As with `pr_token`, git is called only when the column is built, so if `LAYOUT_LINE1` has no `commit`, neither `rev-parse` nor the changed-line aggregation runs
     - The display condition is the same `[ -n "$branch" ]` as branch. There is no separate check for being inside a git repository
 - `model` and `ctx` are not split into separate tokens, because the separator between tokens would vary by combination, complicating both the implementation and the tests

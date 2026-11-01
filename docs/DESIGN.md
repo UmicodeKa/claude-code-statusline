@@ -116,7 +116,7 @@ effort は model とは別の `paint` 呼び出しで塗り、`✻ <model>` の�
   - `model_ctx` は `✻ <model>∙<effort> <ctx>` (`∙` とスペース 1 個を内包)
   - `branch` は `truncate_branch 25` でトリムした名前 (末尾のセグメントだけを `highlight` に通す) に `${ab_str:+ $ab_str}${pr_str:+ $pr_str}` を続ける (ab / PR が空のときに余分なスペースを残さないよう `:+` で条件付き連結)
     - `pr_str` は同じ case 節で直前に呼ぶ `pr_token` が設定する。連結を `pr_token` より前に移すと PR が出なくなる
-  - `commit` は `highlight commit` に通したハッシュに `${hl_out:+ }` と `diff_str` を続ける (unborn でハッシュが空のときに先頭のスペースを残さない。diff は作業ツリーがクリーンでも `·` を返すため、ブランチがあれば常に出る)
+  - `commit` は `highlight commit` に通したハッシュに `${hl_out:+${diff_str:+ }}` と `diff_str` を続ける (ハッシュと diff の両方があるときだけスペースを挟み、unborn でハッシュが空のときやクリーンで diff が空のときにスペースを残さない。unborn かつクリーンでは値が空になり、1 行目の規則で列ごと省略される。1 行目が commit 列だけなら 1 行目ごと出ない)
     - ハッシュと `diff_str` はこの case 節の中で取る。`pr_token` と同じく、列を組み立てるときにだけ git を呼ぶ形にして、`LAYOUT_LINE1` に `commit` が無ければ `rev-parse` も変更行数の集計もしない
     - 表示の条件は branch と同じ `[ -n "$branch" ]`。git 管理内かどうかの判定を別に持たない
 - `model` と `ctx` を別トークンに分けないのは、トークン間の区切りが組み合わせごとに変わり、実装とテストの両方が複雑になるためです

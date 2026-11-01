@@ -1,0 +1,3 @@
+# LAYOUT_LINE1=commit + unborn + クリーン: commit 列の値が空になり、1 行目は全列が空なので 1 行目ごと出ない
+matches_line1: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
+no_line2: true

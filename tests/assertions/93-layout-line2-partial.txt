@@ -1,3 +1,3 @@
 # LAYOUT_LINE2=rate (model_ctx を書かない) -> 欠けたトークンは末尾に補われ、2 行目は常に両方出る (✻ を消さない)
 matches_line2: ^[▁▂▃▄▅▆▇█]{12} 22:13 \| ✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| · --$
-matches_line1: ^sl-repo#branch=main;ab=0… \| \\e\[38;2;255;255;255mmain\\e\[0m \| a1b2c3d · \| my-session$
+matches_line1: ^sl-repo#branch=main;ab=0… \| \\e\[38;2;255;255;255mmain\\e\[0m \| a1b2c3d \| my-session$

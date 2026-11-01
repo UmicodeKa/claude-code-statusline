@@ -2,7 +2,7 @@
 # return され fetch は投げられない。出力は detached の無色 * (前景色、ESC なしの素の *) で不変。
 # 32-branch-detached と同一出力になることを検証する。
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
-matches_line1: ^sl-repo#detached \| \\e\[38;2;255;255;255mHEAD\\e\[0m \* \| [0-9a-f]{7,} ·$
+matches_line1: ^sl-repo#detached \| \\e\[38;2;255;255;255mHEAD\\e\[0m \* \| [0-9a-f]{7,}$
 # detached では fetch を投げない = マーカーが作られない。maybe_git_fetch は入口の
 # is_detached ガードで弾く (git fork を節約するため)。仮にそのガードを外しても、
 # detached は @{upstream} を解決できず rev-list ガードで弾かれる (二重の防御)。

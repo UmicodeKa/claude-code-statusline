@@ -1,4 +1,4 @@
 # PR_STATUS が既定 (0): キャッシュがあっても branch 列に PR を出さない
-matches_line1: ^sl-repo#branch=main;ab=0… \| \\e\[38;2;255;255;255mmain\\e\[0m \| a1b2c3d ·$
+matches_line1: ^sl-repo#branch=main;ab=0… \| \\e\[38;2;255;255;255mmain\\e\[0m \| a1b2c3d$
 not_contains: #12
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$

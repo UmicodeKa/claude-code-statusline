@@ -48,7 +48,7 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 出力は **2 行構成**。
 
 ```text
-<directory> | <ブランチ名>[ <ab>][ <pr>] | [<hash> ]<diff> | <session_name>
+<directory> | <ブランチ名>[ <ab>][ <pr>] | [<hash>][ <diff>] | <session_name>
 ✻ <model>∙<effort> <ctx> | <rate> | <weekly>
 ```
 
@@ -62,7 +62,7 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 | `<model>` と `<effort>` の間 | `∙` (U+2219、前後スペースなし、無色) |
 | `<effort>` (または `<model>`) と `<ctx>` の間 | 半角スペース 1 個 (パイプは出さない) |
 | ブランチ名と `<ab>`、`<ab>` と `<pr>` の間 | 半角スペース 1 個 (空の要素の前には置かない) |
-| `<hash>` と `<diff>` の間 | 半角スペース 1 個 (`<hash>` が空なら置かない) |
+| `<hash>` と `<diff>` の間 | 半角スペース 1 個 (`<hash>` と `<diff>` のどちらかが空なら置かない) |
 
 ### 1 行目
 
@@ -126,15 +126,15 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 
 ### commit 列
 
-`[<hash> ]<diff>` を 1 つの列として出す。
+`[<hash>][ <diff>]` を 1 つの列として出す。ハッシュと `<diff>` の両方があるときだけ間に半角スペースを挟む。unborn かつクリーン (ハッシュも `<diff>` も空) のときは値が空になり、**列ごと省略**する。
 
 コミットハッシュ (`<hash>`):
 
 - `workspace.current_dir` で `git rev-parse --short HEAD` を実行した結果。桁数は git が決める (既定は一意になる最短で 7 桁以上、`core.abbrev` で変えられる)
 - トリムしない
 - 無色。`HIGHLIGHT` に `commit` を書くと、ハッシュだけを `text` で塗る。`<diff>` の色は変わらない ([ハイライト](#ハイライト-highlight))
-- まだコミットが無い (unborn) ときはハッシュが取れず、`<diff>` だけを出す。前にスペースは置かない
-- 表示の条件は branch 列と同じ。git 外、`current_dir` が空、git が未インストールのときは**列ごと省略**する
+- まだコミットが無い (unborn) ときはハッシュが取れず、`<diff>` だけを出す。前にスペースは置かない。作業ツリーもクリーンなら**列ごと省略**する
+- 表示の条件は branch 列と同じ。git 外、`current_dir` が空、git が未インストールのときは**列ごと省略**する。例外として、unborn かつクリーンのときは branch 列が出ても commit 列は出ない
 - `LAYOUT_LINE1` に `commit` が無いときは、ハッシュも `<diff>` も出ない
 
 #### 変更行数 (`<diff>`)
@@ -151,9 +151,9 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 | `+N` の色 | `success` (緑) |
 | `-N` の色 | `error` (赤) |
 | 片方が 0 | その側を省略する (`3+8`、`2-5`)。ファイル数は変更があれば常に出す |
-| すべて 0 (クリーン) | `·` (U+00B7、無色) |
+| すべて 0 (クリーン) | 何も出さない (ハッシュの後ろのスペースも出さない) |
 
-- unborn では `git diff HEAD --numstat` が失敗し、`git status -z` のステージ済みのエントリ (`A  path`) は数えないので、ステージ済みのファイルしか無いときは `·` になる
+- unborn では `git diff HEAD --numstat` が失敗し、`git status -z` のステージ済みのエントリ (`A  path`) は数えないので、ステージ済みのファイルしか無いときは何も出ず、クリーンと同じく commit 列ごと省略される
 
 ### session_name
 
@@ -489,7 +489,7 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 | --- | --- | --- |
 | 1 行目 | `directory` | ディレクトリ名 |
 | | `branch` | `<ブランチ名>[ <ab>][ <pr>]` |
-| | `commit` | `[<hash> ]<diff>` |
+| | `commit` | `[<hash>][ <diff>]` |
 | | `session` | セッション名 |
 | 2 行目 | `model_ctx` | `✻ <model>∙<effort> <ctx>` |
 | | `rate` | 5 時間のレートリミット |
@@ -569,7 +569,7 @@ branch の塗る範囲の例:
 | effort | 既知の値 (`low` から `max`) はすべて色付き。無色になるのは想定外の値だけ |
 | detached HEAD の `*` | 無色であることで、upstream 未設定の青い `*` と区別している |
 | PR の closed の `#<番号>` | 無色であることで、draft のグレーや merged の紫と区別している |
-| 欠落時の `--`、クリーンな `<diff>` の `·` | 値ではなく、欠落や変更なしを表す印 |
+| 欠落時の `--` | 値ではなく、欠落を表す印 |
 | ブランチ名の最後の `/` まで | 作業内容を表すことが多い末尾だけを目立たせる |
 | ` \| `、`∙`、要素の間のスペース | 要素ではなく区切り |
 

@@ -267,7 +267,7 @@ The glibc regex does not interpret range specifications over UTF-8 multibyte cha
 ```text
 # git repository with branch=main. session_name is empty, so the session column on line 1 is omitted
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
-matches_line1: ^sl-repo#branch=main;ab=0… \| main \| a1b2c3d ·$
+matches_line1: ^sl-repo#branch=main;ab=0… \| main \| a1b2c3d$
 contains: | main
 ```
 
