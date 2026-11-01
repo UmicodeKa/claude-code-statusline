@@ -751,9 +751,10 @@ Right after you create a PR, you do not have to wait up to 300 seconds for it to
 - If a fetch started early fails, it is not retried. The next attempt starts at the interval used after a failure (300 seconds)
 - No early fetch is started when `session_id` is empty, contains characters other than alphanumerics, `-`, `_`, and `:`, or is longer than 128 characters
 - In the following cases the signature stays `none` and fetches follow the interval only
-  - `pr` is not passed (an older Claude Code, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is set, `prStatusFooterEnabled` is `false`, or you are on the default branch)
+  - `pr` is not passed (an older Claude Code, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is set, `prStatusFooterEnabled` is `false`, or while you are on the default branch)
   - Only GitLab MRs are passed
 - Switching branches does not change the signature until Claude Code updates `pr` to the new branch's value, so no early fetch is started. The first fetch on the new branch starts from the interval check, as before
+- Switching from a branch with a PR to the default branch (including `gh pr merge --delete-branch`) stops `pr` from being passed and changes the signature to `none`, so one fetch starts on the default branch's key
 - `.seen` is not removed. One file (tens of bytes) is added per session that has a PR. The default `HISTORY_DIR` is under `/tmp`, where the OS removes old files
 - The result of an early fetch is also shown on the render after the fetch finishes. The statusline renders only on events, so if no render happens after the fetch finishes, the result is not shown until your next action
 

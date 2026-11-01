@@ -722,9 +722,10 @@ Claude Code は、セッション内の `git push` や `gh pr create` の直後�
 - 前倒しで起動した取得が失敗しても取り直さない。次の試行は、失敗したときの間隔 (300 秒) で起動する
 - `session_id` が空、英数字と `-` `_` `:` 以外の文字を含む、または 128 文字を超えるときは前倒ししない
 - 次のときは署名が `none` のまま変わらず、間隔だけで取得する
-  - `pr` が渡されない (古い Claude Code、`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` を設定している、`prStatusFooterEnabled` が `false`、既定のブランチにいる)
+  - `pr` が渡されない (古い Claude Code、`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` を設定している、`prStatusFooterEnabled` が `false`、既定のブランチにいる間)
   - GitLab の MR しか渡されない
 - ブランチを切り替えても、Claude Code が `pr` を新しいブランチの値に変えるまでは署名が変わらないため、前倒ししない。切り替え先の最初の取得は、今までどおり間隔の判定で起動する
+- PR のあるブランチから既定のブランチに切り替えると (`gh pr merge --delete-branch` を含む)、`pr` が渡されなくなって署名が `none` に変わるため、既定のブランチのキーで取得が 1 回起動する
 - `.seen` は消さない。PR のあるセッション 1 つにつき 1 つ (数十バイト) 増える。既定の `HISTORY_DIR` は `/tmp` の下で、古いファイルは OS が消す
 - 前倒しした取得の結果も、取得が終わった後の描画で表示される。statusline はイベントでしか描画されないため、取得が終わった後に描画がなければ、次の操作まで表示されない
 

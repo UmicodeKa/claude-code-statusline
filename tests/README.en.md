@@ -76,6 +76,7 @@ The child process runs `cd` to the cwd and then calls `gh`, so it does not get a
 | `early-branch-switch` | Switching branches starts no fetch while the signature stays the same. When the signature changes, it starts on the new branch's key |
 | `early-save-failure` | When `.seen` cannot be written, no early fetch starts and the marker is not rewritten. Once the interval passes, a regular fetch still starts. Nothing starts when the marker cannot be written either |
 | `early-waits-inflight` | While a fetch is running, no early fetch starts and `.seen` is not written. It starts on the render after the fetch finishes |
+| `early-inflight-during-lock` | When a fetch starts running while the render waits for the lock, no early fetch starts and `.seen` is not written (the lock is held from outside, and `.inflight` is created while the render waits). It starts on the render after the fetch finishes |
 | `early-min-interval` | Within 30 seconds of the last early fetch, no early fetch starts and `.seen` is not written. It starts after that. It also starts right after a regular fetch |
 | `early-seen-bad-time` | When the time in `.seen` is not a number (empty, `abc`, `0123`) or is in the future, the minimum interval is treated as having passed |
 | `early-alternating` | Even when the signature alternates under the same `session_id`, fetches do not start more than once per 30 seconds |

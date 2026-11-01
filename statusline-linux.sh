@@ -1080,9 +1080,13 @@ pr_refresh_wanted() {
   pr_refresh_due "$1" "$2" || pr_early_due "$3" "$4" "$2"
 }
 
-# maybe_pr_refresh のロックの中で呼び、取得を起動してよければ 0 を返す。引数は pr_refresh_wanted と同じ。
+# maybe_pr_refresh のロックの中で呼び、取得を起動してよければ 0 を返す。
+#   $1〜$4 は pr_refresh_wanted と同じ / $5 .inflight のパス
 # ロックを待つ間に他のプロセスが起動したかもしれないので、間隔と前倒しの条件を確かめ直し、
 # .seen → マーカーの順に書く。
+#   - 取得が実行中なら前倒しとしては扱わず、.seen も書かない。ロックを待つ間に、ほかの描画が起動した
+#     子プロセスが .inflight を作っていることがある。そのまま前倒しすると、自分の子プロセスは
+#     .inflight を作れずに何もせず終わり、.seen だけが新しくなってきっかけが消費される
 #   - .seen は前倒しの条件が成り立つときだけ書く。書けなければ前倒しとしては起動せず、間隔が
 #     過ぎていれば通常の取得として続ける。書けないまま前倒しすると、次の描画でも署名が違うままで、
 #     描画のたびに起動する (マーカーを書けないときに起動しないのと同じ理由)
@@ -1091,9 +1095,12 @@ pr_refresh_wanted() {
 #     通常の取得まで先送りされ続ける
 #   - マーカーを書けなければ起動しない。書き込み失敗時の扱いとリダイレクトの書き方は maybe_git_fetch と同じ
 pr_refresh_claim() {
-  local marker=$1 now=$2 seen=$3 sig=$4 due=0 early=0
+  local marker=$1 now=$2 seen=$3 sig=$4 inflight=$5 due=0 early=0
   pr_refresh_due "$marker" "$now" && due=1
   pr_early_due "$seen" "$sig" "$now" && early=1
+  if [ "$early" = 1 ] && pr_inflight_busy "$inflight" "$now"; then
+    early=0
+  fi
   if [ "$early" = 1 ] && ! pr_seen_save "$seen" "$sig" "$now"; then
     early=0
   fi
@@ -1274,7 +1281,7 @@ maybe_pr_refresh() {
 
   # ロック取得までの待機中に他プロセスが起動済みかもしれないので、条件を確かめ直してから
   # .seen とマーカーを書く。書けなければ起動しない (pr_refresh_claim)。
-  if ! pr_refresh_claim "$marker" "$now" "$seen" "$sig"; then
+  if ! pr_refresh_claim "$marker" "$now" "$seen" "$sig" "$inflight"; then
     exec {fd}>&-
     return
   fi

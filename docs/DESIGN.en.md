@@ -347,7 +347,11 @@ The display is still built from our own cache as before, and `pr` is not used fo
   - The time is written in the contents of `.seen`, not its mtime, and read with the built-in `read`. Reading the mtime would add a `stat` fork on every render whose signature differs
 - While a fetch is running (`.inflight` exists), no early fetch is started and `.seen` is not written. Writing it first would consume the trigger when `gh pr create` finishes while the fetch started right after `git push` is still running.
   That fetch writes the state from before the PR was created (`none`), so `<pr>` would stay empty until the next regular fetch (up to 300 seconds later). Without writing it, the render after the running fetch finishes starts the early fetch again
+  - Besides the check before taking the lock, it checks again inside the lock (`pr_refresh_claim`). While waiting for the lock, a child started by another render may have created `.inflight`
+  - Only the short gap between another render releasing the lock and its child creating `.inflight` cannot be detected
 - If a fetch started early fails, it is not retried. Retrying would keep starting fetches without end, for example while the network is down. The cache is not rewritten, and the next attempt is 300 seconds later, the same as any failure now
+- While `.seen` cannot be written (a full disk, for example), every render whose signature differs takes the lock and retries the write, adding a few forks per render. No fetch starts, and regular fetches are not postponed.
+  This happens only in an abnormal state, so no mechanism records the failure to thin out the retries
 - Early fetches do not get a separate launch path. They are implemented by adding "the signature changed" to the conditions of `maybe_pr_refresh`
   - A separate path would require keeping the conventions (lock, marker, `.inflight`, fd redirection, environment variables) aligned in two places in each version
   - The checks and the writes of `.seen` and the marker are gathered in `pr_refresh_wanted` / `pr_refresh_claim`, inside the range that `tests/script-parity.sh` compares between the two versions (`block:pr-common`).

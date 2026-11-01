@@ -811,6 +811,54 @@ case_early_waits_inflight() {
   fi
 }
 
+# --- early-inflight-during-lock: ロックを待つ間に取得が実行中になったら、前倒しせず .seen も書かない ---
+# ロックを外から握った状態で描画を走らせ、描画がロックを待つ間に .inflight を作ってから解放する。
+# 前倒しすると自分の子プロセスは .inflight を作れずに終わり、.seen だけが新しくなってきっかけが消える。
+# ロックは macOS 版がディレクトリ (<marker>.lockd)、Linux 版が flock (<marker>.lock)。
+case_early_inflight_during_lock() {
+  local bash_bin=$1 script=$2 label=$3
+  setup_case "branch=main;ab=0,0"
+  trap 'cleanup_case; trap - RETURN' RETURN
+
+  local cache holder="" render
+  cache="$(cache_path main)"
+  seed_fresh
+  set_stdin '"my-session"' "$PR_A"
+  if [ "$label" = macOS ]; then
+    mkdir "$cache.marker.lockd"
+  else
+    flock "$cache.marker.lock" sleep 1.5 &
+    holder=$!
+    wait_until 2 '[ -e "$cache.marker.lock" ]' || true
+  fi
+  run_sl "$bash_bin" "$script" >/dev/null &
+  render=$!
+  # 描画がロックを取る前の .inflight の確認を通り、ロックを待つところまで進む時間を取る。
+  sleep 1
+  mkdir "$cache.inflight"
+  if [ "$label" = macOS ]; then
+    rmdir "$cache.marker.lockd"
+  else
+    wait "$holder" || true
+  fi
+  wait "$render" || true
+  settle
+  if [ "$(sentinel_count)" != "0" ] || [ -e "$(seen_path)" ]; then
+    rmdir "$cache.inflight"
+    fail_case "early-inflight-during-lock [$label]" \
+      "ロックを待つ間に取得が実行中になったのに、gh が $(sentinel_count) 回呼ばれた、または .seen が書かれた"
+    return
+  fi
+  rmdir "$cache.inflight"
+  run_sl "$bash_bin" "$script" >/dev/null
+  if wait_calls 1 && [ "$(seen_sig)" = "$SIG_A" ]; then
+    pass_case "early-inflight-during-lock [$label]"
+  else
+    fail_case "early-inflight-during-lock [$label]" \
+      "取得が終わった後の描画で前倒しが起動しない (gh 呼び出し $(sentinel_count) 回)。きっかけが消費された"
+  fi
+}
+
 # --- early-min-interval: 前回の前倒しから 30 秒以内は前倒しせず .seen も書かない。過ぎた後に起動する ---
 # 基点は通常の取得の時刻ではないので、通常の取得の直後でも前倒しする。
 case_early_min_interval() {
@@ -1142,6 +1190,7 @@ run_all_cases() {
   case_early_branch_switch        "$bash_bin" "$script" "$label"
   case_early_save_failure         "$bash_bin" "$script" "$label"
   case_early_waits_inflight       "$bash_bin" "$script" "$label"
+  case_early_inflight_during_lock "$bash_bin" "$script" "$label"
   case_early_min_interval         "$bash_bin" "$script" "$label"
   case_early_seen_bad_time        "$bash_bin" "$script" "$label"
   case_early_alternating          "$bash_bin" "$script" "$label"

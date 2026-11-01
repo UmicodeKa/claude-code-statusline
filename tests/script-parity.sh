@@ -148,7 +148,7 @@ main() {
   # その版では前倒しが効かなくなる。
   local pr_refresh='/^maybe_pr_refresh() {/,/^}/p'
   check_static pr-early:wanted "$pr_refresh" 'pr_refresh_wanted "$marker" "$now" "$seen" "$sig" || return'
-  check_static pr-early:claim "$pr_refresh" 'if ! pr_refresh_claim "$marker" "$now" "$seen" "$sig"; then'
+  check_static pr-early:claim "$pr_refresh" 'if ! pr_refresh_claim "$marker" "$now" "$seen" "$sig" "$inflight"; then'
   check_no_echo
 
   printf '\n'
