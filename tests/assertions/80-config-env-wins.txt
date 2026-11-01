@@ -1,6 +1,6 @@
 # conf で SHOW_CWD=1、env (show-cwd-off マーカー) で CLAUDE_STATUSLINE_SHOW_CWD=0。
 # env > conf の優先順位により directory 列は消え、branch 列と commit 列が 1 行目に残る。
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$
-matches_line1: ^\\e\[38;2;255;255;255mmain\\e\[0m \| a1b2c3d ·$
+matches_line1: ^\\e\[38;2;255;255;255mmain\\e\[0m \| a1b2c3d$
 not_contains: sl-repo
 exit_code: 0

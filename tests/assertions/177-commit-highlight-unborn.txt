@@ -1,3 +1,3 @@
-# HIGHLIGHT=commit + unborn: 空のハッシュは塗られず、commit 列は · だけ (ESC だけの値や余分なスペースが出ない)
-matches_line1: ^sl-repo#branch=main;unbo… \| main \\e\[38;2;106;155;204m\*\\e\[0m \| · \| my-session$
+# HIGHLIGHT=commit + unborn + クリーン: ハッシュも diff も空なので commit 列ごと省略される (ESC だけの値や余分な " | " が出ない)
+matches_line1: ^sl-repo#branch=main;unbo… \| main \\e\[38;2;106;155;204m\*\\e\[0m \| my-session$
 matches_line2: ^✻ Sonnet 4\.6 [▁▂▃▄▅▆▇█] \| [▁▂▃▄▅▆▇█]{12} 22:13 \| · --$

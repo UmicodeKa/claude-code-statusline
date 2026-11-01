@@ -264,7 +264,7 @@ Behavior:
 | `*` | No remote-tracking branch (blue) / detached HEAD (uncolored) |
 | `#12✓ 3` | PR number, CI and number of comments (only with `PR_STATUS=1`) |
 | Commit hash | Short hash of HEAD. The length follows git's `core.abbrev` and is never truncated. Not shown in a repository with no commits yet |
-| `3+13-5` | Changes in the working tree (files / added lines / deleted lines). Includes untracked files. `·` if there are no changes |
+| `3+13-5` | Changes in the working tree (files / added lines / deleted lines). Includes untracked files. Not shown if there are no changes |
 | Session name | Shown only when set. Truncated with `…` beyond 40 characters |
 | `✻ model name` | Shown in the model-specific color. Truncated with `…` beyond 13 characters |
 | effort | Reasoning effort (`low` / `medium` / `high` / `xhigh` / `max`). Not shown for models that do not support it |
@@ -280,7 +280,7 @@ Behavior:
 Normal (no warnings, no changes):
 
 ```text
-my-project | main | c9b8fce · | my-session
+my-project | main | c9b8fce | my-session
 ✻ Opus 4.7∙high ▄ | ▇▇▇▆▆▆▆▅▅▅▄▄ 18:30 | ▅ Thu
 ```
 
@@ -294,7 +294,7 @@ my-project | main ↑2↓3 #12✓ 3 | c9b8fce 3+13-5 | my-session
 Weekly limit in the warning range (22% remaining):
 
 ```text
-my-project | main | c9b8fce · | my-session
+my-project | main | c9b8fce | my-session
 ✻ Opus 4.7∙high ▄ | ▇▇▇▆▆▆▆▅▅▅▄▄ 18:30 | ▂ 22% - Thu
 ```
 
@@ -308,7 +308,7 @@ my-project | feature/improve-sta…/trim | c9b8fce 1+8 | my-project-refactoring-
 `SHOW_MODEL_NAME=0`:
 
 ```text
-my-project | main | c9b8fce · | my-session
+my-project | main | c9b8fce | my-session
 ✻ xhigh ▄ | ▇▇▇▆▆▆▆▅▅▅▄▄ 18:30 | ▅ Thu
 ```
 

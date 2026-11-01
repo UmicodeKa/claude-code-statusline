@@ -252,7 +252,7 @@ my-project | feature/login ↑1 #12✓ 3 | c9b8fce 3+10-2 | my-session
 | `*` | リモート追跡ブランチが無い (青) / detached HEAD (無色) |
 | `#12✓ 3` | PR の番号･CI･コメントの件数 (`PR_STATUS=1` のときだけ) |
 | コミットハッシュ | HEAD の短縮ハッシュ。桁数は git の `core.abbrev` に従い、省略しない。まだコミットが無いリポジトリでは出ない |
-| `3+13-5` | 作業ツリーの変更 (ファイル数 / 追加行 / 削除行)。未追跡ファイルを含む。変更が無ければ `·` |
+| `3+13-5` | 作業ツリーの変更 (ファイル数 / 追加行 / 削除行)。未追跡ファイルを含む。変更が無ければ出さない |
 | セッション名 | 設定されているときだけ表示。40 文字を超えると `…` で省略 |
 | `✻ モデル名` | モデル別の色で表示。13 文字を超えると `…` で省略 |
 | effort | 推論強度 (`low` / `medium` / `high` / `xhigh` / `max`)。対応しないモデルでは出ない |
@@ -268,7 +268,7 @@ my-project | feature/login ↑1 #12✓ 3 | c9b8fce 3+10-2 | my-session
 通常 (警告なし、変更なし):
 
 ```text
-my-project | main | c9b8fce · | my-session
+my-project | main | c9b8fce | my-session
 ✻ Opus 4.7∙high ▄ | ▇▇▇▆▆▆▆▅▅▅▄▄ 18:30 | ▅ Thu
 ```
 
@@ -282,7 +282,7 @@ my-project | main ↑2↓3 #12✓ 3 | c9b8fce 3+13-5 | my-session
 週間リミットが警告域 (残量 22%):
 
 ```text
-my-project | main | c9b8fce · | my-session
+my-project | main | c9b8fce | my-session
 ✻ Opus 4.7∙high ▄ | ▇▇▇▆▆▆▆▅▅▅▄▄ 18:30 | ▂ 22% - Thu
 ```
 
@@ -296,7 +296,7 @@ my-project | feature/improve-sta…/trim | c9b8fce 1+8 | my-project-refactoring-
 `SHOW_MODEL_NAME=0`:
 
 ```text
-my-project | main | c9b8fce · | my-session
+my-project | main | c9b8fce | my-session
 ✻ xhigh ▄ | ▇▇▇▆▆▆▆▅▅▅▄▄ 18:30 | ▅ Thu
 ```
 

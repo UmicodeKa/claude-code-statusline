@@ -656,7 +656,7 @@ truncate_branch() {
 #       未追跡が UNTRACKED_DIFF_LIMIT 件を超えた分は diff を呼ばずファイル数のみ数える
 #       (大量未追跡時に describe ごとの fork で描画が遅延するのを防ぐ)。
 #   gitignore 対象は git status/git diff が元々除外する。
-#   ファイル数 0 かつ追加 0 かつ削除 0 (クリーン)、または HEAD 無し/git 失敗時は無色の · (U+00B7) を返す。
+#   ファイル数 0 かつ追加 0 かつ削除 0 (クリーン)、または HEAD 無し/git 失敗時は空を返す。
 #   ファイル数は変更があれば常に表示する。+0/-0 はその側を省略する。
 #   ファイル数は意図的に text (dark 純白 / light 純黒) で塗る。デフォルトの前景色ではなく COLOR_SCHEME に応じた固定色。
 git_diff_stat() {
@@ -691,7 +691,7 @@ git_diff_stat() {
     [ -n "$n" ] && add=$((add + n))
   done < <(git -C "$repo" status -z 2>/dev/null)
 
-  [ "$files" = "0" ] && [ "$add" = "0" ] && [ "$del" = "0" ] && { printf '%s' '·'; return; }
+  [ "$files" = "0" ] && [ "$add" = "0" ] && [ "$del" = "0" ] && return
 
   # ファイル数 (text=dark 純白 / light 純黒) → +add (success=緑) → -del (error=赤) を区切りなしで詰める。
   # COLOR_* は既に実 ESC 化済みなので $(printf ...) でラップせずそのまま static へ渡す。
@@ -1325,13 +1325,14 @@ layout_token() {
     commit)
       # ハッシュと変更行数はこの列を組み立てるときだけ取る (LAYOUT_LINE1 に commit が無ければ git を呼ばない)。
       # detached では main で取った detached_sha を使い、取り直さない。unborn ではハッシュが空になり、
-      # diff だけを出す。ハッシュは core.abbrev で決まる桁数のまま出し、トリムしない。
+      # diff だけを出す (クリーンなら値が空になり、1 行目の規則で列ごと省略される)。
+      # ハッシュは core.abbrev で決まる桁数のまま出し、トリムしない。
       if [ -n "$branch" ]; then
         local hash=$detached_sha diff_str
         [ "$branch_detached" = "1" ] || hash=$(git -C "$cwd" rev-parse --short HEAD 2>/dev/null)
         diff_str=$(git_diff_stat "$cwd")
         highlight commit "$hash"
-        token_value="${hl_out}${hl_out:+ }${diff_str}"
+        token_value="${hl_out}${hl_out:+${diff_str:+ }}${diff_str}"
       fi
       ;;
     session)

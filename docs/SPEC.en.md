@@ -52,7 +52,7 @@ The following fields are used from the JSON that Claude Code passes on stdin.
 The output has **two lines**.
 
 ```text
-<directory> | <branch>[ <ab>][ <pr>] | [<hash> ]<diff> | <session_name>
+<directory> | <branch>[ <ab>][ <pr>] | [<hash>][ <diff>] | <session_name>
 ✻ <model>∙<effort> <ctx> | <rate> | <weekly>
 ```
 
@@ -66,7 +66,7 @@ The above is the order in the default layout. The order within each line can be 
 | Between `<model>` and `<effort>` | `∙` (U+2219, no surrounding spaces, uncolored) |
 | Between `<effort>` (or `<model>`) and `<ctx>` | One space (no pipe) |
 | Between the branch name and `<ab>`, and between `<ab>` and `<pr>` | One space (not placed before an empty element) |
-| Between `<hash>` and `<diff>` | One space (not placed if `<hash>` is empty) |
+| Between `<hash>` and `<diff>` | One space (not placed if either `<hash>` or `<diff>` is empty) |
 
 ### Line 1
 
@@ -132,15 +132,17 @@ Shown only when `PR_STATUS=1`. For details, see [PR Status (`PR_STATUS=1`)](#pr-
 
 ### Commit column
 
-Output `[<hash> ]<diff>` as a single column.
+Output `[<hash>][ <diff>]` as a single column. A space is placed between them only when both the hash and `<diff>` are present.
+When the repository is unborn and clean (both the hash and `<diff>` are empty), the value is empty and the **column is omitted entirely**.
 
 Commit hash (`<hash>`):
 
 - The result of running `git rev-parse --short HEAD` in `workspace.current_dir`. The number of digits is decided by git (by default the shortest unique length, at least 7 digits; it can be changed with `core.abbrev`)
 - Not trimmed
 - Uncolored. When `commit` is listed in `HIGHLIGHT`, only the hash is painted with `text`. The color of `<diff>` does not change ([Highlight](#highlight-highlight))
-- When there is no commit yet (unborn), the hash cannot be obtained and only `<diff>` is output. No space is placed before it
-- The display condition is the same as for the branch column. Outside git, with an empty `current_dir`, or with git not installed, the **column is omitted entirely**
+- When there is no commit yet (unborn), the hash cannot be obtained and only `<diff>` is output. No space is placed before it. If the working tree is also clean, the **column is omitted entirely**
+- The display condition is the same as for the branch column. Outside git, with an empty `current_dir`, or with git not installed, the **column is omitted entirely**.
+  As an exception, when the repository is unborn and clean, the commit column is not output even if the branch column is
 - When `commit` is absent from `LAYOUT_LINE1`, neither the hash nor `<diff>` is output
 
 #### Changed Lines (`<diff>`)
@@ -157,9 +159,9 @@ To the right of the hash, `<files><+added><-removed>` is output packed together 
 | Color of `+N` | `success` (green) |
 | Color of `-N` | `error` (red) |
 | One side is 0 | That side is omitted (`3+8`, `2-5`). The file count is always output if there is any change |
-| All 0 (clean) | `·` (U+00B7, uncolored) |
+| All 0 (clean) | Nothing is output (nor the space after the hash) |
 
-- In an unborn repository `git diff HEAD --numstat` fails, and the staged entries of `git status -z` (`A  path`) are not counted, so when there are only staged files the result is `·`
+- In an unborn repository `git diff HEAD --numstat` fails, and the staged entries of `git status -z` (`A  path`) are not counted, so when there are only staged files nothing is output
 
 ### session_name
 
@@ -504,7 +506,7 @@ Tokens are written separated by `|`. Tokens are always joined with ` | `.
 | --- | --- | --- |
 | Line 1 | `directory` | Directory name |
 | | `branch` | `<branch>[ <ab>][ <pr>]` |
-| | `commit` | `[<hash> ]<diff>` |
+| | `commit` | `[<hash>][ <diff>]` |
 | | `session` | Session name |
 | Line 2 | `model_ctx` | `✻ <model>∙<effort> <ctx>` |
 | | `rate` | 5-hour rate limit |
@@ -587,7 +589,7 @@ The following uncolored elements are not targets.
 | effort | All known values (`low` through `max`) are colored. Only an unexpected value is uncolored |
 | `*` of a detached HEAD | Being uncolored distinguishes it from the blue `*` of no upstream |
 | `#<number>` of a PR that is closed | Being uncolored distinguishes it from the gray of draft and from the purple of merged |
-| `--` when missing, and `·` of a clean `<diff>` | Not values but marks meaning missing or unchanged |
+| `--` when missing | Not a value but a mark meaning missing |
 | The branch name up to the last `/` | Only the end, which often describes the work, is made to stand out |
 | ` \| `, `∙`, and the spaces between elements | Separators, not elements |
 
