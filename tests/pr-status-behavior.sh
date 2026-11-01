@@ -1060,6 +1060,7 @@ case_early_stdin_robust() {
     '"my-session";true;0;' \
     '"my-session";{"url":null};0;' \
     '"my-\nsession";{"url":"https://github.com/my-org/my-project/pull/12"};0;' \
+    '"my-session";{"number":12,"url":"https://github.com/my-org/my-project/pull/12"};1;https://github.com/my-org/my-project/pull/12:' \
     '"my-session";{"url":"https://github.com/my-org/my-project/pull/12\nx","review_state":"pending\u001b[31m"};1;https://github.com/my-org/my-project/pull/12 x:pending [31m'; do
     sid=${spec%%;*}; spec=${spec#*;}
     want_sig=${spec##*;}; spec=${spec%;*}

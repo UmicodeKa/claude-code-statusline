@@ -39,7 +39,9 @@ The following fields are used from the JSON that Claude Code passes on stdin.
 | `rate_limits.seven_day.resets_at` | Weekly reset time (epoch seconds) | The weekday is not shown (same as `0`) |
 | `session_name` | Session name | The session column is omitted |
 | `workspace.current_dir` | Used to get the directory name, branch, and commit hash. Also used to get ahead/behind, as the unit for throttling `GIT_FETCH`, and to get the PR status (cache key and the directory where `gh` / `git` run) | The directory column, the branch column (`<ab>` and `<pr>` are not shown either), and the commit column are omitted |
-| `pr.url` / `pr.review_state` / `pr.kind` | A trigger to fetch the PR status early. Only changes in the value are looked at; it is not used for display ([Early Fetch](#early-fetch)) | No early fetch |
+| `pr.url` | A trigger to fetch the PR status early. Only changes in the value are looked at; it is not used for display ([Early Fetch](#early-fetch)) | The signature becomes `none` (same as when `pr` is missing) |
+| `pr.review_state` | Included in the early-fetch signature | Included in the signature as empty |
+| `pr.kind` | When it is `mr` (a GitLab MR), the signature becomes `none` | Treated as a GitHub PR |
 | `session_id` | Keeps the early-fetch record (`.seen`) separate per session | No early fetch |
 
 - Control characters (newline, tab, CR, ESC, etc.) in string fields (`model.display_name` / `session_name` / `workspace.current_dir` / `effort.level` / `session_id` / `pr.url` / `pr.review_state`) are replaced with a space.
@@ -738,6 +740,7 @@ Right after you create a PR, you do not have to wait up to 300 seconds for it to
 
 - A signature is built from `pr` and compared with the previous value
   - It joins `pr.url` and `pr.review_state`
+  - `pr.review_state` can be missing even when `pr` is present. A missing value is included in the signature as empty, so one more fetch runs when a value appears later
   - It is `none` when `pr` is missing, is not an object, has no `pr.url`, or has `pr.kind` set to `mr` (a GitLab MR)
 - Only when the signature differs from the previous one, one fetch is started that updates the cache for the current cwd and branch. The stdin `pr` is not compared with the cache contents
 - The previous signature and the time a fetch was last started early are saved per session in `<HISTORY_DIR>/pr-<session_id>.seen`

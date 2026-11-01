@@ -83,7 +83,7 @@ The child process runs `cd` to the cwd and then calls `gh`, so it does not get a
 | `early-two-sessions` | Even when two sessions on the same branch disagree on the signature, it stops after the first fetch of each |
 | `early-mr` | When `pr.kind` is `mr`, nothing starts and `.seen` is not created |
 | `early-session-id` | When `session_id` is empty, contains a disallowed character (`/`, `.`, a space, non-ASCII), or is 129 characters or longer, no early fetch starts and `.seen` is not created. A value starting with `served:`, a number, and exactly 128 characters do start an early fetch |
-| `early-stdin-robust` | Even with a `pr` or `session_id` containing newlines or control characters, or a `pr` that is not an object (a string, number, array, boolean), the render matches the one with neither `pr` nor `session_id`, and `.seen` stays two lines |
+| `early-stdin-robust` | Even with a `pr` or `session_id` containing newlines or control characters, or a `pr` that is not an object (a string, number, array, boolean), the render matches the one with neither `pr` nor `session_id`, and `.seen` stays two lines. A `pr` without `review_state` starts an early fetch with an empty value in the signature |
 | `early-no-extra-commands` | On a render whose signature has not changed, and on a render skipped by the minimum interval, the number of external command launches stays the same as on a render with neither `pr` nor `session_id` |
 | `jq-fork-same-name` | Picks your own MERGED PR (HEAD matches) over an OPEN PR from someone else's fork with the same branch name |
 | `jq-review-null-approved` | Even when `reviewDecision` is `null`, an `APPROVED` in `latestReviews` makes it approved |

@@ -77,7 +77,7 @@ PR の状態表示の取得も投げっぱなしの非同期処理のため、fa
 | `early-two-sessions` | 同じブランチを開いた 2 つのセッションの署名が食い違っても、それぞれの最初の 1 回で止まる |
 | `early-mr` | `pr.kind` が `mr` なら起動せず、`.seen` も作らない |
 | `early-session-id` | `session_id` が空、許さない文字 (`/`、`.`、空白、非 ASCII) を含む、129 文字以上なら前倒しせず、`.seen` も作らない。`served:` で始まる値、数値、128 文字ちょうどは前倒しする |
-| `early-stdin-robust` | 値に改行や制御文字を含む `pr` や `session_id`、オブジェクトでない `pr` (文字列、数値、配列、真偽値) でも、描画が `pr` も `session_id` もないときと一致し、`.seen` は 2 行のまま |
+| `early-stdin-robust` | 値に改行や制御文字を含む `pr` や `session_id`、オブジェクトでない `pr` (文字列、数値、配列、真偽値) でも、描画が `pr` も `session_id` もないときと一致し、`.seen` は 2 行のまま。`review_state` がない `pr` は、空として署名に含めて前倒しする |
 | `early-no-extra-commands` | 署名が変わらない描画と、最低間隔で見送る描画では、外部コマンドの起動が `pr` も `session_id` もない描画と同じ回数のまま |
 | `jq-fork-same-name` | 他人の fork の同名ブランチの OPEN より、自分の MERGED (HEAD 一致) を選ぶ |
 | `jq-review-null-approved` | `reviewDecision` が `null` でも、`latestReviews` の `APPROVED` で approved になる |

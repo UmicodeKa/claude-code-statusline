@@ -328,6 +328,8 @@ The display is still built from our own cache as before, and `pr` is not used fo
 - The signature joins `pr.url` and `pr.review_state`. It is `none` when `pr` is not an object, has no `pr.url`, or has `pr.kind` set to `mr` (a GitLab MR)
   - The URL is used instead of the number because `.seen` is not split by cache key. If `/cd` changes the cwd during a session, the number alone cannot tell apart a PR with the same number in another repository
   - Including `review_state` allows early fetches on `gh pr ready` (draft → pending) and on reviews by other people. Fetches increase only by the number of times the value changes
+  - `review_state` can be missing even when `pr` is present (the official documentation says so, and in 2.1.316 it was missing for a draft PR). A missing value is included in the signature as empty,
+    so when a value appears later the signature changes and one more fetch runs
 - The signature is **compared only with the previous signature**, never with the cache contents. Comparing with the cache would start a fetch on every render, without end, while the two keep disagreeing.
   The display looks correct, so you would not notice without debugging. A disagreement persists in cases such as the following
   - Right after a session starts, before Claude Code has checked the PR

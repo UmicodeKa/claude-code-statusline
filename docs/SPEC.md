@@ -36,7 +36,9 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 | `rate_limits.seven_day.resets_at` | 週間のリセット時刻 (epoch 秒) | 曜日を表示しない (`0` と同じ) |
 | `session_name` | セッション名 | セッション列を省略 |
 | `workspace.current_dir` | ディレクトリ名、ブランチ、コミットハッシュの取得。ahead/behind の取得、`GIT_FETCH` の間引きの単位、PR の状態の取得 (キャッシュキーと `gh` / `git` の実行ディレクトリ) にも使う | ディレクトリ列、ブランチ列 (`<ab>`、`<pr>` も出ない)、commit 列を省略 |
-| `pr.url` / `pr.review_state` / `pr.kind` | PR の状態の取得を前倒しするきっかけ。値の変化だけを見て、表示には使わない ([取得の前倒し](#取得の前倒し)) | 前倒ししない |
+| `pr.url` | PR の状態の取得を前倒しするきっかけ。値の変化だけを見て、表示には使わない ([取得の前倒し](#取得の前倒し)) | 署名を `none` にする (`pr` がないときと同じ) |
+| `pr.review_state` | 前倒しの署名に含める | 空として署名に含める |
+| `pr.kind` | `mr` (GitLab の MR) なら署名を `none` にする | GitHub の PR として扱う |
 | `session_id` | 取得の前倒しの記録 (`.seen`) をセッションごとに分ける | 前倒ししない |
 
 - 文字列フィールド (`model.display_name` / `session_name` / `workspace.current_dir` / `effort.level` / `session_id` / `pr.url` / `pr.review_state`) に含まれる制御文字 (改行･タブ･CR･ESC など) は半角スペースに置き換える。値に紛れた ANSI エスケープで後続の列の色が変わるのを防ぐ
@@ -709,6 +711,7 @@ Claude Code は、セッション内の `git push` や `gh pr create` の直後�
 
 - `pr` から次の署名を作り、前回の値と比べる
   - `pr.url` と `pr.review_state` をつなげたもの
+  - `pr.review_state` は `pr` があっても欠けることがある。欠けていれば空として署名に含めるため、後から値が付くと取得が 1 回増える
   - `pr` がない、オブジェクトでない、`pr.url` がない、または `pr.kind` が `mr` (GitLab の MR) なら `none`
 - 署名が前回と違うときだけ、今の cwd とブランチのキャッシュを更新する取得を 1 回起動する。stdin の `pr` とキャッシュの内容は比べない
 - 前回の署名と、前倒しで取得を起動した時刻は、セッションごとに `<HISTORY_DIR>/pr-<session_id>.seen` に保存する
