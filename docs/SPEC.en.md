@@ -39,11 +39,16 @@ The following fields are used from the JSON that Claude Code passes on stdin.
 | `rate_limits.seven_day.resets_at` | Weekly reset time (epoch seconds) | The weekday is not shown (same as `0`) |
 | `session_name` | Session name | The session column is omitted |
 | `workspace.current_dir` | Used to get the directory name, branch, and commit hash. Also used to get ahead/behind, as the unit for throttling `GIT_FETCH`, and to get the PR status (cache key and the directory where `gh` / `git` run) | The directory column, the branch column (`<ab>` and `<pr>` are not shown either), and the commit column are omitted |
+| `pr.url` | A trigger to fetch the PR status early. Only changes in the value are looked at; it is not used for display ([Early Fetch](#early-fetch)) | The signature becomes `none` (same as when `pr` is missing) |
+| `pr.review_state` | Included in the early-fetch signature | Included in the signature as empty |
+| `pr.kind` | When it is `mr` (a GitLab MR), the signature becomes `none` | Treated as a GitHub PR |
+| `session_id` | Keeps the early-fetch record (`.seen`) separate per session | No early fetch |
 
-- Control characters (newline, tab, CR, ESC, etc.) in string fields (`model.display_name` / `session_name` / `workspace.current_dir` / `effort.level`) are replaced with a space.
+- Control characters (newline, tab, CR, ESC, etc.) in string fields (`model.display_name` / `session_name` / `workspace.current_dir` / `effort.level` / `session_id` / `pr.url` / `pr.review_state`) are replaced with a space.
   This prevents an ANSI escape hidden in a value from changing the color of the columns that follow
 - Values are output as-is, without processing (a session name that starts with `-n` is displayed literally)
-- The `pr` field is not used ([reason](DESIGN.en.md#the-stdin-pr-field)). The PR status is fetched by the script itself with `gh` when [`PR_STATUS=1`](#pr-status-pr_status1)
+- The `pr` field is not used for display ([reason](DESIGN.en.md#the-stdin-pr-field)). The PR status is fetched by the script itself with `gh` when [`PR_STATUS=1`](#pr-status-pr_status1),
+  and a change in the `pr` value is used only as a trigger to start that fetch early
 - `rate_limits` is passed only to subscribers such as claude.ai Pro / Max, and only after the first API response of a session. `five_hour` and `seven_day` can each be missing independently
 - `rate_limits.spend_limit` is not used
 
@@ -709,7 +714,8 @@ If the URL does not start with `https://`, or contains a character other than AS
 
 - Rendering only reads the cache and calls neither `gh` nor any additional `git`
 - The cache is kept per pair of `workspace.current_dir` and local branch name (`<HISTORY_DIR>/pr-<key>`). Switching branches reads a different cache, so the PR of the previous branch is not shown
-- If the following interval has passed since the last fetch attempt, a fetch is started in the background. The current render does not wait, and the result is reflected in subsequent renders
+- If the following interval has passed since the last fetch attempt, a fetch is started in the background. The current render does not wait, and the result is reflected in subsequent renders.
+  When the stdin `pr` changes, a fetch is started without waiting for the interval ([Early Fetch](#early-fetch))
 
 | State | Refetch interval |
 | --- | --- |
@@ -726,6 +732,34 @@ If the URL does not start with `https://`, or contains a character other than AS
 - The GraphQL cost of one query is 1 point. With the shortest interval of 30 seconds sustained, that is at most 120 queries per hour per cache
 - It never asks for authentication or other input (`GH_PROMPT_DISABLED=1`, plus the same four git variables as in [Background Fetch](#background-fetch-git_fetch1)). It also suppresses update notices (`GH_NO_UPDATE_NOTIFIER=1`, `GH_NO_EXTENSION_UPDATE_NOTIFIER=1`)
 - `GH_REPO`, `GH_FORCE_TTY`, and `CLICOLOR_FORCE` are not passed to `gh`. `GH_TOKEN`, `GITHUB_TOKEN`, `GH_HOST`, and `GH_ENTERPRISE_TOKEN` are passed through as-is
+
+#### Early Fetch
+
+Claude Code rechecks the PR right after an in-session `git push` or `gh pr create` and passes the result as the stdin `pr`. On a render where the `pr` value has changed, a fetch is started without waiting for the interval above.
+Right after you create a PR, you do not have to wait up to 300 seconds for it to appear in `<pr>`.
+
+- A signature is built from `pr` and compared with the previous value
+  - It joins `pr.url` and `pr.review_state`
+  - `pr.review_state` can be missing even when `pr` is present. A missing value is included in the signature as empty, so one more fetch runs when a value appears later
+  - It is `none` when `pr` is missing, is not an object, has no `pr.url`, or has `pr.kind` set to `mr` (a GitLab MR)
+- Only when the signature differs from the previous one, one fetch is started that updates the cache for the current cwd and branch. The stdin `pr` is not compared with the cache contents
+- The previous signature and the time a fetch was last started early are saved per session in `<HISTORY_DIR>/pr-<session_id>.seen`
+  - When the file does not exist, it is treated as having `none` saved. If you start a session on a branch that has a PR (including `/clear`), one extra fetch runs on the first render that receives `pr`
+  - A session without a PR causes no extra fetch and does not create `.seen`
+- In the following cases, no early fetch is started and `.seen` is not written. While the signature still differs, the next render checks again
+  - Less than 30 seconds have passed since the last early fetch. If the time in `.seen` is not a number or is in the future, 30 seconds are treated as having passed
+  - A fetch is running
+- Early fetches are limited to once per 30 seconds per session (at most 120 per hour). They are not skipped right after a regular fetch
+- When `.seen` or the marker cannot be written, no early fetch is started. If the interval has passed, a regular fetch still starts even when `.seen` cannot be written
+- If a fetch started early fails, it is not retried. The next attempt starts at the interval used after a failure (300 seconds)
+- No early fetch is started when `session_id` is empty, contains characters other than alphanumerics, `-`, `_`, and `:`, or is longer than 128 characters
+- In the following cases the signature stays `none` and fetches follow the interval only
+  - `pr` is not passed (an older Claude Code, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is set, `prStatusFooterEnabled` is `false`, or while you are on the default branch)
+  - Only GitLab MRs are passed
+- Switching branches does not change the signature until Claude Code updates `pr` to the new branch's value, so no early fetch is started. The first fetch on the new branch starts from the interval check, as before
+- Switching from a branch with a PR to the default branch (including `gh pr merge --delete-branch`) stops `pr` from being passed and changes the signature to `none`, so one fetch starts on the default branch's key
+- `.seen` is not removed. One file (tens of bytes) is added per session that has a PR. The default `HISTORY_DIR` is under `/tmp`, where the OS removes old files
+- The result of an early fetch is also shown on the render after the fetch finishes. The statusline renders only on events, so if no render happens after the fetch finishes, the result is not shown until your next action
 
 ## Startup Checks and Fallback Output
 

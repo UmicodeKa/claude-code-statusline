@@ -563,6 +563,582 @@ case_comment_count() {
   pass_case "comment-count [$label]"
 }
 
+# --- early-*: stdin の pr の署名の変化による取得の前倒し ---
+# 署名は pr.url と pr.review_state を : でつないだもの。.seen は「前回の前倒しの時刻 + 改行 + 署名」。
+# 各ケースは、間隔による取得が起動しない状態 (seed_fresh) から始め、前倒しだけを観測する。
+PR_A='{"number":12,"url":"https://github.com/my-org/my-project/pull/12","review_state":"pending"}'
+PR_A_APPROVED='{"number":12,"url":"https://github.com/my-org/my-project/pull/12","review_state":"approved"}'
+PR_B='{"number":34,"url":"https://github.com/my-org/my-project/pull/34","review_state":"pending"}'
+SIG_A='https://github.com/my-org/my-project/pull/12:pending'
+SIG_A_APPROVED='https://github.com/my-org/my-project/pull/12:approved'
+SIG_B='https://github.com/my-org/my-project/pull/34:pending'
+
+# input.json を session_id と pr を含む形に書き直す。
+#   $1 session_id の JSON の値 / $2 pr の JSON の値 (どちらも null ならそのフィールドを書かない)
+set_stdin() {
+  jq -n --arg cwd "$repo" --argjson sid "$1" --argjson pr "$2" \
+    '{model: {display_name: "Sonnet 4.6"}, workspace: {current_dir: $cwd}}
+     + (if $sid == null then {} else {session_id: $sid} end)
+     + (if $pr == null then {} else {pr: $pr} end)' > "$input"
+}
+
+# ブランチ $1 (省略時は main) に、今取得したばかりの PR なしのキャッシュとマーカーを置く。
+# 間隔 (300 秒) が過ぎていないので、間隔による取得は起動しない。
+seed_fresh() {
+  local cache
+  cache="$(cache_path "${1:-main}")"
+  date +%s > "$cache"
+  : > "$cache.marker"
+}
+
+seen_path() { printf '%s/pr-%s.seen' "$hist" "${1:-my-session}"; }
+
+# .seen を書く。$1 session_id / $2 時刻 / $3 署名
+write_seen() { printf '%s\n%s\n' "$2" "$3" > "$(seen_path "$1")"; }
+
+# .seen の 2 行目 (署名) を出す。ファイルがなければ空。
+seen_sig() {
+  local file at="" sig=""
+  file="$(seen_path "${1:-my-session}")"
+  [ -f "$file" ] || return 0
+  { IFS= read -r at; IFS= read -r sig; } < "$file" || true
+  printf '%s' "$sig"
+}
+
+# gh の呼び出しが $1 回になり、実行中の取得がなくなるまで最大 5 秒待つ。
+wait_calls() {
+  wait_until 5 "[ \"\$(sentinel_count)\" = \"$1\" ] && ! compgen -G \"\$hist/pr-*.inflight\" >/dev/null"
+}
+
+# 前倒しが起動しないことを確かめる前の待ち時間。起動していれば子プロセスが gh を呼ぶ時間を取る。
+settle() { sleep 0.5; }
+
+# --- early-on-change: 署名が前回と変わった描画で、間隔を待たずに取得が 1 回だけ起動する ---
+# review_state だけの変化 (pending → approved) も変化として扱う。
+case_early_on_change() {
+  local bash_bin=$1 script=$2 label=$3
+  setup_case "branch=main;ab=0,0"
+  trap 'cleanup_case; trap - RETURN' RETURN
+
+  seed_fresh
+  write_seen my-session "$(( $(date +%s) - 100 ))" "$SIG_A"
+  set_stdin '"my-session"' "$PR_A"
+  run_sl "$bash_bin" "$script" >/dev/null
+  settle
+  if [ "$(sentinel_count)" != "0" ]; then
+    fail_case "early-on-change [$label]" "署名が同じなのに gh が $(sentinel_count) 回呼ばれた (期待 0 回)"
+    return
+  fi
+  set_stdin '"my-session"' "$PR_A_APPROVED"
+  run_sl "$bash_bin" "$script" >/dev/null
+  if ! wait_calls 1; then
+    fail_case "early-on-change [$label]" "署名が変わったのに取得が起動しない (gh 呼び出し $(sentinel_count) 回)"
+    return
+  fi
+  run_sl "$bash_bin" "$script" >/dev/null
+  run_sl "$bash_bin" "$script" >/dev/null
+  settle
+  if [ "$(sentinel_count)" = "1" ] && [ "$(seen_sig)" = "$SIG_A_APPROVED" ]; then
+    pass_case "early-on-change [$label]"
+  else
+    fail_case "early-on-change [$label]" \
+      "gh が $(sentinel_count) 回呼ばれた (期待 1 回)、または .seen の署名が違う: $(seen_sig)"
+  fi
+}
+
+# --- early-seen-missing: .seen がなければ none とみなす。pr があれば 1 回起動し、なければ起動せず作らない ---
+case_early_seen_missing() {
+  local bash_bin=$1 script=$2 label=$3
+  setup_case "branch=main;ab=0,0"
+  trap 'cleanup_case; trap - RETURN' RETURN
+
+  seed_fresh
+  set_stdin '"my-session"' null
+  run_sl "$bash_bin" "$script" >/dev/null
+  run_sl "$bash_bin" "$script" >/dev/null
+  settle
+  if [ "$(sentinel_count)" != "0" ] || [ -e "$(seen_path)" ]; then
+    fail_case "early-seen-missing [$label]" \
+      "pr がないのに gh が $(sentinel_count) 回呼ばれた、または .seen が作られた"
+    return
+  fi
+  set_stdin '"my-session"' "$PR_A"
+  run_sl "$bash_bin" "$script" >/dev/null
+  if wait_calls 1 && [ "$(seen_sig)" = "$SIG_A" ]; then
+    pass_case "early-seen-missing [$label]"
+  else
+    fail_case "early-seen-missing [$label]" \
+      "pr があるのに取得が 1 回起動しない (gh 呼び出し $(sentinel_count) 回)、または .seen の署名が違う: $(seen_sig)"
+  fi
+}
+
+# --- early-mismatch-persists: stdin の pr とキャッシュが食い違ったままでも、起動し続けない ---
+# 取得の結果は PR なしなので、キャッシュは stdin の pr と食い違ったまま残る。最低間隔が過ぎても起動しない。
+case_early_mismatch_persists() {
+  local bash_bin=$1 script=$2 label=$3
+  setup_case "branch=main;ab=0,0"
+  trap 'cleanup_case; trap - RETURN' RETURN
+
+  local none_response="STATUSLINE_TEST_GH_RESPONSE=$RESPONSES_DIR/merged-head-mismatch.json"
+  seed_fresh
+  set_stdin '"my-session"' "$PR_A"
+  run_sl "$bash_bin" "$script" "$none_response" >/dev/null
+  if ! wait_calls 1; then
+    fail_case "early-mismatch-persists [$label]" "最初の前倒しが起動しない (前提が崩れている)"
+    return
+  fi
+  run_sl "$bash_bin" "$script" "$none_response" >/dev/null
+  run_sl "$bash_bin" "$script" "$none_response" >/dev/null
+  write_seen my-session "$(( $(date +%s) - 100 ))" "$SIG_A"
+  run_sl "$bash_bin" "$script" "$none_response" >/dev/null
+  settle
+  if [ "$(sentinel_count)" = "1" ]; then
+    pass_case "early-mismatch-persists [$label]"
+  else
+    fail_case "early-mismatch-persists [$label]" \
+      "キャッシュと食い違ったまま gh が $(sentinel_count) 回呼ばれた (期待 1 回)"
+  fi
+}
+
+# --- early-branch-switch: ブランチを切り替えても、署名が同じなら前倒ししない ---
+# 切り替え直後は stdin に前のブランチの pr が残る。最後に署名を変え、切り替え先のキーで起動することも見る。
+case_early_branch_switch() {
+  local bash_bin=$1 script=$2 label=$3
+  setup_case "branch=main;ab=0,0"
+  trap 'cleanup_case; trap - RETURN' RETURN
+
+  seed_fresh main
+  seed_fresh feature/other
+  write_seen my-session "$(( $(date +%s) - 100 ))" "$SIG_A"
+  set_stdin '"my-session"' "$PR_A"
+  run_sl "$bash_bin" "$script" >/dev/null
+  run_sl "$bash_bin" "$script" STATUSLINE_TEST_BRANCH=feature/other >/dev/null
+  run_sl "$bash_bin" "$script" STATUSLINE_TEST_BRANCH=feature/other >/dev/null
+  settle
+  if [ "$(sentinel_count)" != "0" ]; then
+    fail_case "early-branch-switch [$label]" "署名が同じなのに gh が $(sentinel_count) 回呼ばれた (期待 0 回)"
+    return
+  fi
+  set_stdin '"my-session"' "$PR_B"
+  run_sl "$bash_bin" "$script" STATUSLINE_TEST_BRANCH=feature/other >/dev/null
+  if wait_calls 1 && [ "$(cut -d' ' -f1 < "$sentinel")" = "head=feature/other" ]; then
+    pass_case "early-branch-switch [$label]"
+  else
+    fail_case "early-branch-switch [$label]" \
+      "署名を変えても切り替え先で起動しない (gh 呼び出し $(sentinel_count) 回): $(cat "$sentinel")"
+  fi
+}
+
+# --- early-save-failure: .seen かマーカーを書けなければ前倒ししない ---
+# .seen を書けない間はマーカーも書き換えず、間隔が過ぎれば通常の取得が起動する (マーカーを先に書くと、
+# 前倒しを試すたびに間隔が先送りされ、通常の取得まで止まる)。書けない状態は同名のディレクトリで作る。
+case_early_save_failure() {
+  local bash_bin=$1 script=$2 label=$3
+  setup_case "branch=main;ab=0,0"
+  trap 'cleanup_case; trap - RETURN' RETURN
+
+  local cache
+  cache="$(cache_path main)"
+  seed_fresh
+  # 間隔 (300 秒) の手前。マーカーが書き換われば、経過時間が 1 分未満に戻る。
+  age_file "$cache.marker" 200
+  mkdir "$(seen_path)"
+  set_stdin '"my-session"' "$PR_A"
+  run_sl "$bash_bin" "$script" >/dev/null
+  run_sl "$bash_bin" "$script" >/dev/null
+  settle
+  if [ "$(sentinel_count)" != "0" ]; then
+    fail_case "early-save-failure [$label]" ".seen を書けないのに gh が $(sentinel_count) 回呼ばれた (期待 0 回)"
+    return
+  fi
+  if [ -z "$(find "$cache.marker" -mmin +1)" ]; then
+    fail_case "early-save-failure [$label]" ".seen を書けないのにマーカーが書き換わった (通常の取得が先送りされる)"
+    return
+  fi
+  age_file "$cache.marker" 400
+  run_sl "$bash_bin" "$script" >/dev/null
+  if ! wait_calls 1; then
+    fail_case "early-save-failure [$label]" \
+      ".seen を書けないときに、間隔が過ぎても通常の取得が起動しない (gh 呼び出し $(sentinel_count) 回)"
+    return
+  fi
+  cleanup_case
+  trap - RETURN
+
+  setup_case "branch=main;ab=0,0"
+  trap 'cleanup_case; trap - RETURN' RETURN
+  cache="$(cache_path main)"
+  date +%s > "$cache"
+  mkdir "$cache.marker"
+  set_stdin '"my-session"' "$PR_A"
+  run_sl "$bash_bin" "$script" >/dev/null
+  run_sl "$bash_bin" "$script" >/dev/null
+  settle
+  if [ "$(sentinel_count)" = "0" ]; then
+    pass_case "early-save-failure [$label]"
+  else
+    fail_case "early-save-failure [$label]" "マーカーを書けないのに gh が $(sentinel_count) 回呼ばれた (期待 0 回)"
+  fi
+}
+
+# --- early-waits-inflight: 取得の実行中は前倒しせず .seen も書かない。終わった後の描画で起動する ---
+case_early_waits_inflight() {
+  local bash_bin=$1 script=$2 label=$3
+  setup_case "branch=main;ab=0,0"
+  trap 'cleanup_case; trap - RETURN' RETURN
+
+  local inflight
+  inflight="$(cache_path main).inflight"
+  seed_fresh
+  mkdir "$inflight"
+  set_stdin '"my-session"' "$PR_A"
+  run_sl "$bash_bin" "$script" >/dev/null
+  run_sl "$bash_bin" "$script" >/dev/null
+  settle
+  if [ "$(sentinel_count)" != "0" ] || [ -e "$(seen_path)" ]; then
+    rmdir "$inflight"
+    fail_case "early-waits-inflight [$label]" \
+      "実行中なのに gh が $(sentinel_count) 回呼ばれた、または .seen が書かれた"
+    return
+  fi
+  rmdir "$inflight"
+  run_sl "$bash_bin" "$script" >/dev/null
+  if wait_calls 1 && [ "$(seen_sig)" = "$SIG_A" ]; then
+    pass_case "early-waits-inflight [$label]"
+  else
+    fail_case "early-waits-inflight [$label]" \
+      "取得が終わった後の描画で前倒しが起動しない (gh 呼び出し $(sentinel_count) 回)"
+  fi
+}
+
+# --- early-inflight-during-lock: ロックを待つ間に取得が実行中になったら、前倒しせず .seen も書かない ---
+# ロックを外から握った状態で描画を走らせ、描画がロックを待つ間に .inflight を作ってから解放する。
+# 前倒しすると自分の子プロセスは .inflight を作れずに終わり、.seen だけが新しくなってきっかけが消える。
+# ロックは macOS 版がディレクトリ (<marker>.lockd)、Linux 版が flock (<marker>.lock)。
+case_early_inflight_during_lock() {
+  local bash_bin=$1 script=$2 label=$3
+  setup_case "branch=main;ab=0,0"
+  trap 'cleanup_case; trap - RETURN' RETURN
+
+  local cache holder="" render
+  cache="$(cache_path main)"
+  seed_fresh
+  set_stdin '"my-session"' "$PR_A"
+  if [ "$label" = macOS ]; then
+    mkdir "$cache.marker.lockd"
+  else
+    flock "$cache.marker.lock" sleep 1.5 &
+    holder=$!
+    wait_until 2 '[ -e "$cache.marker.lock" ]' || true
+  fi
+  run_sl "$bash_bin" "$script" >/dev/null &
+  render=$!
+  # 描画がロックを取る前の .inflight の確認を通り、ロックを待つところまで進む時間を取る。
+  sleep 1
+  mkdir "$cache.inflight"
+  if [ "$label" = macOS ]; then
+    rmdir "$cache.marker.lockd"
+  else
+    wait "$holder" || true
+  fi
+  wait "$render" || true
+  settle
+  if [ "$(sentinel_count)" != "0" ] || [ -e "$(seen_path)" ]; then
+    rmdir "$cache.inflight"
+    fail_case "early-inflight-during-lock [$label]" \
+      "ロックを待つ間に取得が実行中になったのに、gh が $(sentinel_count) 回呼ばれた、または .seen が書かれた"
+    return
+  fi
+  rmdir "$cache.inflight"
+  run_sl "$bash_bin" "$script" >/dev/null
+  if wait_calls 1 && [ "$(seen_sig)" = "$SIG_A" ]; then
+    pass_case "early-inflight-during-lock [$label]"
+  else
+    fail_case "early-inflight-during-lock [$label]" \
+      "取得が終わった後の描画で前倒しが起動しない (gh 呼び出し $(sentinel_count) 回)。きっかけが消費された"
+  fi
+}
+
+# --- early-min-interval: 前回の前倒しから 30 秒以内は前倒しせず .seen も書かない。過ぎた後に起動する ---
+# 基点は通常の取得の時刻ではないので、通常の取得の直後でも前倒しする。
+case_early_min_interval() {
+  local bash_bin=$1 script=$2 label=$3
+  setup_case "branch=main;ab=0,0"
+  trap 'cleanup_case; trap - RETURN' RETURN
+
+  local recent before
+  recent="$(( $(date +%s) - 10 ))"
+  seed_fresh
+  write_seen my-session "$recent" "$SIG_A"
+  before=$(cat "$(seen_path)")
+  set_stdin '"my-session"' "$PR_B"
+  run_sl "$bash_bin" "$script" >/dev/null
+  settle
+  if [ "$(sentinel_count)" != "0" ] || [ "$(cat "$(seen_path)")" != "$before" ]; then
+    fail_case "early-min-interval [$label]" \
+      "前回の前倒しから 10 秒で gh が $(sentinel_count) 回呼ばれた、または .seen が書き換わった"
+    return
+  fi
+  write_seen my-session "$(( $(date +%s) - 40 ))" "$SIG_A"
+  run_sl "$bash_bin" "$script" >/dev/null
+  if ! wait_calls 1; then
+    fail_case "early-min-interval [$label]" \
+      "前回の前倒しから 40 秒経っても起動しない (gh 呼び出し $(sentinel_count) 回)"
+    return
+  fi
+  cleanup_case
+  trap - RETURN
+
+  # マーカーなし (= 通常の取得がすぐ起動する) で始め、通常の取得の直後に署名を変える。
+  setup_case "branch=main;ab=0,0"
+  trap 'cleanup_case; trap - RETURN' RETURN
+  set_stdin '"my-session"' null
+  run_sl "$bash_bin" "$script" >/dev/null
+  if ! wait_calls 1; then
+    fail_case "early-min-interval [$label]" "通常の取得が起動しない (前提が崩れている)"
+    return
+  fi
+  set_stdin '"my-session"' "$PR_A"
+  run_sl "$bash_bin" "$script" >/dev/null
+  if wait_calls 2; then
+    pass_case "early-min-interval [$label]"
+  else
+    fail_case "early-min-interval [$label]" \
+      "通常の取得の直後に前倒しが起動しない (gh 呼び出し $(sentinel_count) 回)"
+  fi
+}
+
+# --- early-seen-bad-time: .seen の時刻が数字でない、または未来なら、最低間隔は過ぎたものとみなす ---
+case_early_seen_bad_time() {
+  local bash_bin=$1 script=$2 label=$3 at
+  for at in abc "" 0123 "$(( $(date +%s) + 1000 ))"; do
+    setup_case "branch=main;ab=0,0"
+    seed_fresh
+    write_seen my-session "$at" "$SIG_A"
+    set_stdin '"my-session"' "$PR_B"
+    run_sl "$bash_bin" "$script" >/dev/null
+    local ok=0
+    wait_calls 1 && [ "$(seen_sig)" = "$SIG_B" ] && ok=1
+    local got
+    got=$(sentinel_count)
+    cleanup_case
+    if [ "$ok" != "1" ]; then
+      fail_case "early-seen-bad-time [$label]" ".seen の時刻 '$at' で前倒しが起動しない (gh 呼び出し $got 回)"
+      return
+    fi
+  done
+  pass_case "early-seen-bad-time [$label]"
+}
+
+# --- early-alternating: 同じ session_id で署名が交互に変わっても、30 秒に 1 回を超えて起動しない ---
+# 同じセッションを 2 つの端末で開き、両者の pr が食い違う場合を模す。
+case_early_alternating() {
+  local bash_bin=$1 script=$2 label=$3 pr
+  setup_case "branch=main;ab=0,0"
+  trap 'cleanup_case; trap - RETURN' RETURN
+
+  seed_fresh
+  set_stdin '"my-session"' "$PR_A"
+  run_sl "$bash_bin" "$script" >/dev/null
+  if ! wait_calls 1; then
+    fail_case "early-alternating [$label]" "最初の前倒しが起動しない (前提が崩れている)"
+    return
+  fi
+  for pr in "$PR_B" "$PR_A" "$PR_B" "$PR_A" "$PR_B"; do
+    set_stdin '"my-session"' "$pr"
+    run_sl "$bash_bin" "$script" >/dev/null
+  done
+  settle
+  if [ "$(sentinel_count)" = "1" ]; then
+    pass_case "early-alternating [$label]"
+  else
+    fail_case "early-alternating [$label]" \
+      "署名が交互に変わる間に gh が $(sentinel_count) 回呼ばれた (期待 1 回)"
+  fi
+}
+
+# --- early-two-sessions: 同じブランチを開いた 2 つのセッションの署名が食い違っても、起動し続けない ---
+# .seen はセッションごとなので、それぞれの最初の 1 回 (計 2 回) で止まる。最低間隔が過ぎた後も同じ。
+case_early_two_sessions() {
+  local bash_bin=$1 script=$2 label=$3 i
+  setup_case "branch=main;ab=0,0"
+  trap 'cleanup_case; trap - RETURN' RETURN
+
+  seed_fresh
+  set_stdin '"my-session-1"' "$PR_A"
+  run_sl "$bash_bin" "$script" >/dev/null
+  wait_calls 1 || true
+  set_stdin '"my-session-2"' "$PR_B"
+  run_sl "$bash_bin" "$script" >/dev/null
+  if ! wait_calls 2; then
+    fail_case "early-two-sessions [$label]" "それぞれの最初の前倒しが起動しない (gh 呼び出し $(sentinel_count) 回)"
+    return
+  fi
+  write_seen my-session-1 "$(( $(date +%s) - 100 ))" "$SIG_A"
+  write_seen my-session-2 "$(( $(date +%s) - 100 ))" "$SIG_B"
+  for i in 1 2 3; do
+    set_stdin '"my-session-1"' "$PR_A"
+    run_sl "$bash_bin" "$script" >/dev/null
+    set_stdin '"my-session-2"' "$PR_B"
+    run_sl "$bash_bin" "$script" >/dev/null
+  done
+  settle
+  if [ "$(sentinel_count)" = "2" ]; then
+    pass_case "early-two-sessions [$label]"
+  else
+    fail_case "early-two-sessions [$label]" \
+      "2 つのセッションの描画が交互に続く間に gh が $(sentinel_count) 回呼ばれた (期待 2 回)"
+  fi
+}
+
+# --- early-mr: pr.kind が mr (GitLab の MR) なら前倒しせず、.seen も作らない ---
+case_early_mr() {
+  local bash_bin=$1 script=$2 label=$3
+  setup_case "branch=main;ab=0,0"
+  trap 'cleanup_case; trap - RETURN' RETURN
+
+  seed_fresh
+  set_stdin '"my-session"' \
+    '{"number":5,"url":"https://gitlab.com/my-org/my-project/-/merge_requests/5","review_state":"pending","kind":"mr"}'
+  run_sl "$bash_bin" "$script" >/dev/null
+  run_sl "$bash_bin" "$script" >/dev/null
+  settle
+  if [ "$(sentinel_count)" = "0" ] && [ ! -e "$(seen_path)" ]; then
+    pass_case "early-mr [$label]"
+  else
+    fail_case "early-mr [$label]" "MR で gh が $(sentinel_count) 回呼ばれた、または .seen が作られた"
+  fi
+}
+
+# --- early-session-id: session_id が空、許さない文字を含む、128 文字を超えるなら前倒しせず、ファイルも作らない ---
+# 英数字と - _ : だけの 128 文字以内なら前倒しする (served: で始まるリモートのセッションと、128 文字ちょうど)。
+case_early_session_id() {
+  local bash_bin=$1 script=$2 label=$3 spec sid want got seen_files
+  local a128 a129
+  a128=$(printf 'a%.0s' $(seq 1 128))
+  a129="${a128}a"
+  for spec in '"";0' 'null;0' '"a/b";0' '"../x";0' '"my session";0' '"セッション";0' '"my.session";0' \
+              "\"$a129\";0" '123;1' '"served:my-session_01";1' "\"$a128\";1"; do
+    sid=${spec%;*}
+    want=${spec##*;}
+    setup_case "branch=main;ab=0,0"
+    seed_fresh
+    set_stdin "$sid" "$PR_A"
+    run_sl "$bash_bin" "$script" >/dev/null
+    if [ "$want" = "1" ]; then
+      wait_calls 1 || true
+    else
+      settle
+    fi
+    got=$(sentinel_count)
+    seen_files=$(find "$case_dir" -name '*.seen' | wc -l | tr -d ' ')
+    cleanup_case
+    if [ "$got" != "$want" ] || [ "$seen_files" != "$want" ]; then
+      fail_case "early-session-id [$label]" \
+        "session_id ${sid:0:40} で gh が ${got} 回呼ばれ、.seen が ${seen_files} 個できた (期待はどちらも ${want})"
+      return
+    fi
+  done
+  pass_case "early-session-id [$label]"
+}
+
+# --- early-stdin-robust: pr や session_id に改行や制御文字があっても、オブジェクトでない pr でも、
+# ほかのフィールドがずれない ---
+# 描画は、pr も session_id もない入力の描画と一致する。jq がエラーで終わるとすべてのフィールドが
+# 空になり、署名に改行が残ると後ろの session_id がずれる。
+case_early_stdin_robust() {
+  local bash_bin=$1 script=$2 label=$3 baseline out spec sid pr want_calls want_sig
+  setup_case "branch=main;ab=0,0"
+  seed_fresh
+  baseline=$(run_sl "$bash_bin" "$script")
+  cleanup_case
+  # 各要素は「session_id;pr;gh の呼び出し回数;.seen の署名」。
+  for spec in \
+    '"my-session";"https://github.com/my-org/my-project/pull/12";0;' \
+    '"my-session";12;0;' \
+    '"my-session";[1];0;' \
+    '"my-session";true;0;' \
+    '"my-session";{"url":null};0;' \
+    '"my-\nsession";{"url":"https://github.com/my-org/my-project/pull/12"};0;' \
+    '"my-session";{"number":12,"url":"https://github.com/my-org/my-project/pull/12"};1;https://github.com/my-org/my-project/pull/12:' \
+    '"my-session";{"url":"https://github.com/my-org/my-project/pull/12\nx","review_state":"pending\u001b[31m"};1;https://github.com/my-org/my-project/pull/12 x:pending [31m'; do
+    sid=${spec%%;*}; spec=${spec#*;}
+    want_sig=${spec##*;}; spec=${spec%;*}
+    want_calls=${spec##*;}; pr=${spec%;*}
+    setup_case "branch=main;ab=0,0"
+    seed_fresh
+    set_stdin "$sid" "$pr"
+    out=$(run_sl "$bash_bin" "$script")
+    if [ "$want_calls" = "1" ]; then
+      wait_calls 1 || true
+    else
+      settle
+    fi
+    local got lines=0
+    got=$(sentinel_count)
+    [ -f "$(seen_path)" ] && lines=$(wc -l < "$(seen_path)" | tr -d ' ')
+    local sig
+    sig=$(seen_sig)
+    cleanup_case
+    if [ "$out" != "$baseline" ]; then
+      fail_case "early-stdin-robust [$label]" "pr=${pr} で描画がずれた: $out"
+      return
+    fi
+    if [ "$got" != "$want_calls" ] || [ "$sig" != "$want_sig" ] \
+       || { [ "$want_calls" = "1" ] && [ "$lines" != "2" ]; }; then
+      fail_case "early-stdin-robust [$label]" \
+        "session_id=${sid} pr=${pr} で gh が ${got} 回、.seen が ${lines} 行で署名 '${sig}' (期待 ${want_calls} 回、'${want_sig}')"
+      return
+    fi
+  done
+  pass_case "early-stdin-robust [$label]"
+}
+
+# --- early-no-extra-commands: 署名が変わらない描画と、最低間隔で見送る描画では、外部コマンドの起動が
+# 増えない ---
+# 主なコマンドを、呼ばれた名前を記録してから本物を exec するラッパーで隠し、pr も session_id もない
+# 描画と回数を比べる。コマンドを伴わないサブシェル (組み込みだけの $(...)) の fork は検出できない。
+case_early_no_extra_commands() {
+  local bash_bin=$1 script=$2 label=$3
+  setup_case "branch=main;ab=0,0"
+  trap 'cleanup_case; trap - RETURN' RETURN
+
+  local bin="$case_dir/count-bin" log="$case_dir/commands.log" cmd real
+  mkdir "$bin"
+  for cmd in date stat cksum mkdir rmdir mv mktemp rm cat touch sleep id uname awk tail chmod jq flock; do
+    real=$(command -v "$cmd" 2>/dev/null) || continue
+    printf '#!/bin/sh\nprintf "%%s\\n" %s >> "%s"\nexec "%s" "$@"\n' "$cmd" "$log" "$real" > "$bin/$cmd"
+    chmod +x "$bin/$cmd"
+  done
+  local path="PATH=$bin:$GIT_SHIM_DIR:$GH_SHIM_DIR:$PATH"
+  count_render() {
+    : > "$log"
+    run_sl "$bash_bin" "$script" "$path" >/dev/null
+    wc -l < "$log" | tr -d ' '
+  }
+
+  seed_fresh
+  set_stdin null null
+  count_render >/dev/null
+  local base same recent
+  base=$(count_render)
+  write_seen my-session "$(( $(date +%s) - 100 ))" "$SIG_A"
+  set_stdin '"my-session"' "$PR_A"
+  same=$(count_render)
+  write_seen my-session "$(( $(date +%s) - 10 ))" "$SIG_A"
+  set_stdin '"my-session"' "$PR_B"
+  recent=$(count_render)
+  settle
+  if [ "$(sentinel_count)" != "0" ]; then
+    fail_case "early-no-extra-commands [$label]" "前倒ししない描画で gh が $(sentinel_count) 回呼ばれた (前提が崩れている)"
+  elif [ "$same" = "$base" ] && [ "$recent" = "$base" ]; then
+    pass_case "early-no-extra-commands [$label] (${base} commands)"
+  else
+    fail_case "early-no-extra-commands [$label]" \
+      "外部コマンドの起動が増えた: 基準 ${base} 回、署名が同じ ${same} 回、最低間隔の中 ${recent} 回"
+  fi
+}
+
 # --- jq-*: --jq による変換 (候補の選び方、レビュー状態、CI、コメントの件数) ---
 #   $4 ケース名 / $5 応答 / $6 期待するキャッシュの fetched_at 以降 (タブを | にしたもの。PR なしは空)
 #   $7 repo の fake git 規約 (省略時は push 先のオーナー me)
@@ -609,6 +1185,21 @@ run_all_cases() {
   case_not_invoked_without_prerequisites "$bash_bin" "$script" "$label"
   case_future_fetched_at          "$bash_bin" "$script" "$label"
   case_comment_count              "$bash_bin" "$script" "$label"
+  case_early_on_change            "$bash_bin" "$script" "$label"
+  case_early_seen_missing         "$bash_bin" "$script" "$label"
+  case_early_mismatch_persists    "$bash_bin" "$script" "$label"
+  case_early_branch_switch        "$bash_bin" "$script" "$label"
+  case_early_save_failure         "$bash_bin" "$script" "$label"
+  case_early_waits_inflight       "$bash_bin" "$script" "$label"
+  case_early_inflight_during_lock "$bash_bin" "$script" "$label"
+  case_early_min_interval         "$bash_bin" "$script" "$label"
+  case_early_seen_bad_time        "$bash_bin" "$script" "$label"
+  case_early_alternating          "$bash_bin" "$script" "$label"
+  case_early_two_sessions         "$bash_bin" "$script" "$label"
+  case_early_mr                   "$bash_bin" "$script" "$label"
+  case_early_session_id           "$bash_bin" "$script" "$label"
+  case_early_stdin_robust         "$bash_bin" "$script" "$label"
+  case_early_no_extra_commands    "$bash_bin" "$script" "$label"
   # 他人の fork の同名ブランチの OPEN より、自分の MERGED (HEAD 一致) を選ぶ。オーナーは大文字小文字を区別しない
   run_jq_case "$bash_bin" "$script" "$label" jq-fork-same-name fork-same-name \
     "12|merged||pass|0|1|$url12"

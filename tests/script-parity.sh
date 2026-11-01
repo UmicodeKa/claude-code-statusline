@@ -119,6 +119,9 @@ main() {
   # main の描画部分 (hl_set の組み立てから、各要素の組み立てと build_layout の呼び出しまで)。
   # 手前の jq の読み取りはコメントが両版で違う (macOS 版だけ bash 3.2 の注記がある) ので含めない。
   check_block main-render '# HIGHLIGHT のトークンを' '# " | " で結合'
+  # jq の読み取りのうち、コメントの後の read と jq の式。PR の取得の前倒しに使う署名と session_id も
+  # ここで取り出すので、片方の版だけで式や read の数が変わるとフィールドがずれる。
+  check_block stdin-read '  IFS= read -r model' '# HIGHLIGHT のトークンを'
 
   # ロケール固定はトリムの文字数換算に効くため冒頭 (先頭 20 行) にあることまで見る。
   check_static locale '1,20p' 'export LC_ALL=C.UTF-8'
@@ -140,6 +143,12 @@ main() {
   check_static pr-gh-env:GH_NO_EXTENSION_UPDATE_NOTIFIER "$pr_spawn" 'GH_NO_EXTENSION_UPDATE_NOTIFIER=1'
   check_static pr-gh-env:unset "$pr_spawn" 'unset GH_REPO GH_FORCE_TTY CLICOLOR_FORCE'
   check_static pr-fd-redirect "$pr_spawn" 'pr_refresh_child "$cwd" "$branch" "$cache" "$inflight" >/dev/null 2>&1 </dev/null &'
+  # 取得の前倒し。判定と .seen / マーカーの書き込みは block:pr-common の関数にあり、比べる範囲の外の
+  # maybe_pr_refresh はそれを呼ぶだけにする。片方の版だけが間隔の判定 (pr_refresh_due) に戻ると、
+  # その版では前倒しが効かなくなる。
+  local pr_refresh='/^maybe_pr_refresh() {/,/^}/p'
+  check_static pr-early:wanted "$pr_refresh" 'pr_refresh_wanted "$marker" "$now" "$seen" "$sig" || return'
+  check_static pr-early:claim "$pr_refresh" 'if ! pr_refresh_claim "$marker" "$now" "$seen" "$sig" "$inflight"; then'
   check_no_echo
 
   printf '\n'

@@ -249,9 +249,11 @@ Behavior:
 - The statusline is updated only when Claude Code has an event. To reflect things like CI completion while idle, add `"refreshInterval": 30` to `statusLine` in `~/.claude/settings.json`.
   Rendering only reads the cache, so re-running every 30 seconds adds little load
 - The refetch interval is 30-900 seconds depending on the state. One query costs 1 point of the GitHub API GraphQL budget, from the same allowance as other `gh` usage (5000 points per hour)
+- When you run `git push`, `gh pr create`, or similar inside Claude Code and the PR that Claude Code detects changes, it refetches without waiting for the interval. Right after you create a PR, it appears from the first render after the fetch completes
 - `#12` is an OSC 8 link, and on supporting terminals (iTerm2, etc.) Cmd+click / Ctrl+click opens the PR. Terminal.app does not support OSC 8, so it is not clickable.
   Over SSH or tmux the escape sequence may be dropped and it will not be a link. The environment variable `FORCE_HYPERLINK=0` turns the link off
-- It is shown in a different place from the PR badge in Claude Code's standard footer, so both may appear side by side. The standard badge may not update when you switch PRs in the same session, but this one always shows the PR of the current branch
+- It is shown in a different place from the PR badge in Claude Code's standard footer, so both may appear side by side.
+  The standard badge may keep showing the previous PR for a while after you switch branches, but this one always shows the PR of the current branch
 - Remotes other than GitHub (GitLab, etc.) are not supported
 
 ## What is displayed
