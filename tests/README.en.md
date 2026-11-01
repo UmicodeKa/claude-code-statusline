@@ -70,6 +70,20 @@ The child process runs `cd` to the cwd and then calls `gh`, so it does not get a
 | `not-invoked-without-prerequisites` | `gh` is not started with a detached HEAD or a symlinked history directory (which disables the feature) |
 | `future-fetched-at` | A cache whose `fetched_at` is in the future is not displayed and is replaced by the retrieval result |
 | `comment-count` | The cached comment count is shown only if it is a positive integer of at most 9 digits with no leading 0 (`0`, `012`, 10 digits, and `-1` are not shown) |
+| `early-on-change` | On a render where the signature of the stdin `pr` differs from the previous one, exactly one fetch starts without waiting for the interval (including a change in `review_state` alone) |
+| `early-seen-missing` | When `.seen` does not exist, one fetch starts if `pr` is present; otherwise none starts and `.seen` is not created |
+| `early-mismatch-persists` | Fetches do not keep starting while the stdin `pr` and the cache disagree (even after the minimum interval has passed) |
+| `early-branch-switch` | Switching branches starts no fetch while the signature stays the same. When the signature changes, it starts on the new branch's key |
+| `early-save-failure` | When `.seen` cannot be written, no early fetch starts and the marker is not rewritten. Once the interval passes, a regular fetch still starts. Nothing starts when the marker cannot be written either |
+| `early-waits-inflight` | While a fetch is running, no early fetch starts and `.seen` is not written. It starts on the render after the fetch finishes |
+| `early-min-interval` | Within 30 seconds of the last early fetch, no early fetch starts and `.seen` is not written. It starts after that. It also starts right after a regular fetch |
+| `early-seen-bad-time` | When the time in `.seen` is not a number (empty, `abc`, `0123`) or is in the future, the minimum interval is treated as having passed |
+| `early-alternating` | Even when the signature alternates under the same `session_id`, fetches do not start more than once per 30 seconds |
+| `early-two-sessions` | Even when two sessions on the same branch disagree on the signature, it stops after the first fetch of each |
+| `early-mr` | When `pr.kind` is `mr`, nothing starts and `.seen` is not created |
+| `early-session-id` | When `session_id` is empty, contains a disallowed character (`/`, `.`, a space, non-ASCII), or is 129 characters or longer, no early fetch starts and `.seen` is not created. A value starting with `served:`, a number, and exactly 128 characters do start an early fetch |
+| `early-stdin-robust` | Even with a `pr` or `session_id` containing newlines or control characters, or a `pr` that is not an object (a string, number, array, boolean), the render matches the one with neither `pr` nor `session_id`, and `.seen` stays two lines |
+| `early-no-extra-commands` | On a render whose signature has not changed, and on a render skipped by the minimum interval, the number of external command launches stays the same as on a render with neither `pr` nor `session_id` |
 | `jq-fork-same-name` | Picks your own MERGED PR (HEAD matches) over an OPEN PR from someone else's fork with the same branch name |
 | `jq-review-null-approved` | Even when `reviewDecision` is `null`, an `APPROVED` in `latestReviews` makes it approved |
 | `jq-nullable-fields` | CI is empty when `statusCheckRollup` is `null`, and the count is 0 when `totalCommentsCount` is `null` |
@@ -84,6 +98,9 @@ The child process runs `cd` to the cwd and then calls `gh`, so it does not get a
   The `--jq` built into `gh` is gojq, so using a function that exists only in jq would not be detected.
 - `no-gh` sets `PATH` to a directory containing only symlinks to the commands used by the main script and the fake git.
   The real `gh` is often in the same directory as `jq` (`/usr/bin` or `/opt/homebrew/bin`), so the whole directory cannot be dropped.
+- `early-*` renders an input that contains `session_id` and `pr`, and checks the number of `gh` calls and the contents of `.seen`.
+  Each case starts after placing a cache and a marker that keep the interval from starting a fetch. The time in `.seen` is written in its contents, so the minimum interval is reproduced by rewriting `.seen`.
+- `early-no-extra-commands` hides the main external commands behind wrappers that record the called name and then `exec` the real command, and counts them. A fork of a subshell without an external command (a `$(...)` with only built-ins) cannot be detected.
 
 ### rate-history-behavior.sh
 
@@ -133,15 +150,17 @@ The conf is written to a temporary file and passed in. `RATE_CHART_LEN` and `POL
 | `block:paint` | Coloring, highlighting, trimming, and git aggregation (`paint` / `highlight` / `*_color` / `truncate_label` / `truncate_branch` / `git_diff_stat` / `git_ahead_behind`) are identical in both versions |
 | `block:format-layout` | Formatting of rate / ctx and assembly of the layout (`format_limit` / `format_ctx` / `layout_token` / `split_tokens` / `build_layout` / `join_by`) are identical in both versions |
 | `block:main-render` | The rendering part of main (building `hl_set`, the rate chart, fetching branch / ab, building model and effort, directory, the `build_layout` call) is identical in both versions. The preceding jq reads are excluded because their comments differ between versions |
+| `block:stdin-read` | The part of the jq reads after the comments, the `read` calls and the jq expression (including the signature and `session_id` used for early PR fetches), is identical in both versions |
 | `static:locale` | `export LC_ALL=C.UTF-8` is in the first 20 lines |
 | `static:no-prompt:<function>:*` | `GIT_TERMINAL_PROMPT=0` / `GIT_ASKPASS=/bin/true` / `SSH_ASKPASS=/bin/true` / `SSH_ASKPASS_REQUIRE=force` remain in each of `maybe_git_fetch` and `pr_spawn_refresh` |
 | `static:fetch-fd-redirect` | `>/dev/null 2>&1 </dev/null` remains in `maybe_git_fetch` |
 | `static:pr-gh-env:*` | `GH_PROMPT_DISABLED=1` / `GH_NO_UPDATE_NOTIFIER=1` / `GH_NO_EXTENSION_UPDATE_NOTIFIER=1` and `unset GH_REPO GH_FORCE_TTY CLICOLOR_FORCE` remain in `pr_spawn_refresh` |
 | `static:pr-fd-redirect` | `>/dev/null 2>&1 </dev/null` remains in `pr_spawn_refresh` |
+| `static:pr-early:*` | `maybe_pr_refresh` calls the early-fetch check (`pr_refresh_wanted`) and the re-check and writes inside the lock (`pr_refresh_claim`) |
 | `static:no-echo` | `echo` is not used on any non-comment line |
 
 - `block:*` extracts the text from the start-marker comment line (matched at the beginning of the line) up to just before the end-marker line, and compares it.
-  If the marker comment is rewritten, the block cannot be extracted and the check fails.
+  If the marker comment is rewritten, the block cannot be extracted and the check fails. Only `block:stdin-read` uses the first `read` line as its start marker, because the comments just before it differ between versions.
 - `static:*` checks that a fixed string is contained in each of the two versions. A check that names a function searches only that function's range (from `<function>() {` to the next `}` at the start of a line).
 
 ### translation-parity.sh

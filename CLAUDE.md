@@ -36,6 +36,8 @@ CI は Linux 版のみを実行します。macOS 版の変更はローカルの 
 - マーカー書き込み失敗時に fetch を起動しないガード: 外すと間引きの基点が残らず、描画のたびに fetch が起動する。([詳細](docs/DESIGN.md#マーカー書き込み失敗時に-fetch-しない))
 - PR の状態表示の取得 (`maybe_pr_refresh` / `pr_spawn_refresh`) も `maybe_git_fetch` と同じ約束事 (fd の付け替え、git 用の 4 変数、marker → unlock → spawn、マーカー書き込み失敗時に起動しない) を守る。加えて gh 用の 3 変数と `unset GH_REPO GH_FORCE_TTY CLICOLOR_FORCE` を外さない。([詳細](docs/DESIGN.md#pr-子プロセスの-fd-付け替えと環境変数))
 - `pr` の `.inflight` の後始末を EXIT の `trap` に移さない。bash 3.2 では `&` で起動したサブシェルの EXIT trap が走らず、印が残って 90 秒間取得が止まる。([詳細](docs/DESIGN.md#pr-の-inflight-の後始末を-trap-にしない))
+- PR の取得の前倒し (`pr_refresh_claim`) は `.seen` → マーカーの順に書き、`.seen` を書けなければ前倒しで起動しない。入れ替えると `.seen` を書けない間に通常の取得まで先送りされ続け、ガードを外すと描画のたびに起動する。([詳細](docs/DESIGN.md#pr-の前倒しの-seen--マーカーの順序と保存失敗))
+- 前倒しの判定 (`pr_early_due`) は stdin の `pr` の署名を前回の署名とだけ比べ、キャッシュとは比べない。比べると、両者が食い違ったまま続く間 (既定のブランチ、ブランチの切り替えの後など) 描画のたびに取得が起動する。判定は組み込みの `read` だけで行い、fork を足さない。([詳細](docs/DESIGN.md#pr-の前倒しは署名の変化だけを見る))
 - 描画経路 (`git_ahead_behind` など) に同期 `git fetch` や追加の `git` / `gh` 呼び出しを足すと、ネットワーク I/O や fork が増えて描画が遅くなる。commit 列のハッシュ (`rev-parse --short HEAD`) と変更行数は、`layout_token` の `commit` で列を組み立てるときにだけ取る。([詳細](docs/DESIGN.md#描画経路にネットワーク-io-と余分な-git-呼び出しを入れない))
 - 2 行目のトークンは値が空でも積む (`build_layout` の第 3 引数 `1`)。空なら省く扱いにすると｢2 行目は常に出力する｣が崩れるが、既存ケースでは表面化しない。([詳細](docs/DESIGN.md#2-行目のトークンは空でも積む))
 - 設定ファイルの読み込み位置は、内部定数と clamp ブロックより前。後ろに移すと conf の不正値が丸められず、内部定数も conf で書き換えられるようになる。([詳細](docs/DESIGN.md#設定ファイルの読み込みブロック))

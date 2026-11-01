@@ -64,6 +64,20 @@ PR の状態表示の取得も投げっぱなしの非同期処理のため、fa
 | `not-invoked-without-prerequisites` | detached HEAD と、symlink の履歴ディレクトリ (無効になる) では `gh` を起動しない |
 | `future-fetched-at` | `fetched_at` が現在より未来のキャッシュは表示せず、取得の結果で置き換える |
 | `comment-count` | キャッシュのコメントの件数は、先頭が 0 でない 9 桁以内の正の整数のときだけ出す (`0`、`012`、10 桁、`-1` は出さない) |
+| `early-on-change` | stdin の `pr` の署名が前回と変わった描画で、間隔を待たずに取得が 1 回だけ起動する (`review_state` だけの変化も含む) |
+| `early-seen-missing` | `.seen` がないとき、`pr` があれば 1 回起動し、なければ起動せず `.seen` も作らない |
+| `early-mismatch-persists` | stdin の `pr` とキャッシュが食い違ったままでも、起動し続けない (最低間隔が過ぎた後も) |
+| `early-branch-switch` | ブランチを切り替えても、署名が同じなら起動しない。署名が変われば切り替え先のキーで起動する |
+| `early-save-failure` | `.seen` を書けないときは前倒しで起動せず、マーカーも書き換えない。間隔が過ぎれば通常の取得は起動する。マーカーを書けないときも起動しない |
+| `early-waits-inflight` | 取得の実行中は前倒しせず `.seen` も書かない。取得が終わった後の描画で起動する |
+| `early-min-interval` | 前回の前倒しから 30 秒以内は前倒しせず `.seen` も書かない。過ぎた後に起動する。通常の取得の直後でも前倒しする |
+| `early-seen-bad-time` | `.seen` の時刻が数字でない (空、`abc`、`0123`)、または未来なら、最低間隔は過ぎたものとみなす |
+| `early-alternating` | 同じ `session_id` で署名が交互に変わっても、30 秒に 1 回を超えて起動しない |
+| `early-two-sessions` | 同じブランチを開いた 2 つのセッションの署名が食い違っても、それぞれの最初の 1 回で止まる |
+| `early-mr` | `pr.kind` が `mr` なら起動せず、`.seen` も作らない |
+| `early-session-id` | `session_id` が空、許さない文字 (`/`、`.`、空白、非 ASCII) を含む、129 文字以上なら前倒しせず、`.seen` も作らない。`served:` で始まる値、数値、128 文字ちょうどは前倒しする |
+| `early-stdin-robust` | 値に改行や制御文字を含む `pr` や `session_id`、オブジェクトでない `pr` (文字列、数値、配列、真偽値) でも、描画が `pr` も `session_id` もないときと一致し、`.seen` は 2 行のまま |
+| `early-no-extra-commands` | 署名が変わらない描画と、最低間隔で見送る描画では、外部コマンドの起動が `pr` も `session_id` もない描画と同じ回数のまま |
 | `jq-fork-same-name` | 他人の fork の同名ブランチの OPEN より、自分の MERGED (HEAD 一致) を選ぶ |
 | `jq-review-null-approved` | `reviewDecision` が `null` でも、`latestReviews` の `APPROVED` で approved になる |
 | `jq-nullable-fields` | `statusCheckRollup` が `null` なら CI は空、`totalCommentsCount` が `null` なら件数は 0 |
@@ -76,6 +90,8 @@ PR の状態表示の取得も投げっぱなしの非同期処理のため、fa
 
 - `jq-*` は、`pr-responses/` の GraphQL 応答を fake gh に返させ、本体の `--jq` の式を本物の `jq` で評価した結果のキャッシュを確かめます。`gh` 組み込みの `--jq` は gojq なので、jq にしかない関数を使っても検出できません。
 - `no-gh` は、本体と fake git が使うコマンドだけを symlink したディレクトリを `PATH` にします。本物の `gh` は `jq` と同じディレクトリ (`/usr/bin` や `/opt/homebrew/bin`) にあることが多く、ディレクトリごと外せないためです。
+- `early-*` は、`session_id` と `pr` を含む入力を描画させ、`gh` の呼び出し回数と `.seen` の中身を確かめます。各ケースは、間隔による取得が起動しないキャッシュとマーカーを置いてから始めます。`.seen` の時刻は中身に書くので、最低間隔は `.seen` を書き直して再現します。
+- `early-no-extra-commands` は、主な外部コマンドを、呼ばれた名前を記録してから本物を `exec` するラッパーで隠して数えます。外部コマンドを伴わないサブシェル (組み込みだけの `$(...)`) の fork は検出できません。
 
 ### rate-history-behavior.sh
 
@@ -119,14 +135,16 @@ conf は一時ファイルに書いて渡します。`RATE_CHART_LEN` と `POLL_
 | `block:paint` | 色付け、ハイライト、トリム、git の集計 (`paint` / `highlight` / `*_color` / `truncate_label` / `truncate_branch` / `git_diff_stat` / `git_ahead_behind`) が両版で一致する |
 | `block:format-layout` | rate / ctx の整形とレイアウトの組み立て (`format_limit` / `format_ctx` / `layout_token` / `split_tokens` / `build_layout` / `join_by`) が両版で一致する |
 | `block:main-render` | main の描画部分 (`hl_set` の組み立て、rate チャート、branch / ab の取得、model と effort の組み立て、directory、`build_layout` の呼び出し) が両版で一致する。手前の jq の読み取りはコメントが両版で違うので対象外 |
+| `block:stdin-read` | jq の読み取りのうち、コメントの後の `read` と jq の式 (PR の取得の前倒しに使う署名と `session_id` を含む) が両版で一致する |
 | `static:locale` | 先頭 20 行に `export LC_ALL=C.UTF-8` がある |
 | `static:no-prompt:<関数>:*` | `maybe_git_fetch` と `pr_spawn_refresh` のそれぞれに、`GIT_TERMINAL_PROMPT=0` / `GIT_ASKPASS=/bin/true` / `SSH_ASKPASS=/bin/true` / `SSH_ASKPASS_REQUIRE=force` が残っている |
 | `static:fetch-fd-redirect` | `maybe_git_fetch` に `>/dev/null 2>&1 </dev/null` が残っている |
 | `static:pr-gh-env:*` | `pr_spawn_refresh` に `GH_PROMPT_DISABLED=1` / `GH_NO_UPDATE_NOTIFIER=1` / `GH_NO_EXTENSION_UPDATE_NOTIFIER=1` と、`unset GH_REPO GH_FORCE_TTY CLICOLOR_FORCE` が残っている |
 | `static:pr-fd-redirect` | `pr_spawn_refresh` に `>/dev/null 2>&1 </dev/null` が残っている |
+| `static:pr-early:*` | `maybe_pr_refresh` が、取得の前倒しの判定 (`pr_refresh_wanted`) と、ロックの中の確かめ直しと書き込み (`pr_refresh_claim`) を呼んでいる |
 | `static:no-echo` | コメント以外の行で `echo` を使っていない |
 
-- `block:*` は、開始マーカーのコメント行 (行頭一致) から終了マーカー行の手前までを取り出して比較します。マーカーのコメントを書き換えるとブロックを取り出せず、失敗になります。
+- `block:*` は、開始マーカーのコメント行 (行頭一致) から終了マーカー行の手前までを取り出して比較します。マーカーのコメントを書き換えるとブロックを取り出せず、失敗になります。`block:stdin-read` だけは、直前のコメントが両版で違うため、最初の `read` の行を開始マーカーにしています。
 - `static:*` は、両版それぞれに固定文字列が含まれることを確かめます。関数名を挙げたチェックは、その関数の範囲 (`<関数>() {` から次の行頭の `}` まで) だけを探します。
 
 ### translation-parity.sh

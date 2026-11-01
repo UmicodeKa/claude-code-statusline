@@ -230,9 +230,11 @@ The spark character (`spark_of`), the usage rounding (`round_int`), the remainin
 
 ### Reading the Input JSON
 
-`jq` takes tens of milliseconds per launch, so the 9 required fields are emitted one per line in a single call and received with 9 `read` calls.
+`jq` takes tens of milliseconds per launch, so the 11 required fields are emitted one per line in a single call and received with 11 `read` calls.
 
 - String fields have newlines, tabs, and CRs replaced with spaces inside `jq`, because a newline in a value would throw off the line correspondence
+- The stdin `pr` is turned into the signature used for early fetches ([Early Fetch on a Change in the stdin `pr`](#early-fetch-on-a-change-in-the-stdin-pr)) and emitted as one line.
+  It first checks that `pr` is an object, because reading `.pr.kind` on a string or the like makes `jq` exit with an error, and every other field taken in the same call becomes empty
 - Combining them into one line with `@tsv` is not used. In bash 3.2, when IFS is non-whitespace, `read` collapses consecutive delimiters into one and loses empty fields
 - New fields are added at the end. Inserting one in the middle would throw off the correspondence between existing variables and lines (this is why weekly's two fields come after `effort`)
 
@@ -283,6 +285,7 @@ fire-and-forget child process.
 | `${HISTORY_DIR}/pr-<key>` | Child process | Cache (one tab-separated line). Replaced only when a fetch succeeds |
 | `${HISTORY_DIR}/pr-<key>.marker` | Parent (render side) | Empty file. Its mtime is the time of the last fetch attempt |
 | `${HISTORY_DIR}/pr-<key>.inflight` | Child process | Directory. Exists only while a fetch is running |
+| `${HISTORY_DIR}/pr-<session_id>.seen` | Parent (render side) | One per session. Two lines: the time of the last early fetch and its signature. Written only when starting an early fetch |
 
 - The entry point is `pr_token`, called from `branch` in `layout_token`. As in `maybe_git_fetch`, the `PR_STATUS` check happens inside the function. It runs only when building the branch column, so there is no need to scan the layout
   separately to see whether `branch` is present, and splitting and whitespace handling cannot drift from `build_layout`
@@ -302,7 +305,8 @@ fire-and-forget child process.
   environment variables and read via `$ENV`. Embedding values into the expression as strings would break the expression on symbols in branch names and the like
 - The `git` calls that get the local HEAD and the push target are made inside the child process. Putting them in the render path would add forks on every render
 - The render side reads the cache with the built-in `read` and splits by tab with parameter expansion. Tab is IFS whitespace, so splitting with `IFS=$'\t' read` would collapse empty fields and shift the columns
-- Rendering cost: with `PR_STATUS=1`, even the normal within-interval path adds `cksum` / `date` / `stat` forks on every render. With `PR_STATUS=0`, nothing is added
+- Rendering cost: with `PR_STATUS=1`, even the normal within-interval path adds `cksum` / `date` / `stat` forks on every render. With `PR_STATUS=0`, nothing is added.
+  The early-fetch check uses only the built-in `read`, so a render whose signature has not changed adds no forks
 
 The head branch name and owner are decided from the push target (`@{push}`) because searching by the local branch name alone causes the following mistakes.
 
@@ -312,6 +316,53 @@ The head branch name and owner are decided from the push target (`@{push}`) beca
 `MERGED` / `CLOSED` is selected only when `headRefOid` matches the local HEAD. This avoids showing an old PR when a branch with the same name as a merged PR is reused with new commits.
 
 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is not checked. This keeps the PR status display usable for people who set that variable to hide Claude Code's built-in PR badge. Setting `PR_STATUS=1` is itself an explicit opt-in.
+
+### Early Fetch on a Change in the stdin `pr`
+
+Claude Code itself rechecks the PR right after a `git push`, `gh pr create` / `merge`, or similar command run with the Bash tool succeeds, and passes the result as the stdin `pr`.
+When the `pr` value changes, it reruns the statusline without waiting for other events.
+
+A **change in this value** is used as the trigger to start a fetch without waiting for the interval. This reflects a newly created PR quickly without raising the fetch frequency.
+The display is still built from our own cache as before, and `pr` is not used for display ([The stdin `pr` Field](#the-stdin-pr-field)).
+
+- The signature joins `pr.url` and `pr.review_state`. It is `none` when `pr` is not an object, has no `pr.url`, or has `pr.kind` set to `mr` (a GitLab MR)
+  - The URL is used instead of the number because `.seen` is not split by cache key. If `/cd` changes the cwd during a session, the number alone cannot tell apart a PR with the same number in another repository
+  - Including `review_state` allows early fetches on `gh pr ready` (draft → pending) and on reviews by other people. Fetches increase only by the number of times the value changes
+- The signature is **compared only with the previous signature**, never with the cache contents. Comparing with the cache would start a fetch on every render, without end, while the two keep disagreeing.
+  The display looks correct, so you would not notice without debugging. A disagreement persists in cases such as the following
+  - Right after a session starts, before Claude Code has checked the PR
+  - Claude Code does not look for a PR (`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, no token, the default branch)
+  - Claude Code searches by the current branch name and the owner of `origin`, while this script searches by the push target (`@{push}`), so they pick different PRs
+  - After switching branches, the previous branch's `pr` remains until Claude Code's next periodic check (at least 90 seconds, up to 30 minutes)
+  - Claude Code stops checking, and `pr` keeps its last value
+- The previous signature and the time of the early fetch are saved in one `.seen` per session
+  - If it were split by cache key (cwd and branch), when two sessions on the same branch disagree on `pr`, they would keep rewriting each other's `.seen` and start a fetch on every render
+  - It is not split by the pair of key and session either. Right after switching branches, the stdin still has the previous branch's `pr`, so the new branch would treat that signature as a change and start a needless fetch.
+    With one per session, a single fetch happens when Claude Code updates `pr` to the new branch's value
+  - When `.seen` does not exist, it is treated as having `none` saved. If the first time only recorded the signature, an early fetch would not work when the cache is stale and the stdin already has `pr` (for example, right after this feature is installed)
+- An early fetch is skipped for 30 seconds after the last early fetch (`PR_EARLY_MIN_SEC`, the same value as the shortest interval `PR_INTERVAL_FAST_SEC`)
+  - If the same session is open in two terminals, the two processes share `.seen` under the same `session_id`. When their `pr` values disagree, they rewrite `.seen` back and forth, but the minimum interval keeps it to once per 30 seconds
+  - The base time is not the time of the regular fetch (the marker). Otherwise, when `gh pr create` finishes right after a regular fetch started on the `git push` render, the early fetch would be skipped for 30 seconds.
+    The statusline renders only on events, so if `gh pr create` is the last action of a turn, nothing would start until the user's next action
+  - The time is written in the contents of `.seen`, not its mtime, and read with the built-in `read`. Reading the mtime would add a `stat` fork on every render whose signature differs
+- While a fetch is running (`.inflight` exists), no early fetch is started and `.seen` is not written. Writing it first would consume the trigger when `gh pr create` finishes while the fetch started right after `git push` is still running.
+  That fetch writes the state from before the PR was created (`none`), so `<pr>` would stay empty until the next regular fetch (up to 300 seconds later). Without writing it, the render after the running fetch finishes starts the early fetch again
+- If a fetch started early fails, it is not retried. Retrying would keep starting fetches without end, for example while the network is down. The cache is not rewritten, and the next attempt is 300 seconds later, the same as any failure now
+- Early fetches do not get a separate launch path. They are implemented by adding "the signature changed" to the conditions of `maybe_pr_refresh`
+  - A separate path would require keeping the conventions (lock, marker, `.inflight`, fd redirection, environment variables) aligned in two places in each version
+  - The checks and the writes of `.seen` and the marker are gathered in `pr_refresh_wanted` / `pr_refresh_claim`, inside the range that `tests/script-parity.sh` compares between the two versions (`block:pr-common`).
+    `maybe_pr_refresh` lies outside that range because the two versions take the lock differently, and checks written there would let the versions drift undetected
+- `session_id` is used in a file name only when it consists of alphanumerics, `-`, `_`, and `:` and is at most 128 characters. Otherwise (including empty), no early fetch is started and the behavior stays as before.
+  The allowed characters are enumerated, as in the URL validation of `pr_cache_load`. `:` is allowed because the `session_id` of a remote session starts with `served:`, and since `.` is not allowed, the name cannot become `..` or
+  match a cache file name
+- `.seen` is not removed. There is one per session that has a PR, and it is tens of bytes. The default `HISTORY_DIR` is under `/tmp`, where the OS removes old files (macOS removes files whose atime, mtime, and ctime are all older
+  than 3 days, every day at midnight. The systemd default is 10 days. If `/tmp` is a tmpfs, a reboot removes them). The cache and markers are not removed either, so cleanup for a `HISTORY_DIR` outside `/tmp` is handled together
+  with them
+
+In the following cases, a single change in the signature may not stop at a single fetch.
+
+- When two processes with the same `session_id` disagree on `pr`, they rewrite `.seen` back and forth, so fetches do not stop. The minimum interval keeps the frequency to once per 30 seconds
+- The lock is per cache key, so when two processes with the same `session_id` are on different keys, a single change can start one fetch per key
 
 ### PR Number Colors
 
@@ -523,8 +574,8 @@ Using the same order in both versions confines the implementation difference to 
 
 ### pr marker → unlock → spawn Order and Marker Write Failure
 
-- Location: the second half of `maybe_pr_refresh`
-- What it does: proceeds in the order lock acquisition → re-check of the interval → marker mtime update → lock release → child launch. If the marker cannot be written, the child is not launched
+- Location: the second half of `maybe_pr_refresh`, and `pr_refresh_claim` called inside the lock
+- What it does: proceeds in the order lock acquisition → re-check of the conditions → marker mtime update → lock release → child launch. If the marker cannot be written, the child is not launched
 - What happens if removed: the same as [marker → unlock → spawn Order](#marker--unlock--spawn-order) and [Not Fetching When the Marker Write Fails](#not-fetching-when-the-marker-write-fails). In the Linux version the flock remains until the
   fetch finishes, and launching without being able to write the marker launches `gh` on every render
 - Tests that guard it: `marker-unwritable` / `throttle` (pr-status-behavior). That flock is not passed to the child has the same structure as fetch's `lock-released`, and the pr side has no dedicated test
@@ -548,6 +599,32 @@ Using the same order in both versions confines the implementation difference to 
   - The number and the comment count are checked with the same `pr_is_positive_int` (a positive integer of at most 9 digits with no leading 0). If the count is 0 or invalid, the count is not shown
 - What happens if removed: the cache is a file under `/tmp`, which can be corrupted, and `gh` output can differ from expectations. If ESC or BEL gets mixed into the URL, OSC 8 closes midway and the display of the following columns breaks
 - Tests that guard it: `108-pr-stale` to `112-pr-invalid-optional-fields`, `115-pr-url-non-ascii`, `future-fetched-at` / `comment-count` (pr-status-behavior)
+
+### pr Early Fetch: `.seen` → Marker Order and Save Failure
+
+- Location: `pr_refresh_claim` and `pr_seen_save`
+- What it does: re-checks the interval and the early-fetch conditions inside the lock, and when the early-fetch conditions hold, writes the time and signature to `.seen` before writing the marker.
+  If `.seen` cannot be written, it does not start as an early fetch, and continues as a regular fetch if the interval has passed. `.seen` is written to a temp file and swapped in with `mv`, and is not written when `.seen` is a
+  directory or anything other than a regular file
+- What happens if removed
+  - Starting an early fetch without being able to write `.seen` leaves the signature different on the next render too, so a fetch starts on every render (the same as [Not Fetching When the Marker Write Fails](#not-fetching-when-the-marker-write-fails))
+  - Writing the marker first makes the marker newer on every early-fetch attempt while `.seen` cannot be written (a full disk, for example; truncating the marker needs no free space, so it succeeds).
+    The cache's `fetched_at` becomes older than the marker, the interval becomes 300 seconds, and that interval keeps being postponed, so even the regular fetch stops
+  - Writing directly with `printf > .seen` lets another render running in parallel read a truncated, empty file and decide that the signature changed
+  - Running `mv` when `.seen` is a directory moves the temp file into it and succeeds, so no signature is kept and a fetch starts on every render
+- Tests that guard it: `early-save-failure` (pr-status-behavior), `block:pr-common` / `static:pr-early:*` in `tests/script-parity.sh`
+
+### pr Early Fetch Looks Only at Changes in the Signature
+
+- Location: `pr_early_due`, the `.seen` path in `pr_token`, the signature in the stdin `jq`
+- What it does: compares the signature of the stdin `pr` only with the previous signature saved in the per-session `.seen`, never with the cache contents. It skips for `PR_EARLY_MIN_SEC` (30 seconds) after the last early fetch.
+  The check uses only the built-in `read`
+- What happens if removed
+  - Comparing with the cache starts a fetch on every render while the stdin `pr` and the cache keep disagreeing ([Early Fetch on a Change in the stdin `pr`](#early-fetch-on-a-change-in-the-stdin-pr))
+  - Keeping `.seen` per cache key treats the previous branch's `pr`, which remains right after switching branches, as a change
+  - Removing the minimum interval starts a fetch on every render when two processes with the same `session_id` disagree on `pr`. Using the marker as the base time skips the early fetch for `gh pr create` right after `git push`
+  - Using `stat` or `$(...)` in the check adds forks even on renders whose signature has not changed
+- Tests that guard it: `early-on-change` / `early-mismatch-persists` / `early-branch-switch` / `early-min-interval` / `early-alternating` / `early-two-sessions` / `early-no-extra-commands` (pr-status-behavior)
 
 ### Hyphen Separator in rate
 
@@ -692,8 +769,23 @@ Making PR status a standalone token of `LAYOUT_LINE1` was not adopted. A PR is i
 
 ### The stdin `pr` Field
 
-The `pr` field that Claude Code passes to the statusline is not used. It comes from the same source as the footer's PR badge, and it stays pinned to the first PR even if you switch PRs in the same session. It also exists only when there is
-an open PR, and has no CI information. Fetching it ourselves with `gh` displays the correct PR even in the same session.
+The `pr` field that Claude Code passes to the statusline is not used for display. It carries the same information as the footer's PR badge, and as of Claude Code 2.1.316 it has the following problems. Details such as the
+interval values can change between versions.
+
+- Switching branches (a change of HEAD) does not trigger a check, so the previous branch's `pr` remains until the next periodic check (at least 90 seconds, up to 30 minutes)
+- On the default branch (and `main` / `master`), it does not look for a PR and does not pass `pr`
+- When a single check takes longer than 4 seconds, checking stops until the process exits, and the last value remains
+- It exists only when there is an open PR (including drafts), and has no CI information
+
+Fetching it ourselves with `gh` displays the PR of the current branch right after switching branches. A change in the `pr` value is used only as a trigger to start the fetch early ([Early Fetch on a Change in the stdin `pr`](#early-fetch-on-a-change-in-the-stdin-pr)).
+
+### Other Ways to Fetch Early
+
+- Shortening the fetch interval: increases API calls even on branches without a PR. Early fetches already reflect a newly created PR quickly, so the intervals are unchanged
+- Fetching when the stdin `pr` differs from the cache: starts a fetch on every render while they keep disagreeing ([Early Fetch on a Change in the stdin `pr`](#early-fetch-on-a-change-in-the-stdin-pr))
+- Starting fetches from hooks: requires users to configure `settings.json`, and overlaps with the PR detection in Claude Code itself
+- Reflecting CI completion immediately: the stdin `pr` has no CI information, so it cannot be the trigger. While CI is running, the 30-second interval follows it
+- Retrying when an early fetch fails: would keep starting fetches without end, for example while the network is down
 
 ### Expressing PR State with an Underline Color (SGR 58)
 
@@ -784,3 +876,5 @@ Changing or removing the following items is not detected by the current tests. C
 - That the PR status underline (SGR 4), strikethrough (SGR 9), and OSC 8 links are actually rendered in the real Claude Code statusline (this depends on the terminal and Claude Code's rendering, so check visually)
 - The shape of real GitHub responses (the fake gh returns fixed response JSON. Confirm locally that the query and `--jq` work with the real `gh`)
 - That the `--jq` expressions work in the gojq built into `gh` (the fake gh evaluates with jq, so using a function that exists only in jq would not be detected)
+- That no subshell without an external command (a `$(...)` with only built-ins) has been added to the early-fetch check (`early-no-extra-commands` counts only external command launches)
+- When Claude Code actually changes the stdin `pr`, and that a change reruns the statusline (this depends on the implementation of Claude Code itself)

@@ -127,6 +127,10 @@ PR_STALE_SEC=1800
 # 取得の実行中を示す .inflight をこの秒数より古ければ、子プロセスが異常終了した跡として消す。
 # 打ち切り (PR_TIMEOUT_SEC) より長くしておき、動いている取得の印は消さない。
 PR_INFLIGHT_STALE_SEC=90
+# stdin の pr の変化による取得の前倒しは、前回の前倒しの起動からこの秒数が経つまで見送る。
+# 同じ session_id の 2 つのプロセスの pr が食い違って .seen を書き換え合っても、前倒しを
+# 最短の間隔 (FAST) と同じ頻度に収めるため、FAST と同じ値にする。
+PR_EARLY_MIN_SEC=$PR_INTERVAL_FAST_SEC
 # gh 1 回の打ち切り (秒)。CLAUDE_STATUSLINE_TEST_PR_TIMEOUT_SEC はテストで短くするための口。
 PR_TIMEOUT_SEC="${CLAUDE_STATUSLINE_TEST_PR_TIMEOUT_SEC:-60}"
 # 0 / 先頭が 0 (算術式で 8 進数と解釈される) / 非数値 / 4 桁以上は既定値に戻す。
@@ -795,12 +799,16 @@ maybe_git_fetch() {
 # PR_STATUS=1 のときだけ、現在のブランチに紐付く GitHub の PR を
 # `#<番号>[<CI記号>][ <件数>]` で表示する。情報はバックグラウンドの子プロセスが gh api graphql で
 # 取得してキャッシュに書き、描画はキャッシュを読むだけにする (gh も追加の git も描画経路に入れない)。
-# stdin の pr フィールドは、同じセッションで PR を切り替えても更新されないため使わない。
+# stdin の pr フィールドは表示には使わない。ブランチを切り替えた後もしばらく前のブランチの PR が残り、
+# 既定のブランチでは渡されず、Claude Code が確認を止めると最後の値のまま残り、CI の情報もないため。
+# pr の値 (署名) が変わったときに、間隔を待たずに取得を起動するきっかけにだけ使う (前倒し)。
 #
 # ファイル (<key> は「cwd + 改行 + ローカルのブランチ名」の cksum):
 #   ${HISTORY_DIR}/pr-<key>           キャッシュ。子プロセスが取得に成功したときだけ置き換える
 #   ${HISTORY_DIR}/pr-<key>.marker    空ファイル。親が書き、mtime が最後に取得を試みた時刻になる
 #   ${HISTORY_DIR}/pr-<key>.inflight  ディレクトリ。子プロセスが取得している間だけ存在する
+#   ${HISTORY_DIR}/pr-<session_id>.seen  セッションごとに 1 つ。1 行目が前回の前倒しの起動の時刻、
+#                                     2 行目がそのときの署名。親が前倒しで起動するときだけ書く
 # キャッシュとマーカーを分けるのは、マーカーの書き方 (`true > file`) がファイルを空にするため。
 #
 # キャッシュはタブ区切りの 1 行。PR がないときは fetched_at だけを書く。
@@ -1014,6 +1022,85 @@ pr_inflight_busy() {
   return 1
 }
 
+# session_id ($1) をファイル名に使えるなら 0 を返す。英数字と - _ : だけからなる 128 文字以内の
+# 値だけを許す (: はリモートのセッションの session_id が served: で始まるため)。空も弾く。
+# 許す文字を列挙するのは、pr_cache_load の URL の検証と同じく、文字クラスや範囲が含む文字が
+# OS のロケール実装で違い、両版で結果が食い違いうるため。. を許さないので、.. や
+# キャッシュ (pr-<key>.marker など) と同じ名前にはならない。
+pr_session_id_ok() {
+  case "$1" in
+    ''|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_:-]*) return 1 ;;
+  esac
+  [ "${#1}" -le 128 ]
+}
+
+# 取得を前倒しする条件が成り立てば 0 を返す。
+#   $1 .seen のパス (空なら前倒ししない) / $2 stdin の pr の署名 / $3 現在時刻
+# 署名が .seen に保存した署名と違い、前回の前倒しの起動 (.seen の時刻) から PR_EARLY_MIN_SEC 以上
+# 経っていれば成り立つ。キャッシュの内容とは比べない (食い違いが続くと描画のたびに起動するため)。
+#   - .seen がない (署名が空のときも) は none を保存しているものとみなす。PR のないセッションは
+#     前倒ししない
+#   - 時刻が数字でない、または現在より未来 (時計が戻った後など) なら、最低間隔は過ぎたものとみなす
+#   - 基点は通常の取得の時刻 (マーカー) ではない。git push の描画で通常の取得が起動した直後に
+#     gh pr create が終わっても、前倒しを見送らないため
+# 描画経路で呼ぶので、組み込みの read とパラメータ展開だけで済ませる (fork しない)。
+pr_early_due() {
+  local seen=$1 sig=$2 now=$3 at="" saved=""
+  [ -n "$seen" ] || return 1
+  [ -f "$seen" ] && { IFS= read -r at; IFS= read -r saved; } 2>/dev/null < "$seen"
+  [ -n "$saved" ] || saved=none
+  [ "$sig" != "$saved" ] || return 1
+  case "$at" in ''|0?*|*[!0-9]*|?????????????*) return 0 ;; esac
+  [ "$at" -gt "$now" ] && return 0
+  [ $((now - at)) -ge "$PR_EARLY_MIN_SEC" ]
+}
+
+# .seen ($1) に現在時刻 $3 と署名 $2 を書く。書けなければ 1 を返す。
+# 一時ファイルに書いてから mv で置き換える。直接書くと、並行して動く別の描画が切り詰められた
+# 空のファイルを読み、署名が変わったと判定する。.seen がディレクトリなど通常のファイルでなければ
+# 書かない (mv がその中に一時ファイルを移して成功してしまい、署名が残らないため)。
+pr_seen_save() {
+  local seen=$1 sig=$2 now=$3 tmp
+  if [ -e "$seen" ] && [ ! -f "$seen" ]; then
+    return 1
+  fi
+  tmp=$(mktemp "${seen}.tmp.XXXXXX" 2>/dev/null) || return 1
+  if { printf '%s\n%s\n' "$now" "$sig" > "$tmp"; } 2>/dev/null \
+     && mv -- "$tmp" "$seen" 2>/dev/null; then
+    return 0
+  fi
+  rm -- "$tmp" 2>/dev/null
+  return 1
+}
+
+# 取得を起動する条件 (間隔が過ぎた、または前倒しの条件が成り立つ) のどちらかが成り立てば 0 を返す。
+#   $1 マーカー / $2 現在時刻 / $3 .seen のパス / $4 署名
+# maybe_pr_refresh がロックを取る前に呼ぶ。間隔が過ぎていれば .seen は読まない。
+pr_refresh_wanted() {
+  pr_refresh_due "$1" "$2" || pr_early_due "$3" "$4" "$2"
+}
+
+# maybe_pr_refresh のロックの中で呼び、取得を起動してよければ 0 を返す。引数は pr_refresh_wanted と同じ。
+# ロックを待つ間に他のプロセスが起動したかもしれないので、間隔と前倒しの条件を確かめ直し、
+# .seen → マーカーの順に書く。
+#   - .seen は前倒しの条件が成り立つときだけ書く。書けなければ前倒しとしては起動せず、間隔が
+#     過ぎていれば通常の取得として続ける。書けないまま前倒しすると、次の描画でも署名が違うままで、
+#     描画のたびに起動する (マーカーを書けないときに起動しないのと同じ理由)
+#   - .seen をマーカーより先に書く。マーカーを先に書くと、.seen を書けない間 (ディスクが一杯など。
+#     マーカーの切り詰めは空き容量が要らない) は前倒しを試すたびにマーカーが新しくなり、
+#     通常の取得まで先送りされ続ける
+#   - マーカーを書けなければ起動しない。書き込み失敗時の扱いとリダイレクトの書き方は maybe_git_fetch と同じ
+pr_refresh_claim() {
+  local marker=$1 now=$2 seen=$3 sig=$4 due=0 early=0
+  pr_refresh_due "$marker" "$now" && due=1
+  pr_early_due "$seen" "$sig" "$now" && early=1
+  if [ "$early" = 1 ] && ! pr_seen_save "$seen" "$sig" "$now"; then
+    early=0
+  fi
+  [ "$due" = 1 ] || [ "$early" = 1 ] || return 1
+  { true > "$marker"; } 2>/dev/null
+}
+
 # 取得の子プロセスを投げっぱなしで起動する。引数は pr_refresh_child と同じ。
 # ロックを解放した後に呼ぶ。fd 0/1/2 を /dev/null に付け替え、描画をブロックさせない。
 # GH_REPO は cwd ではなくそのリポジトリを問い合わせさせ、GH_FORCE_TTY / CLICOLOR_FORCE は
@@ -1035,12 +1122,15 @@ pr_spawn_refresh() {
 # キャッシュを先に読んでから起動するので、今回の描画は起動した取得の結果を待たない。
 # キーは毎回「今の cwd とブランチ」から作るため、ブランチの切り替えや /clear で別の PR が残らない。
 # fetched_at が現在より未来のキャッシュ (時計が戻った後など) は期限切れと同じく表示しない。
+# 前倒しの .seen は session_id ごとに 1 つ (キャッシュのキーとは組み合わせない)。ブランチを切り替えた
+# 直後は stdin に前のブランチの pr が残るため、キーごとに持つと、切り替え先でその署名を変化とみなす。
+# session_id が使えなければ .seen のパスを空にし、前倒しをしない (今までと同じ挙動)。
 pr_token() {
   pr_str=""
   [ "$PR_STATUS" = "1" ] || return
   [ -n "$branch" ] && [ "$branch_detached" != "1" ] && [ -n "$HISTORY_DIR" ] || return
   command -v gh >/dev/null 2>&1 || return
-  local key cache now age
+  local key cache now age seen=""
   key=$(printf '%s\n%s' "$cwd" "$branch" | cksum)
   cache="${HISTORY_DIR}/pr-${key%% *}"
   now=$(date +%s)
@@ -1048,7 +1138,8 @@ pr_token() {
     age=$((now - pr_fetched))
     [ "$age" -ge 0 ] && [ "$age" -le "$PR_STALE_SEC" ] && format_pr
   fi
-  maybe_pr_refresh "$cwd" "$branch" "$cache" "$now"
+  pr_session_id_ok "$session_id" && seen="${HISTORY_DIR}/pr-${session_id}.seen"
+  maybe_pr_refresh "$cwd" "$branch" "$cache" "$now" "$seen" "${pr_signature:-none}"
 }
 
 # 子プロセスの入口。pr_spawn_refresh の ( ... & ) の中で呼ぶ (描画は待たない)。
@@ -1153,18 +1244,23 @@ pr_refresh_run() {
   fi
 }
 
-# maybe_pr_refresh: 前回の試行から間隔が過ぎていれば、バックグラウンドで取得を起動する。
+# maybe_pr_refresh: 前回の試行から間隔が過ぎているか、stdin の pr の署名が変わっていれば (前倒し)、
+# バックグラウンドで取得を起動する。
 #   $1 cwd / $2 ローカルのブランチ名 / $3 キャッシュのパス / $4 現在時刻
+#   $5 前倒しの .seen のパス (空なら前倒ししない) / $6 stdin の pr の署名
 # 前提 (ブランチがある、HISTORY_DIR が有効、gh がある) は呼び出し側の pr_token で確かめる。
 # 今回の描画は待たず、結果は次回以降の描画に反映される。maybe_git_fetch と同じ約束事を守る:
-#   - ロック取得 → 間隔の再確認 → マーカー更新 → ロック解放 → 子プロセス起動、の順に行う
+#   - ロック取得 → 条件の再確認 → .seen とマーカーの更新 → ロック解放 → 子プロセス起動、の順に行う
 #   - マーカーを書けなければ子プロセスを起動しない (間引きの基点が残らず描画ごとに起動するため)
 #   - fd の付け替えとプロンプトを封じる環境変数は pr_spawn_refresh にまとめてある
-# 両版で違うのはロックの取り方だけ。
+# 前倒しも別の経路を作らずここを通す。条件の判定と .seen / マーカーの書き込みは、両版の一致を
+# tests/script-parity.sh で確かめる pr_refresh_wanted / pr_refresh_claim に置く。
+# 取得の実行中 (.inflight がある) は前倒しでも起動せず、.seen も書かない。取得が終わった後の描画で
+# 改めて判定する。両版で違うのはロックの取り方だけ。
 maybe_pr_refresh() {
-  local cwd=$1 branch=$2 cache=$3 now=$4
+  local cwd=$1 branch=$2 cache=$3 now=$4 seen=$5 sig=$6
   local marker="${cache}.marker" inflight="${cache}.inflight"
-  pr_refresh_due "$marker" "$now" || return
+  pr_refresh_wanted "$marker" "$now" "$seen" "$sig" || return
   pr_inflight_busy "$inflight" "$now" && return
 
   # flock で排他する (history_push と同じ named fd パターン)。
@@ -1176,9 +1272,9 @@ maybe_pr_refresh() {
     return
   fi
 
-  # ロック取得までの待機中に他プロセスが起動済みかもしれないので間隔を再確認する。
-  # マーカーの書き込み失敗時の扱いとリダイレクトの書き方は maybe_git_fetch と同じ。
-  if ! pr_refresh_due "$marker" "$now" || ! { true > "$marker"; } 2>/dev/null; then
+  # ロック取得までの待機中に他プロセスが起動済みかもしれないので、条件を確かめ直してから
+  # .seen とマーカーを書く。書けなければ起動しない (pr_refresh_claim)。
+  if ! pr_refresh_claim "$marker" "$now" "$seen" "$sig"; then
     exec {fd}>&-
     return
   fi
@@ -1372,10 +1468,13 @@ join_by() {
 input=$(cat)
 
 # jq は起動コストが高い (1 回 ~20-50ms) ため、必要なフィールドを 1 回で取り出す。
-# 1 フィールド 1 行で出力し、`read` を 9 回呼んで空フィールドも保持する。
+# 1 フィールド 1 行で出力し、`read` を 11 回呼んで空フィールドも保持する。
 # 値に改行が混入せず、ESC などの制御文字で端末の表示が崩れないよう、文字列フィールドは
 # gsub で制御文字をすべて半角スペースに潰してから渡す。
 # 新しいフィールドは必ず末尾に追加する (read 個数 = jq 出力行数。途中挿入すると既存変数の対応がズレる)。
+# pr_signature は PR の取得の前倒しに使う stdin の pr の署名 (pr.url と pr.review_state)。pr が
+# オブジェクトでない、url がない、kind が mr (GitLab の MR) なら none。オブジェクトかを先に確かめるのは、
+# 文字列などに .pr.kind を読むと jq がエラーで終わり、ほかのフィールドもすべて空になるため。
 {
   IFS= read -r model
   IFS= read -r ctx_pct
@@ -1386,6 +1485,8 @@ input=$(cat)
   IFS= read -r effort
   IFS= read -r weekly_pct
   IFS= read -r weekly_reset
+  IFS= read -r pr_signature
+  IFS= read -r session_id
 } <<EOF
 $(printf '%s' "$input" | jq -r '
   def safe: tostring | gsub("[[:cntrl:]]"; " ");
@@ -1397,7 +1498,10 @@ $(printf '%s' "$input" | jq -r '
   (.workspace.current_dir                    // "" | safe),
   (.effort.level                             // "" | safe),
   (.rate_limits.seven_day.used_percentage    // "" | tostring),
-  (.rate_limits.seven_day.resets_at          // 0  | tostring)
+  (.rate_limits.seven_day.resets_at          // 0  | tostring),
+  (if (.pr | type) == "object" and ((.pr.kind // "pr") == "pr") and ((.pr.url // "") != "")
+   then "\(.pr.url):\(.pr.review_state // "")" else "none" end | safe),
+  (.session_id                               // "" | safe)
 ')
 EOF
 
