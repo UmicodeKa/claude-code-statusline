@@ -52,9 +52,11 @@ fi
 # env CLAUDE_STATUSLINE_SHOW_MODEL_NAME でも上書き可。
 SHOW_MODEL_NAME="${CLAUDE_STATUSLINE_SHOW_MODEL_NAME:-${SHOW_MODEL_NAME:-1}}"
 
-# カラースキーム。light/dark の切替のみ。既定は dark。
+# カラースキーム。auto / dark / light。既定は auto。
+# auto は Claude Code の theme の設定 (settings.json) から dark / light を決める (後方の「カラースキームの判定」を参照)。
+# dark / light を書くとテーマの設定を読まずにそれを使う。auto / dark / light 以外の値は dark として扱う。
 # env CLAUDE_STATUSLINE_COLOR_SCHEME=light でも上書き可。
-COLOR_SCHEME="${CLAUDE_STATUSLINE_COLOR_SCHEME:-${COLOR_SCHEME:-dark}}"
+COLOR_SCHEME="${CLAUDE_STATUSLINE_COLOR_SCHEME:-${COLOR_SCHEME:-auto}}"
 
 # バックグラウンド git fetch のオプトイン設定。既定 0=無効 (従来動作を完全維持)。
 # 1 のとき、描画経路とは分離した投げっぱなし子プロセスで git fetch を実行し、
@@ -194,6 +196,202 @@ clamp_int RATE_CHART_LEN 12 "$RATE_CHART_LEN_MIN" "$RATE_CHART_LEN_MAX"
 POLL_INTERVAL_MAX_SEC=$((RATE_WINDOW_SEC / RATE_CHART_LEN))
 clamp_int POLL_INTERVAL_SEC 300 "$POLL_INTERVAL_MIN_SEC" "$POLL_INTERVAL_MAX_SEC"
 clamp_int GIT_FETCH_INTERVAL_SEC 900 "$GIT_FETCH_INTERVAL_MIN_SEC" "$GIT_FETCH_INTERVAL_MAX_SEC"
+# --- 間引き定数ここまで ---
+
+# --- 履歴ディレクトリ ---
+# 履歴は /tmp に置く。再起動で自動消滅するので肥大化しない。
+# /tmp は他ユーザーからも読めるため uid を混ぜたサブディレクトリを 700 で作る。
+# 別ユーザーが事前に作ったディレクトリや symlink を掴まないよう次を確認する:
+#   - symlink でないこと
+#   - 自分の uid 所有であること
+#   - mode 700 であること
+# 不適合なら HISTORY_DIR を空にして履歴機能を無効化する (statusline 自体は表示継続)。
+# 回帰テストが本番履歴を汚さずに済むよう CLAUDE_STATUSLINE_HISTORY_DIR で上書き可能にする。
+# override 先が既存の symlink だったときに chmod 700 がリンク先を書き換えるのを
+# 避けるため、mkdir/chmod 前に symlink チェックを済ませて弾く。
+HISTORY_DIR="${CLAUDE_STATUSLINE_HISTORY_DIR:-/tmp/claude-statusline-$(id -u)}"
+if [ -L "$HISTORY_DIR" ]; then
+  HISTORY_DIR=""
+else
+  mkdir -p "$HISTORY_DIR" 2>/dev/null
+  chmod 700 "$HISTORY_DIR" 2>/dev/null
+  if [ -L "$HISTORY_DIR" ] \
+     || [ ! -d "$HISTORY_DIR" ] \
+     || [ "$(stat -c %u "$HISTORY_DIR" 2>/dev/null)" != "$(id -u)" ] \
+     || [ "$(stat -c %a "$HISTORY_DIR" 2>/dev/null)" != "700" ]; then
+    HISTORY_DIR=""
+  fi
+fi
+
+# 必須コマンドの存在確認。jq か flock が無い環境では statusline 自体を諦め、
+# 1 行のヒントだけ出して exit する。Claude Code 側はこの 1 行をそのまま表示する。
+if ! command -v jq >/dev/null 2>&1; then
+  printf '✻ -- (jq required: sudo apt install jq)\n'
+  exit 0
+fi
+if ! command -v flock >/dev/null 2>&1; then
+  printf '✻ -- (flock required: sudo apt install util-linux)\n'
+  exit 0
+fi
+
+# --- OS の外観 ---
+# Linux 版は OS の外観を見ない。COLOR_SCHEME=auto で COLORFGBG から背景色が決まらなければ dark になる。
+OS_APPEARANCE_FILE=""
+
+# os_appearance: _cs_os に dark / light を入れる。
+os_appearance() {
+  _cs_os=dark
+}
+
+# --- カラースキームの判定 ---
+# COLOR_SCHEME が auto のとき、Claude Code の theme の設定から dark / light を決めて COLOR_SCHEME に書き戻す。
+# dark / light はそのまま使い、それ以外の値は下の色定義の case で dark になる。
+# statusline には theme が渡されないため、${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json の theme を直接読む
+# (読むのはユーザー設定だけ。project / local / managed / --settings の theme は見ない)。
+#   dark / dark-daltonized / dark-ansi と、キーなし・ファイルなし・不正な JSON・未知の値 → dark
+#   light / light-daltonized / light-ansi → light
+#   custom:<slug>                         → themes/<slug>.json の base を同じ対応付けで判定 (<slug> に / を含む、
+#                                           base がない、読めない、ファイルがないときは dark。/ のときはファイルを読まない)
+#   auto                                  → COLORFGBG、次に OS の外観 (os_appearance)。決まらなければ dark
+# 描画のたびに jq / defaults を起動しないよう、判定結果を ${HISTORY_DIR}/color-scheme に置く。
+#   1 行目: 判定結果 (dark / light)。theme が auto で COLORFGBG により決まったときは取っていないので空
+#   2 行目: theme の生の値
+#   3 行目: 読んだ settings.json のパス
+#   4 行目: custom テーマの base の生の値
+# キャッシュを使うのは、キャッシュが比較対象のどのファイルよりも厳密に新しいときだけ (`cache -nt src` が偽なら取り直す)。
+# `src -nt cache` (ソースが新しいときだけ取り直す) にすると、ソースを読んだ後キャッシュを書く前にソースが書き換わったとき、
+# キャッシュの方が新しくなって変更を取りこぼす。bash 3.2 の -nt は秒単位なので、同じ秒の変更も見落とす。
+# 向きを逆にすれば、どちらも同じ秒の間は取り直しが続くだけで済む。
+# 3 行目が今回の settings.json のパスと違うときも取り直す (CLAUDE_CONFIG_DIR の違うセッションが HISTORY_DIR を共有するため)。
+# COLORFGBG はセッションごとに違いうるのでキャッシュせず毎回読む。キャッシュの 1 行目は｢COLORFGBG で決まらなかったときの結果｣。
+# HISTORY_DIR が無効なときはキャッシュなしで毎回判定する。判定はすべて組み込みだけで行い、取り直すときだけ jq / defaults を起動する。
+
+# map_theme_scheme <theme または base の値>: _cs_mapped に dark / light を入れる。未知の値は dark。
+map_theme_scheme() {
+  case "$1" in
+    light|light-daltonized|light-ansi) _cs_mapped=light ;;
+    *) _cs_mapped=dark ;;
+  esac
+}
+
+resolve_color_scheme() {
+  local _cs_dir _cs_settings _cs_cache="" _cs_bg _cs_fgbg="" _cs_ok=0
+  local _cs_res="" _cs_theme="" _cs_path="" _cs_base="" _cs_slug _cs_tf _cs_tmp
+  _cs_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  _cs_settings="$_cs_dir/settings.json"
+  [ -n "$HISTORY_DIR" ] && _cs_cache="$HISTORY_DIR/color-scheme"
+
+  # COLORFGBG: ; で区切った最後のフィールドが背景色。7 / 9 / 10〜15 が light、ほかの数字が dark。
+  # default などの数字でない値、空、未設定は決まらない。算術比較は使わない (default が 0 と評価されるため)。
+  _cs_bg=${COLORFGBG:-}
+  _cs_bg=${_cs_bg##*;}
+  case "$_cs_bg" in
+    7|9|1[0-5]) _cs_fgbg=light ;;
+    ''|*[!0-9]*) ;;
+    *) _cs_fgbg=dark ;;
+  esac
+
+  if [ -n "$_cs_cache" ] && [ -f "$_cs_cache" ]; then
+    { IFS= read -r _cs_res; IFS= read -r _cs_theme; IFS= read -r _cs_path; IFS= read -r _cs_base; } 2>/dev/null <"$_cs_cache"
+    _cs_ok=1
+    [ "$_cs_path" = "$_cs_settings" ] || _cs_ok=0
+    if [ "$_cs_ok" = 1 ]; then
+      if [ -e "$_cs_settings" ]; then
+        [[ "$_cs_cache" -nt "$_cs_settings" ]] || _cs_ok=0
+      elif [ -n "$_cs_theme" ]; then
+        _cs_ok=0   # 前回あった theme が、settings.json の削除でなくなった
+      fi
+    fi
+    if [ "$_cs_ok" = 1 ]; then
+      case "$_cs_theme" in
+        custom:*)
+          _cs_slug=${_cs_theme#custom:}
+          case "$_cs_slug" in
+            ''|*/*) ;;
+            *)
+              _cs_tf="$_cs_dir/themes/$_cs_slug.json"
+              if [ -e "$_cs_tf" ]; then
+                [[ "$_cs_cache" -nt "$_cs_tf" ]] || _cs_ok=0
+              elif [ -n "$_cs_base" ]; then
+                _cs_ok=0   # 前回あった base が、テーマファイルの削除でなくなった
+              fi
+              ;;
+          esac
+          ;;
+        auto)
+          if [ -z "$_cs_fgbg" ]; then
+            [ -n "$_cs_res" ] || _cs_ok=0   # 前回は COLORFGBG で決まり、OS の外観を取っていない
+            if [ -n "$OS_APPEARANCE_FILE" ] && [ -e "$OS_APPEARANCE_FILE" ]; then
+              [[ "$_cs_cache" -nt "$OS_APPEARANCE_FILE" ]] || _cs_ok=0
+            fi
+          fi
+          ;;
+      esac
+    fi
+    if [ "$_cs_ok" = 1 ]; then
+      if [ "$_cs_theme" = auto ] && [ -n "$_cs_fgbg" ]; then _cs_res=$_cs_fgbg; fi
+      case "$_cs_res" in
+        dark|light) COLOR_SCHEME=$_cs_res; return ;;
+      esac
+    fi
+  fi
+
+  _cs_theme=""
+  _cs_base=""
+  _cs_res=dark
+  if [ -e "$_cs_settings" ]; then
+    # 不正な JSON で jq が失敗したら theme なし (dark) として扱う。キャッシュを行で区切るので、複数行の値も捨てる。
+    _cs_theme=$(jq -r '.theme // empty' "$_cs_settings" 2>/dev/null) || _cs_theme=""
+    case "$_cs_theme" in *$'\n'*) _cs_theme="" ;; esac
+  fi
+  case "$_cs_theme" in
+    auto)
+      if [ -n "$_cs_fgbg" ]; then
+        _cs_res=""
+      else
+        os_appearance
+        _cs_res=$_cs_os
+      fi
+      ;;
+    custom:*)
+      _cs_slug=${_cs_theme#custom:}
+      case "$_cs_slug" in
+        ''|*/*) ;;
+        *)
+          _cs_tf="$_cs_dir/themes/$_cs_slug.json"
+          if [ -e "$_cs_tf" ]; then
+            _cs_base=$(jq -r '.base // empty' "$_cs_tf" 2>/dev/null) || _cs_base=""
+            case "$_cs_base" in *$'\n'*) _cs_base="" ;; esac
+          fi
+          map_theme_scheme "$_cs_base"
+          _cs_res=$_cs_mapped
+          ;;
+      esac
+      ;;
+    *)
+      map_theme_scheme "$_cs_theme"
+      _cs_res=$_cs_mapped
+      ;;
+  esac
+
+  # 一時ファイルに書いてから mv で置き換え、並行する別の描画が書きかけのファイルを読まないようにする。
+  # 書けなくても描画は判定結果で続ける。
+  if [ -n "$_cs_cache" ]; then
+    _cs_tmp="$_cs_cache.$$"
+    { printf '%s\n%s\n%s\n%s\n' "$_cs_res" "$_cs_theme" "$_cs_settings" "$_cs_base" 2>/dev/null >"$_cs_tmp" \
+      && mv -- "$_cs_tmp" "$_cs_cache" 2>/dev/null; } || rm -- "$_cs_tmp" 2>/dev/null
+  fi
+
+  if [ "$_cs_theme" = auto ] && [ -n "$_cs_fgbg" ]; then
+    COLOR_SCHEME=$_cs_fgbg
+  else
+    COLOR_SCHEME=$_cs_res
+  fi
+}
+
+if [ "$COLOR_SCHEME" = auto ]; then
+  resolve_color_scheme
+fi
 
 # --- カラースキーム ---
 # 以下の COLOR_* は Claude Code の light/dark テーマの配色に合わせた RGB 値。値を変更しない。
@@ -258,42 +456,6 @@ case "$COLOR_SCHEME" in
     COLOR_prDraft=$COLOR_subtle
     ;;
 esac
-
-# --- 履歴ディレクトリ ---
-# 履歴は /tmp に置く。再起動で自動消滅するので肥大化しない。
-# /tmp は他ユーザーからも読めるため uid を混ぜたサブディレクトリを 700 で作る。
-# 別ユーザーが事前に作ったディレクトリや symlink を掴まないよう次を確認する:
-#   - symlink でないこと
-#   - 自分の uid 所有であること
-#   - mode 700 であること
-# 不適合なら HISTORY_DIR を空にして履歴機能を無効化する (statusline 自体は表示継続)。
-# 回帰テストが本番履歴を汚さずに済むよう CLAUDE_STATUSLINE_HISTORY_DIR で上書き可能にする。
-# override 先が既存の symlink だったときに chmod 700 がリンク先を書き換えるのを
-# 避けるため、mkdir/chmod 前に symlink チェックを済ませて弾く。
-HISTORY_DIR="${CLAUDE_STATUSLINE_HISTORY_DIR:-/tmp/claude-statusline-$(id -u)}"
-if [ -L "$HISTORY_DIR" ]; then
-  HISTORY_DIR=""
-else
-  mkdir -p "$HISTORY_DIR" 2>/dev/null
-  chmod 700 "$HISTORY_DIR" 2>/dev/null
-  if [ -L "$HISTORY_DIR" ] \
-     || [ ! -d "$HISTORY_DIR" ] \
-     || [ "$(stat -c %u "$HISTORY_DIR" 2>/dev/null)" != "$(id -u)" ] \
-     || [ "$(stat -c %a "$HISTORY_DIR" 2>/dev/null)" != "700" ]; then
-    HISTORY_DIR=""
-  fi
-fi
-
-# 必須コマンドの存在確認。jq か flock が無い環境では statusline 自体を諦め、
-# 1 行のヒントだけ出して exit する。Claude Code 側はこの 1 行をそのまま表示する。
-if ! command -v jq >/dev/null 2>&1; then
-  printf '✻ -- (jq required: sudo apt install jq)\n'
-  exit 0
-fi
-if ! command -v flock >/dev/null 2>&1; then
-  printf '✻ -- (flock required: sudo apt install util-linux)\n'
-  exit 0
-fi
 
 # format_reset_time <epoch> <書式>: レートリミットのリセット時刻を date の書式 (%H:%M など) で整形する
 format_reset_time() {

@@ -295,11 +295,41 @@ my-project | main ↑2↓3 #12✓ 3 | c9b8fce 3+13-5 | my-session
 
 ## 色
 
-色は Claude Code の light/dark テーマに合わせた配色を使う。`COLOR_SCHEME` で `dark` (既定) と `light` を切り替える。`light` 以外の値はすべて `dark` として扱う。
+色は Claude Code の light/dark テーマに合わせた配色を使う。`COLOR_SCHEME` で `auto` (既定)、`dark`、`light` を切り替える。`auto` は Claude Code のテーマの設定から `dark` / `light` を決める ([カラースキームの判定](#カラースキームの判定-color_schemeauto))。`auto` / `dark` / `light` 以外の値はすべて `dark` として扱う。
 
 色はすべて truecolor の前景色 (`\033[38;2;R;G;Bm`) で、色付きの区間の末尾には `\033[0m` が付く。
 
 色を付けるのは、意図して色を指定する箇所 (下の表のうち色が｢無色｣でない行) だけで、それ以外の要素は無色にして端末と Claude Code の前景色に任せる。無色の要素のうち [`HIGHLIGHT`](#ハイライト-highlight) で指定したものは、無色のときに限り `text` で塗る。
+
+### カラースキームの判定 (`COLOR_SCHEME=auto`)
+
+statusline の stdin にはテーマや配色のフィールドがないため、Claude Code の設定ファイルの `theme` を直接読んで決める。
+
+優先順位は env `CLAUDE_STATUSLINE_COLOR_SCHEME` > conf の `COLOR_SCHEME` > 既定値 `auto`。いずれかで `dark` / `light` が決まればそれを使い、テーマの設定は読まない。`auto` のときだけ次の規則で判定する。
+
+`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json` の `theme` の値と、決まる配色:
+
+| `theme` の値 | 配色 |
+| --- | --- |
+| `dark` / `dark-daltonized` / `dark-ansi` | `dark` |
+| `light` / `light-daltonized` / `light-ansi` | `light` |
+| `custom:<slug>` | `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/themes/<slug>.json` の `base` を、上の 2 行と同じ対応付けで判定する。`base` がない、読めない、ファイルがないときは `dark`。`<slug>` が空、または `/` を含むときはファイルを読まずに `dark` |
+| `auto` | `COLORFGBG`、次に OS の外観 (macOS 版のみ) の順に判定する。決まらなければ `dark` |
+| キーがない / ファイルがない / 不正な JSON / 未知の値 | `dark` |
+
+`theme` が `auto` のときの判定:
+
+1. `COLORFGBG` の `;` で区切った最後のフィールドを背景色として読む。`7` / `9` / `10`〜`15` は `light`、それ以外の数字は `dark`。`default` などの数字でない値、空、未設定は決まらないものとして次へ進む。`15;0` のほか `15;default;0` のような 3 フィールドの形も、最後のフィールドで判定する。両版で同じ規則
+2. `defaults read -g AppleInterfaceStyle` が成功すれば `dark`、失敗すれば `light` (macOS 版のみ。`defaults` がなければ `dark`)。端末のテーマが OS の外観に連動していることが前提になる
+3. 決まらなければ `dark` (Linux 版は常にここ)
+
+制約:
+
+- 読むのはユーザー設定 (`settings.json`) だけで、project / local / managed / `--settings` の `theme` は見ない。それらで `theme` を指定していると、実際のテーマと食い違いうる
+- プラグインが提供するテーマを選んだときに `theme` へ保存される値は、公式ドキュメントに書かれていない。未知の値として `dark` になる。プラグインのテーマも `base` を持つファイルだが、保存される値が分からないため辿れない
+- 判定結果は `${HISTORY_DIR}/color-scheme` にキャッシュし、`settings.json` などの変化がなければ `jq` / `defaults` を起動しない ([設計](DESIGN.md#color_schemeauto-の判定とキャッシュ))。`/theme` で切り替えると、次の描画から配色が変わる
+- `HISTORY_DIR` が無効なときは、キャッシュなしで毎回判定する
+- 設定ファイルを古い mtime のファイルで置き換えた場合 (`mv` での復元、symlink の付け替え) は変更を検出できず、次に設定ファイルが更新されるまで前の判定結果が残る
 
 ### 色の閾値
 
@@ -458,7 +488,7 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 | 定数 | 既定 | env | 値 |
 | --- | --- | --- | --- |
 | `SHOW_MODEL_NAME` | `1` | `CLAUDE_STATUSLINE_SHOW_MODEL_NAME` | `1` でモデル名を表示。それ以外は非表示 (`✻` は残る) |
-| `COLOR_SCHEME` | `dark` | `CLAUDE_STATUSLINE_COLOR_SCHEME` | `light` で light。それ以外は dark |
+| `COLOR_SCHEME` | `auto` | `CLAUDE_STATUSLINE_COLOR_SCHEME` | `auto` は Claude Code のテーマに合わせる ([判定](#カラースキームの判定-color_schemeauto))。`light` で light、`dark` で dark。それ以外は dark |
 | `SHOW_CWD` | `1` | `CLAUDE_STATUSLINE_SHOW_CWD` | `1` で directory 列を表示。それ以外は非表示 |
 | `GIT_FETCH` | `0` | `CLAUDE_STATUSLINE_GIT_FETCH` | `1` でバックグラウンド fetch を有効化。それ以外は無効 |
 | `PR_STATUS` | `0` | `CLAUDE_STATUSLINE_PR_STATUS` | `1` で [PR の状態](#pr-の状態-pr_status1) を branch 列に表示。それ以外は無効 |
@@ -578,7 +608,7 @@ branch の塗る範囲の例:
 | ` \| `、`∙`、要素の間のスペース | 要素ではなく区切り |
 
 > [!WARNING]
-> `text` は `COLOR_SCHEME` で決まる固定色なので、`COLOR_SCHEME` が Claude Code のテーマと食い違うと読めなくなる (明るい背景で `dark` を使うと、白い文字が白い背景に重なる)。`COLOR_SCHEME` は Claude Code のテーマに合わせる。diff のファイル数も同じ色を使う。
+> `text` は `COLOR_SCHEME` で決まる固定色なので、`COLOR_SCHEME` が Claude Code のテーマと食い違うと読めなくなる (明るい背景で `dark` を使うと、白い文字が白い背景に重なる)。既定の `auto` は Claude Code のテーマに合わせる。`dark` / `light` を固定したときは、Claude Code のテーマに合わせる。diff のファイル数も同じ色を使う。
 
 ## バックグラウンド fetch (`GIT_FETCH=1`)
 

@@ -102,7 +102,10 @@ main() {
 
   check_block config-load '# === ユーザー設定ファイルの読み込み ===' '# === カスタマイズ設定'
   check_block settings '# === カスタマイズ設定' '# === 内部定数'
-  check_block interval-clamp '# --- 間引き定数の推奨レンジ ---' '# --- カラースキーム ---'
+  check_block interval-clamp '# --- 間引き定数の推奨レンジ ---' '# --- 間引き定数ここまで ---'
+  # カラースキームの判定 (auto のときの theme / COLORFGBG の読み取りとキャッシュ)。OS の外観を返す
+  # os_appearance と OS_APPEARANCE_FILE は版ごとに違うので、判定の手前 (# --- OS の外観 ---) に分けてある。
+  check_block color-scheme-detect '# --- カラースキームの判定 ---' '# --- カラースキーム ---'
   check_block color-scheme '# --- カラースキーム ---' 'esac'
   # PR の状態表示。ロックの取り方が違う maybe_pr_refresh を除き、定数・キャッシュの読み書き・
   # 子プロセスの起動と本体・描画は両版で同じ。branch 列の組み立てから呼ばれるので format-layout の比較も守る。

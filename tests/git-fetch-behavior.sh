@@ -17,6 +17,11 @@
 
 set -euo pipefail
 
+# COLOR_SCHEME の既定値は auto で、開発者の実際の settings.json の theme や端末の背景色 (COLORFGBG) を読む。
+# 結果が環境に依存しないよう、存在しない設定ディレクトリを指し (theme なし = dark)、COLORFGBG を空にする。
+export CLAUDE_CONFIG_DIR="/nonexistent-claude-config-dir"
+export COLORFGBG=""
+
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$TESTS_DIR/.." && pwd)"
 GIT_SHIM_DIR="$TESTS_DIR/lib/git-shim"
