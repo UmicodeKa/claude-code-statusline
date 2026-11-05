@@ -13,6 +13,19 @@ Claude Code の statusline を描画するシェルスクリプトです。macOS
 | [tests/README.md](tests/README.md) | テストハーネスの構成と規約 |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 開発環境と変更の手順 |
 
+## 参照する Claude Code の公式ドキュメント
+
+この statusline の仕様は Claude Code 側の仕様 (stdin の JSON、更新のタイミング、settings、テーマなど) に依存します。それらの正本は公式ドキュメントです。内容は転記せず、確かめたいときに次のページを開きます。
+
+| ページ | URL | 主に参照する内容 |
+| --- | --- | --- |
+| Customize your status line | <https://code.claude.com/docs/en/statusline> | stdin の JSON の全フィールドとスキーマ、更新のタイミング (300ms の debounce、実行中のスクリプトの取り消し)、`COLUMNS` / `LINES`、ANSI 色や OSC 8 リンクの扱い |
+| Settings files and precedence | <https://code.claude.com/docs/en/settings> | settings ファイルの場所と優先順位、`CLAUDE_CONFIG_DIR` |
+| All settings | <https://code.claude.com/docs/en/settings-reference> | `statusLine` や `theme` などの各キーの仕様 |
+| Configure your terminal | <https://code.claude.com/docs/en/terminal-config#match-the-color-theme> | テーマ (`theme`) の値、`auto` の挙動、custom テーマ (`~/.claude/themes/`) の形式と `base` |
+| Environment variables | <https://code.claude.com/docs/en/env-vars> | Claude Code が読む環境変数 |
+| ドキュメントの索引 | <https://code.claude.com/docs/llms.txt> | 上記にないページを探すときの一覧 |
+
 ## 変更の進め方
 
 1. 編集前に `npm test` を実行し、green であることを確認する (ベースライン)。
