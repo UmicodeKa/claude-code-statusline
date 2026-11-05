@@ -582,7 +582,7 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 - 箇所: 両版の｢カラースキームの判定｣ブロック (`resolve_color_scheme`)
 - 何をしているか: `auto` のとき `settings.json` の `theme` (`custom:<slug>` はテーマファイルの `base`、`auto` は `COLORFGBG`、次に OS の外観) から `dark` / `light` を決める。判定結果を `${HISTORY_DIR}/color-scheme` に置き、変化がなければ `jq` / `defaults` を起動しない
 - キャッシュは 4 行: 判定結果、`theme` の生の値、読んだ `settings.json` のパス、`custom` の `base` の生の値。`theme` が `auto` で `COLORFGBG` により決まったときだけ、1 行目は空 (OS の外観を取っていない)
-- キャッシュを使う条件は、`[[ cache -nt src ]]` が比較対象のすべてで真のとき (組み込みなので fork しない)。比較対象は `settings.json`、`theme` が `custom:<slug>` のときのテーマファイル、macOS 版で `theme` が `auto` かつ `COLORFGBG` で決まらないときの `.GlobalPreferences.plist`
+- キャッシュを使う条件は、`[[ cache -nt src ]]` が比較対象のすべてで真のとき (組み込みなので fork しない)。比較対象は `settings.json`、`theme` が `custom:<slug>` のときのテーマファイル、macOS 版で `theme` が `auto` かつ `COLORFGBG` で決まらないときの `.GlobalPreferences.plist`。このファイルがないときは比較できないので、毎回取り直す
 - `cache -nt src` の向きにする理由: `src -nt cache` (ソースが新しいときだけ取り直す) だと、ソースを読んだあと、キャッシュを書く前にソースが書き換わると、キャッシュの方が新しくなって変更を取りこぼす。bash 3.2 の `-nt` は秒単位の比較なので、同じ秒の変更も見落とす。`cache -nt src` が偽なら取り直す形にすれば、どちらの場合も同じ秒の間は取り直しが続くだけで済む
 - キャッシュに `settings.json` のパスを持つ理由: `HISTORY_DIR` は uid ごとに 1 つで、`CLAUDE_CONFIG_DIR` の異なるセッションが同じキャッシュを共有する。パスが今回と違えば取り直さないと、別の設定ディレクトリの判定結果を使ってしまう
 - `base` を持つ理由: テーマファイルが消えると、`cache -nt src` は src がないために真のままになる。前回 `base` があったのにファイルがなければ取り直す (`settings.json` が消えたときは、前回の `theme` が空でなければ取り直す)。`[ -e ]` は組み込み

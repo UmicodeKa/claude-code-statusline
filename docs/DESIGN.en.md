@@ -689,7 +689,8 @@ Using the same order in both versions confines the implementation difference to 
 - The cache has 4 lines: the result, the raw `theme` value, the path of the `settings.json` that was read, and the raw `base` value of a `custom` theme.
   Only when `theme` is `auto` and `COLORFGBG` decided, the first line is empty (the OS appearance was not fetched)
 - The cache is used only when `[[ cache -nt src ]]` is true for every file compared (a builtin, so no fork).
-  The files compared are `settings.json`, the theme file when `theme` is `custom:<slug>`, and `.GlobalPreferences.plist` in the macOS version when `theme` is `auto` and `COLORFGBG` does not decide
+  The files compared are `settings.json`, the theme file when `theme` is `custom:<slug>`, and `.GlobalPreferences.plist` in the macOS version when `theme` is `auto` and `COLORFGBG` does not decide.
+  If this file does not exist there is nothing to compare against, so it refetches every time
 - Why `cache -nt src`: with `src -nt cache` (refetch only when the source is newer), if the source is rewritten after it is read but before the cache is written, the cache becomes newer and the change is missed.
   The `-nt` of bash 3.2 compares in whole seconds, so a change within the same second is also missed.
   If the form is "refetch when `cache -nt src` is false", both cases only cost repeated refetching during that second

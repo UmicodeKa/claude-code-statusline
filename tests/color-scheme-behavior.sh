@@ -263,6 +263,16 @@ run_os_appearance_macos() {
   expect "os:refetch-after-colorfgbg [$label]" light "$(scheme "$bash_bin" "$script")"
   expect "os:refetch-called-once [$label]" 1 "$(calls 'defaults')"
 
+  # .GlobalPreferences.plist がないときは比べる相手がないので、毎回取り直す。
+  new_case
+  write_settings '{"theme":"auto"}'
+  age "$R_CFG/settings.json"
+  R_DEFAULTS_RC=0
+  expect "os:plist-missing-first [$label]" dark "$(scheme "$bash_bin" "$script")"
+  R_DEFAULTS_RC=1
+  expect "os:plist-missing-refetch [$label]" light "$(scheme "$bash_bin" "$script")"
+  expect "os:plist-missing-calls [$label]" 2 "$(calls 'defaults')"
+
   # .GlobalPreferences.plist が新しくなったら取り直す。変わらなければ呼ばない。
   new_case
   write_settings '{"theme":"auto"}'

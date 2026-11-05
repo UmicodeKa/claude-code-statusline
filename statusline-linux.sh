@@ -321,8 +321,12 @@ resolve_color_scheme() {
         auto)
           if [ -z "$_cs_fgbg" ]; then
             [ -n "$_cs_res" ] || _cs_ok=0   # 前回は COLORFGBG で決まり、OS の外観を取っていない
-            if [ -n "$OS_APPEARANCE_FILE" ] && [ -e "$OS_APPEARANCE_FILE" ]; then
-              [[ "$_cs_cache" -nt "$OS_APPEARANCE_FILE" ]] || _cs_ok=0
+            if [ -n "$OS_APPEARANCE_FILE" ]; then
+              if [ -e "$OS_APPEARANCE_FILE" ]; then
+                [[ "$_cs_cache" -nt "$OS_APPEARANCE_FILE" ]] || _cs_ok=0
+              else
+                _cs_ok=0   # 比べる相手がないので、毎回取り直す
+              fi
             fi
           fi
           ;;
