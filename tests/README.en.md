@@ -15,11 +15,12 @@ For the mapping between each defensive piece of code and the test that guards it
 | `git-fetch-behavior.sh` | `npm run test:fetch` | Verifies the behavior of the background fetch with `GIT_FETCH=1` |
 | `pr-status-behavior.sh` | `npm run test:pr` | Verifies the behavior of the background retrieval of the PR status display, and the transformation done by `--jq` |
 | `rate-history-behavior.sh` | `npm run test:history` | Verifies writes to the rate history file (initial fill, throttling, number of saved entries) and the clamping of the throttling interval |
+| `color-scheme-behavior.sh` | `npm run test:color` | Verifies that `COLOR_SCHEME=auto` decides dark / light from the Claude Code `theme` and so on, and verifies the cache of that decision |
 | `e2e-preview.sh` | `npm run preview` | Prints the actual ANSI-colored output to the terminal for visual inspection |
 | `script-parity.sh` | `npm run test:parity` | Statically checks that the shared blocks of both scripts match and that required code is still present |
 | `translation-parity.sh` | `npm run test:translation` | Statically checks that the structure of each Japanese document and its English version (`*.en.md`) has not drifted apart |
 
-`npm test` runs `test:regression`, `test:fetch`, `test:pr`, `test:history`, `test:parity`, and `test:translation` in order. `e2e-preview.sh` does not judge pass or fail, so it is not part of `npm test`.
+`npm test` runs `test:regression`, `test:fetch`, `test:pr`, `test:history`, `test:color`, `test:parity`, and `test:translation` in order. `e2e-preview.sh` does not judge pass or fail, so it is not part of `npm test`.
 
 ### regression.sh
 
@@ -123,6 +124,22 @@ The mtime is shifted with `lib/age-file.sh`. The cases are as follows, each run 
 
 The conf is written to a temporary file and passed in. `RATE_CHART_LEN` and `POLL_INTERVAL_SEC` have no env override, so the developer's shell environment variables do not change the result.
 
+### color-scheme-behavior.sh
+
+The detection of `COLOR_SCHEME=auto` depends on a combination of `settings.json`, theme files, `COLORFGBG`, the OS appearance and the cache, so fixed fixtures cannot cover it.
+This script creates a temporary config directory (`CLAUDE_CONFIG_DIR`) and a history directory for each case, feeds `fixtures/08-ctx-warning.json`, and decides the scheme by the color of the ctx 75% warning (dark `38;2;255;193;7` / light `38;2;150;108;30`).
+Stubs for `jq` and `defaults` are placed at the front of `PATH` and record their calls (`jq` records and then passes through to the real one).
+The cases below are run for each version. Only the macOS version has the `defaults` branch, so `os:*` differs by version.
+
+| Group | What it verifies |
+| --- | --- |
+| `theme:*` | `light` / `light-daltonized` / `light-ansi` give light. The `dark` family, a missing key, a missing file, invalid JSON, an unknown value and a non-string value give dark |
+| `custom:*` | `custom:<slug>` follows the `base` of the theme file. A missing `base`, a missing file and invalid JSON give dark. When `<slug>` contains `/`, dark without reading the file |
+| `colorfgbg:*` | When `theme` is `auto`, `0;15` gives light, `15;0` and `15;default;0` give dark, and `0;default;15` gives light. A non-numeric value falls through to the next step. `COLORFGBG` is not cached |
+| `os:*` | In the macOS version, when `COLORFGBG` does not decide, the success or failure of `defaults` switches dark / light, and `defaults` is not called when `COLORFGBG` decides. A newer `.GlobalPreferences.plist` triggers a refetch. The Linux version gives dark |
+| `priority:*` | `dark` / `light` from env / conf take precedence over `settings.json` and `theme` is not read. An unknown value gives dark |
+| `cache:*` | `jq` is not started from the second render on. Rewriting (even within the same second as the cache), deleting or creating `settings.json` or a theme file triggers a refetch. A different `CLAUDE_CONFIG_DIR` triggers a refetch. A corrupted cache still renders. A disabled `HISTORY_DIR` still follows the theme |
+
 ### e2e-preview.sh
 
 - Shows the input JSON and the actual output side by side for all fixtures.
@@ -143,6 +160,7 @@ The conf is written to a temporary file and passed in. `RATE_CHART_LEN` and `POL
 | `block:config-load` | The config file loading block is character-for-character identical in both versions |
 | `block:settings` | The customization settings block is identical in both versions |
 | `block:interval-clamp` | The clamp block for the throttling constants is identical in both versions |
+| `block:color-scheme-detect` | The color scheme detection (`resolve_color_scheme`) is identical in both versions. `os_appearance`, which returns the OS appearance, is not covered |
 | `block:color-scheme` | The color scheme definition block is identical in both versions |
 | `block:pr-constants` | The internal constants of the PR status display are identical in both versions |
 | `block:pr-common` | The common part of the PR status display (query, `--jq`, cache read and write, child process spawn and body, rendering) is identical in both versions |
@@ -358,6 +376,9 @@ So that case results do not depend on the developer's environment, the harness s
     If it is not passed, cases that include the branch and so on would fail only on the machine of a developer who exports a highlight setting.
 - Short-name variables: `regression.sh` passes 11 short-name variables such as `SHOW_MODEL_NAME` and `LAYOUT_LINE1` with values different from the defaults in every case (`HIGHLIGHT` is set to a value that specifies all tokens).
   The main script `unset`s these before reading the conf, so they do not affect the output. If that `unset` disappears, every case fails, so this also serves as a regression guard for it.
+- `CLAUDE_CONFIG_DIR` / `COLORFGBG`: The default of `COLOR_SCHEME` is `auto`, which reads `theme` in the developer's real `~/.claude/settings.json` and the terminal background color.
+  At startup, `regression.sh` / `git-fetch-behavior.sh` / `pr-status-behavior.sh` / `rate-history-behavior.sh` / `e2e-preview.sh` point `CLAUDE_CONFIG_DIR` at a directory that does not exist (no `theme` = dark) and empty `COLORFGBG`.
+  `color-scheme-behavior.sh` uses a temporary directory per case and also points `HOME` at a temporary directory.
 - git / gh: The fake git and fake gh described above are placed at the front of `PATH`.
 - `FORCE_HYPERLINK`: `regression.sh` and `e2e-preview.sh` pass it empty, except for cases that have a marker in `hyperlink-off/`.
 

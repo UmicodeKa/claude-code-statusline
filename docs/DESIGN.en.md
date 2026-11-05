@@ -48,12 +48,16 @@ The two versions differ only in platform-dependent parts.
 | Lock object | `<target>.lockd` directory | `<target>.lock` file |
 | `date` / `stat` | Switches between BSD and GNU variants via `uname -s` | GNU variants (`date -d "@.."`, `stat -c`) |
 | Dependency check | `jq` | `jq` and `flock` |
+| `COLOR_SCHEME=auto` when `COLORFGBG` does not decide | The OS appearance (`defaults read -g AppleInterfaceStyle`; the mtime of `.GlobalPreferences.plist` is used for the cache comparison) | Not looked at (`dark`) |
 
 The macOS version avoids `flock` because it is not installed on macOS by default and fails silently where it is missing. Instead it takes the lock with `mkdir`, whose atomicity POSIX guarantees, and treats a lock directory older than
 `LOCK_TIMEOUT_SEC` × 5 seconds (10 seconds by default) as stale and deletes it. The Linux `flock` is released automatically when the process exits, so it has no stale handling.
 
-All other blocks (config loading, customization settings, clamping, color scheme, the constants and shared parts of the PR status display, spark and remaining-value computation, history reading, coloring and formatting, layout assembly, and
-the render part of main) are kept character-for-character identical in both versions. In the history code, the only difference is `history_push`, which takes the lock. In the PR status display, the only difference is `maybe_pr_refresh`,
+In the `COLOR_SCHEME=auto` detection, the only differences between the versions are `os_appearance`, which returns the OS appearance, and the definition of `OS_APPEARANCE_FILE`, which is used for the cache comparison.
+These two are split into the "OS appearance" section placed before the detection block, and the detection block itself is the same in both versions.
+
+All other blocks (config loading, customization settings, clamping, color scheme detection, color scheme, the constants and shared parts of the PR status display, spark and remaining-value computation, history reading, coloring and formatting,
+layout assembly, and the render part of main) are kept character-for-character identical in both versions. In the history code, the only difference is `history_push`, which takes the lock. In the PR status display, the only difference is `maybe_pr_refresh`,
 which takes the lock. `tests/script-parity.sh` extracts these blocks and compares them.
 
 ## Implementation Mechanisms
@@ -107,6 +111,9 @@ change after the name is cut to 13 characters.
 - `COLOR_subagent_*` corresponds to the colors used for Claude Code's subagent display
 
 Going back to writing color values directly in each function would make the light/dark switch and the cross-version consistency check harder.
+
+This block comes after the `jq` check and the preparation of `HISTORY_DIR`. The `COLOR_SCHEME=auto` detection uses `jq` and the cache (`HISTORY_DIR`), and the contents of the block are the same as before the detection was added.
+Rendering stops without `jq`, so `jq` is not used before the check.
 
 ### Three Severity Tiers and Blinking for rate, weekly, and ctx
 
@@ -671,7 +678,35 @@ Using the same order in both versions confines the implementation difference to 
 - What it does: defines the same RGB values in the same way in both versions
 - What happens if removed: changing the values in only one version makes the colors of the two versions diverge for the same input. The regression tests run only the version that can run (in CI only the Linux version; on macOS the Linux
   version is skipped depending on bash 4.1+ and the presence of `flock`), so output comparison alone cannot notice drift
-- Tests that guard it: `block:color-scheme` in `tests/script-parity.sh`. The light values are partly confirmed by `81-config-light-scheme` / `84-config-crlf`
+- Tests that guard it: `block:color-scheme` in `tests/script-parity.sh` (`block:interval-clamp` ends at the marker `# --- 間引き定数ここまで ---`, so moving the block does not pull in OS-specific code).
+  The light values are partly confirmed by `81-config-light-scheme` / `84-config-crlf`
+
+### Detecting `COLOR_SCHEME=auto` and Its Cache
+
+- Location: the "color scheme detection" block in both versions (`resolve_color_scheme`)
+- What it does: for `auto`, decides `dark` / `light` from `theme` in `settings.json` (for `custom:<slug>`, the `base` of the theme file; for `auto`, `COLORFGBG` and then the OS appearance).
+  The result is kept in `${HISTORY_DIR}/color-scheme`, and `jq` / `defaults` are not started while nothing has changed
+- The cache has 4 lines: the result, the raw `theme` value, the path of the `settings.json` that was read, and the raw `base` value of a `custom` theme.
+  Only when `theme` is `auto` and `COLORFGBG` decided, the first line is empty (the OS appearance was not fetched)
+- The cache is used only when `[[ cache -nt src ]]` is true for every file compared (a builtin, so no fork).
+  The files compared are `settings.json`, the theme file when `theme` is `custom:<slug>`, and `.GlobalPreferences.plist` in the macOS version when `theme` is `auto` and `COLORFGBG` does not decide.
+  If this file does not exist there is nothing to compare against, so it refetches every time
+- Why `cache -nt src`: with `src -nt cache` (refetch only when the source is newer), if the source is rewritten after it is read but before the cache is written, the cache becomes newer and the change is missed.
+  The `-nt` of bash 3.2 compares in whole seconds, so a change within the same second is also missed.
+  If the form is "refetch when `cache -nt src` is false", both cases only cost repeated refetching during that second
+- Why the cache holds the path of `settings.json`: `HISTORY_DIR` is one per uid, and sessions with different `CLAUDE_CONFIG_DIR` share the same cache.
+  Unless a path that differs from the current one triggers a refetch, the result of another config directory is used
+- Why it holds `base`: when the theme file is deleted, `cache -nt src` stays true because src does not exist.
+  If the previous run had a `base` but the file is now missing, it refetches (when `settings.json` is deleted, it refetches if the previous `theme` was not empty). `[ -e ]` is a builtin
+- Why `COLORFGBG` is not cached: it can differ per terminal and per session. It can be read with builtins only, so it is read every time. The cached result is treated as "the result when `COLORFGBG` did not decide"
+- Why `COLORFGBG` is not compared arithmetically: `default` would evaluate to 0 and give `dark`. A `case` looks only at digits, and a non-numeric value means "not decided"
+- When `jq` fails (invalid JSON and so on), the result is `dark` as if there were no `theme`. A multi-line `theme` value (such as an object) is discarded because the cache is split by lines
+- It is written to a temporary file and then `mv`ed.
+  If it cannot be written, rendering continues with the result.
+  When `HISTORY_DIR` is disabled, the scheme is decided every time without a cache (more `jq` / `defaults` forks, but this is an abnormal path and accepted)
+- Known limitation: replacing a file with one that has an older mtime (restoring with `mv`, repointing a symlink) cannot be detected, because the mtime value itself cannot be recorded without a fork
+- What happens if removed: without the cache, `jq` runs on every render. Reversing the comparison direction misses changes. Removing the path or `base` keeps the result of another config directory or of a deleted file
+- Tests that guard it: `tests/color-scheme-behavior.sh` (`cache:*`, `theme:*`, `custom:*`, `colorfgbg:*`, `os:*`, `priority:*`) and `block:color-scheme-detect` in `tests/script-parity.sh`
 
 ### Blink Attribute
 
@@ -855,6 +890,18 @@ checks beyond the fetch limit would be dropped.
   `LAYOUT_LINE*`, and splitting is shared via `split_tokens`
 - The uncolored elements that are excluded (the detached `*`, closed PR numbers, `--`, and so on) and the reasons are summarized in [SPEC.en.md](SPEC.en.md#highlight-highlight)
 
+### How the Color Scheme Is Detected Automatically
+
+- Asking the terminal for its background color with OSC 11: Claude Code's `auto` appears to detect the terminal's background color,
+  but the statusline's output is captured by Claude Code and is not connected to the terminal directly, so the same method cannot be used.
+  `COLORFGBG` and the OS appearance are used instead
+- Also reading `theme` in project / local / managed settings and `--settings`: reading project settings needs `workspace.project_dir` from stdin, but the color definition block comes before stdin is read.
+  The effect does not justify a large reordering. The value chosen with `/theme` is written to the user settings, so the user settings are enough in most cases.
+  The location of managed settings differs by OS, and there is no way to know `--settings` from outside
+- A cache with an expiry: it needs the current time, which would add a `date +%s` fork early in rendering.
+  Comparing mtimes was enough, so it was not adopted. It remains as an alternative in case the mtime of `.GlobalPreferences.plist` turns out not to be updated
+- Reading a `CLAUDE_CODE_THEME` environment variable: some articles mention it, but it could not be confirmed in the official documentation, so it is not handled
+
 ### Other
 
 The following alternatives were also not adopted. The reasons are given at each link.
@@ -871,6 +918,10 @@ Changing or removing the following items is not detected by the current tests. C
 - The message for the dependency command check
 - The uid and mode checks for the history directory
 - Whether the range painted by `HIGHLIGHT` is readable in the actual Claude Code statusline (it becomes unreadable if `COLOR_SCHEME` and the theme mismatch. Check visually with `npm run preview`)
+- That the mtime of `.GlobalPreferences.plist` is updated on every OS appearance switch (manual, and the timed switch of the "Auto" appearance).
+  On this machine, only the match between the time the appearance switches automatically and the update time has been confirmed.
+  If it is not updated, `auto` in the macOS version keeps the previous appearance until `settings.json` is next updated
+- The value saved in `theme` when a plugin-provided theme is selected (not documented in the official documentation; it is treated as an unknown value and gives `dark`)
 - The empty `cwd` guard for branch lookup
 - That no synchronous fetch or git call has been added to the render path
 - That auth prompts really do not appear (the presence of the lines is checked by `tests/script-parity.sh`)

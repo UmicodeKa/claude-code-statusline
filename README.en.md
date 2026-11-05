@@ -128,7 +128,7 @@ LAYOUT_LINE1="session|directory|branch|commit"
 | Setting | Default | Description |
 | --- | --- | --- |
 | `SHOW_MODEL_NAME` | `1` | `0` hides the model name and shows only `✻` (model-specific color) and the effort |
-| `COLOR_SCHEME` | `dark` | Switches the color scheme between `dark` and `light` |
+| `COLOR_SCHEME` | `auto` | `auto` matches the Claude Code theme automatically. `dark` / `light` fix the scheme ([details](#automatic-theme-matching-color_schemeauto)) |
 | `SHOW_CWD` | `1` | `0` hides the directory name on line 1 |
 | `LAYOUT_LINE1` | `directory\|branch\|commit\|session` | Elements and order of line 1 |
 | `LAYOUT_LINE2` | `model_ctx\|rate\|weekly` | Order of line 2 |
@@ -144,6 +144,16 @@ LAYOUT_LINE1="session|directory|branch|commit"
   Putting spaces around `=`, as in `COLOR_SCHEME = light`, runs a command instead of assigning a variable
 - An unreadable file (no permission, a directory, etc.) is ignored and the defaults are used
 - See [SPEC](docs/SPEC.en.md) for the detailed behavior of each option
+
+### Automatic theme matching (`COLOR_SCHEME=auto`)
+
+With the default `auto`, the dark / light colors are chosen automatically to match the theme you picked with `/theme` in Claude Code (`theme` in `~/.claude/settings.json`). When you switch with `/theme`, the colors change from the next render.
+
+- `light`-family themes give light; `dark`-family themes, and a missing setting, give dark. A `custom:<name>` theme follows the `base` of its theme file (`~/.claude/themes/<name>.json`)
+- When the theme is `auto`, the environment variable `COLORFGBG` (the terminal's background color) is used, then the OS appearance (macOS only). If neither decides, dark is used
+- Only the user settings are read (`~/.claude/settings.json`, or the one under `CLAUDE_CONFIG_DIR` if set). Project settings are not looked at. A theme provided by a plugin gives dark, because the value saved for it is not known
+- If you copied `statusline.conf` earlier and it contains `COLOR_SCHEME=dark`, the scheme is fixed to dark and does not follow the theme. To follow it, change the line to `COLOR_SCHEME=auto` or delete it
+- See [docs/SPEC.md](docs/SPEC.en.md#color-scheme-detection-color_schemeauto) for the detailed rules
 
 ### Precedence
 
@@ -196,7 +206,7 @@ HIGHLIGHT="directory|branch|session|rate_chart|rate_reset"
 
 - An element that already has a color keeps it, such as ctx or the rate limit in a warning level, a model color like Opus, or a PR number such as approved
 - The default is `branch` (only the end of the branch name). To paint nothing, write only an unknown token such as `HIGHLIGHT="none"` (unknown tokens are ignored, and an empty value falls back to the default)
-- Keep `COLOR_SCHEME` matched to the Claude Code theme. If they differ, the text becomes unreadable, for example white text on a light background
+- Keep `COLOR_SCHEME` matched to the Claude Code theme (the default `auto` matches it automatically). If they differ, the text becomes unreadable, for example white text on a light background
 - Emptying the environment variable `CLAUDE_STATUSLINE_HIGHLIGHT` does not clear the value from the configuration file. To disable it temporarily, pass an unknown token such as `none`
 
 ### Range of numeric settings
@@ -323,7 +333,8 @@ my-project
 
 ## Color reference
 
-The colors match the Claude Code light/dark themes and are switched with `COLOR_SCHEME`. The table below shows how they look with dark. See [SPEC](docs/SPEC.en.md) for the full palette including the RGB values.
+The colors match the Claude Code light/dark themes and are switched with `COLOR_SCHEME` (the default `auto` follows the theme automatically).
+The table below shows how they look with dark. See [SPEC](docs/SPEC.en.md) for the full palette including the RGB values.
 
 | Target | Color |
 | --- | --- |
@@ -416,7 +427,7 @@ By default `git fetch` is not run, so `↓` is the value as of the last fetch / 
 ### The colors look wrong
 
 - Check that the terminal supports truecolor (24-bit color). On a terminal that does not, the colors may be approximated or the control characters may show as they are
-- On a terminal with a light background, set `COLOR_SCHEME=light`
+- On a terminal with a light background, set the Claude Code theme to light (`COLOR_SCHEME=auto` follows it). If `statusline.conf` contains `COLOR_SCHEME=dark`, it does not follow, so change it to `auto` or set `COLOR_SCHEME=light`
 
 ## Privacy and security
 

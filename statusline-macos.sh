@@ -42,9 +42,11 @@ fi
 # env CLAUDE_STATUSLINE_SHOW_MODEL_NAME でも上書き可。
 SHOW_MODEL_NAME="${CLAUDE_STATUSLINE_SHOW_MODEL_NAME:-${SHOW_MODEL_NAME:-1}}"
 
-# カラースキーム。light/dark の切替のみ。既定は dark。
+# カラースキーム。auto / dark / light。既定は auto。
+# auto は Claude Code の theme の設定 (settings.json) から dark / light を決める (後方の「カラースキームの判定」を参照)。
+# dark / light を書くとテーマの設定を読まずにそれを使う。auto / dark / light 以外の値は dark として扱う。
 # env CLAUDE_STATUSLINE_COLOR_SCHEME=light でも上書き可。
-COLOR_SCHEME="${CLAUDE_STATUSLINE_COLOR_SCHEME:-${COLOR_SCHEME:-dark}}"
+COLOR_SCHEME="${CLAUDE_STATUSLINE_COLOR_SCHEME:-${COLOR_SCHEME:-auto}}"
 
 # バックグラウンド git fetch のオプトイン設定。既定 0=無効 (従来動作を完全維持)。
 # 1 のとき、描画経路とは分離した投げっぱなし子プロセスで git fetch を実行し、
@@ -181,70 +183,7 @@ clamp_int RATE_CHART_LEN 12 "$RATE_CHART_LEN_MIN" "$RATE_CHART_LEN_MAX"
 POLL_INTERVAL_MAX_SEC=$((RATE_WINDOW_SEC / RATE_CHART_LEN))
 clamp_int POLL_INTERVAL_SEC 300 "$POLL_INTERVAL_MIN_SEC" "$POLL_INTERVAL_MAX_SEC"
 clamp_int GIT_FETCH_INTERVAL_SEC 900 "$GIT_FETCH_INTERVAL_MIN_SEC" "$GIT_FETCH_INTERVAL_MAX_SEC"
-
-# --- カラースキーム ---
-# 以下の COLOR_* は Claude Code の light/dark テーマの配色に合わせた RGB 値。値を変更しない。
-# セマンティック名 (success/error/warning/claude/permission ...) は公式キーをそのまま維持し、
-# 未使用キーも将来用に保持する。各使用箇所はこの定数を参照する。
-# COLOR_subagent_* は公式キー <color>_FOR_SUBAGENTS_ONLY に対応する (名前のみ短縮)。
-# 各分岐の末尾の COLOR_prDraft は公式キーではなく、このスクリプトが定める別名 (テーマごとに上の公式キーの値を参照する)。
-
-# R;G;B を truecolor 前景 ESC (\033[38;2;R;G;Bm) に変換する。定義時のみ使う。
-_fg() { printf '\033[38;2;%sm' "$1"; }
-
-# shellcheck disable=SC2034
-case "$COLOR_SCHEME" in
-  light)
-    COLOR_autoAccept=$(_fg '135;0;255');             COLOR_bashBorder=$(_fg '255;0;135')
-    COLOR_claude=$(_fg '215;119;87');                COLOR_permission=$(_fg '87;105;247')
-    COLOR_secondaryBorder=$(_fg '153;153;153');      COLOR_text=$(_fg '0;0;0')
-    COLOR_secondaryText=$(_fg '102;102;102');        COLOR_suggestion=$(_fg '87;105;247')
-    COLOR_remember=$(_fg '0;0;255');                 COLOR_success=$(_fg '44;122;57')
-    COLOR_error=$(_fg '171;43;63');                  COLOR_warning=$(_fg '150;108;30')
-    COLOR_diff_added=$(_fg '105;219;124');           COLOR_diff_removed=$(_fg '255;168;180')
-    COLOR_diff_addedDimmed=$(_fg '199;225;203');     COLOR_diff_removedDimmed=$(_fg '253;210;216')
-    COLOR_diff_addedWord=$(_fg '47;157;68');         COLOR_diff_removedWord=$(_fg '209;69;75')
-    COLOR_diff_addedWordDimmed=$(_fg '144;194;156'); COLOR_diff_removedWordDimmed=$(_fg '232;165;173')
-    COLOR_planMode=$(_fg '51;102;102');              COLOR_effortUltra=$(_fg '135;0;255')
-    COLOR_rate_limit_fill=$(_fg '51;102;255');       COLOR_rate_limit_empty=$(_fg '23;46;114')
-    COLOR_claudeShimmer=$(_fg '255;183;101');        COLOR_permissionShimmer=$(_fg '101;152;255')
-    COLOR_warningShimmer=$(_fg '255;183;50');        COLOR_professionalBlue=$(_fg '106;155;204')
-    COLOR_chromeYellow=$(_fg '251;188;4');           COLOR_subtle=$(_fg '175;175;175')
-    COLOR_inactive=$(_fg '102;102;102');             COLOR_merged=$(_fg '135;0;255')
-    COLOR_fastMode=$(_fg '255;106;0');               COLOR_fastModeShimmer=$(_fg '255;150;50')
-    COLOR_subagent_red=$(_fg '204;0;0');             COLOR_subagent_orange=$(_fg '255;128;0')
-    COLOR_subagent_yellow=$(_fg '255;204;0');        COLOR_subagent_green=$(_fg '0;204;0')
-    COLOR_subagent_cyan=$(_fg '0;178;178');          COLOR_subagent_blue=$(_fg '0;102;204')
-    COLOR_subagent_purple=$(_fg '128;0;128');        COLOR_subagent_pink=$(_fg '255;102;178')
-    # PR の draft の #<番号>。subtle は白背景で、inactive は黒背景で読みにくいため、テーマ別に選ぶ
-    COLOR_prDraft=$COLOR_inactive
-    ;;
-  *)  # dark (既定)
-    COLOR_autoAccept=$(_fg '175;135;255');           COLOR_bashBorder=$(_fg '253;93;177')
-    COLOR_claude=$(_fg '215;119;87');                COLOR_permission=$(_fg '177;185;249')
-    COLOR_secondaryBorder=$(_fg '136;136;136');      COLOR_text=$(_fg '255;255;255')
-    COLOR_secondaryText=$(_fg '153;153;153');        COLOR_suggestion=$(_fg '177;185;249')
-    COLOR_remember=$(_fg '177;185;249');             COLOR_success=$(_fg '78;186;101')
-    COLOR_error=$(_fg '255;107;128');                COLOR_warning=$(_fg '255;193;7')
-    COLOR_diff_added=$(_fg '34;92;43');              COLOR_diff_removed=$(_fg '122;41;54')
-    COLOR_diff_addedDimmed=$(_fg '71;88;74');        COLOR_diff_removedDimmed=$(_fg '105;72;77')
-    COLOR_diff_addedWord=$(_fg '56;166;96');         COLOR_diff_removedWord=$(_fg '179;89;107')
-    COLOR_diff_addedWordDimmed=$(_fg '46;107;58');   COLOR_diff_removedWordDimmed=$(_fg '139;57;69')
-    COLOR_planMode=$(_fg '0;102;102');               COLOR_effortUltra=$(_fg '135;0;255')
-    COLOR_rate_limit_fill=$(_fg '87;105;247');       COLOR_rate_limit_empty=$(_fg '39;47;111')
-    COLOR_claudeShimmer=$(_fg '245;149;117');        COLOR_permissionShimmer=$(_fg '137;155;255')
-    COLOR_warningShimmer=$(_fg '200;158;80');        COLOR_professionalBlue=$(_fg '106;155;204')
-    COLOR_chromeYellow=$(_fg '251;188;4');           COLOR_subtle=$(_fg '175;175;175')
-    COLOR_inactive=$(_fg '102;102;102');             COLOR_merged=$(_fg '135;0;255')
-    COLOR_fastMode=$(_fg '255;106;0');               COLOR_fastModeShimmer=$(_fg '255;150;50')
-    COLOR_subagent_red=$(_fg '220;38;38');           COLOR_subagent_orange=$(_fg '217;119;87')
-    COLOR_subagent_yellow=$(_fg '202;138;4');        COLOR_subagent_green=$(_fg '22;163;74')
-    COLOR_subagent_cyan=$(_fg '8;145;178');          COLOR_subagent_blue=$(_fg '106;155;204')
-    COLOR_subagent_purple=$(_fg '130;125;189');      COLOR_subagent_pink=$(_fg '196;102;134')
-    # PR の draft の #<番号>。subtle は白背景で、inactive は黒背景で読みにくいため、テーマ別に選ぶ
-    COLOR_prDraft=$COLOR_subtle
-    ;;
-esac
+# --- 間引き定数ここまで ---
 
 # `jq` は macOS には標準搭載されない。欠如時はシェルエラーで真っ赤になるより
 # 1 行のヒントだけ出して exit したほうが Claude Code 上で読みやすい。
@@ -316,6 +255,238 @@ else
     HISTORY_DIR=""
   fi
 fi
+
+# --- OS の外観 ---
+# COLOR_SCHEME=auto で、COLORFGBG から背景色が決まらなかったときに使う。
+# ダークモードのときだけ defaults が成功する (ライトモードでは失敗する)。1 回あたり約 20ms かかる。
+# OS の外観が変わると、このファイルの mtime が変わる。
+OS_APPEARANCE_FILE="$HOME/Library/Preferences/.GlobalPreferences.plist"
+
+# os_appearance: _cs_os に dark / light を入れる。defaults がなければ dark。
+os_appearance() {
+  _cs_os=dark
+  if command -v defaults >/dev/null 2>&1 && ! defaults read -g AppleInterfaceStyle >/dev/null 2>&1; then
+    _cs_os=light
+  fi
+}
+
+# --- カラースキームの判定 ---
+# COLOR_SCHEME が auto のとき、Claude Code の theme の設定から dark / light を決めて COLOR_SCHEME に書き戻す。
+# dark / light はそのまま使い、それ以外の値は下の色定義の case で dark になる。
+# statusline には theme が渡されないため、${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json の theme を直接読む
+# (読むのはユーザー設定だけ。project / local / managed / --settings の theme は見ない)。
+#   dark / dark-daltonized / dark-ansi と、キーなし・ファイルなし・不正な JSON・未知の値 → dark
+#   light / light-daltonized / light-ansi → light
+#   custom:<slug>                         → themes/<slug>.json の base を同じ対応付けで判定 (<slug> に / を含む、
+#                                           base がない、読めない、ファイルがないときは dark。/ のときはファイルを読まない)
+#   auto                                  → COLORFGBG、次に OS の外観 (os_appearance)。決まらなければ dark
+# 描画のたびに jq / defaults を起動しないよう、判定結果を ${HISTORY_DIR}/color-scheme に置く。
+#   1 行目: 判定結果 (dark / light)。theme が auto で COLORFGBG により決まったときは取っていないので空
+#   2 行目: theme の生の値
+#   3 行目: 読んだ settings.json のパス
+#   4 行目: custom テーマの base の生の値
+# キャッシュを使うのは、キャッシュが比較対象のどのファイルよりも厳密に新しいときだけ (`cache -nt src` が偽なら取り直す)。
+# `src -nt cache` (ソースが新しいときだけ取り直す) にすると、ソースを読んだ後キャッシュを書く前にソースが書き換わったとき、
+# キャッシュの方が新しくなって変更を取りこぼす。bash 3.2 の -nt は秒単位なので、同じ秒の変更も見落とす。
+# 向きを逆にすれば、どちらも同じ秒の間は取り直しが続くだけで済む。
+# 3 行目が今回の settings.json のパスと違うときも取り直す (CLAUDE_CONFIG_DIR の違うセッションが HISTORY_DIR を共有するため)。
+# COLORFGBG はセッションごとに違いうるのでキャッシュせず毎回読む。キャッシュの 1 行目は｢COLORFGBG で決まらなかったときの結果｣。
+# HISTORY_DIR が無効なときはキャッシュなしで毎回判定する。判定はすべて組み込みだけで行い、取り直すときだけ jq / defaults を起動する。
+
+# map_theme_scheme <theme または base の値>: _cs_mapped に dark / light を入れる。未知の値は dark。
+map_theme_scheme() {
+  case "$1" in
+    light|light-daltonized|light-ansi) _cs_mapped=light ;;
+    *) _cs_mapped=dark ;;
+  esac
+}
+
+resolve_color_scheme() {
+  local _cs_dir _cs_settings _cs_cache="" _cs_bg _cs_fgbg="" _cs_ok=0
+  local _cs_res="" _cs_theme="" _cs_path="" _cs_base="" _cs_slug _cs_tf _cs_tmp
+  _cs_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  _cs_settings="$_cs_dir/settings.json"
+  [ -n "$HISTORY_DIR" ] && _cs_cache="$HISTORY_DIR/color-scheme"
+
+  # COLORFGBG: ; で区切った最後のフィールドが背景色。7 / 9 / 10〜15 が light、ほかの数字が dark。
+  # default などの数字でない値、空、未設定は決まらない。算術比較は使わない (default が 0 と評価されるため)。
+  _cs_bg=${COLORFGBG:-}
+  _cs_bg=${_cs_bg##*;}
+  case "$_cs_bg" in
+    7|9|1[0-5]) _cs_fgbg=light ;;
+    ''|*[!0-9]*) ;;
+    *) _cs_fgbg=dark ;;
+  esac
+
+  if [ -n "$_cs_cache" ] && [ -f "$_cs_cache" ]; then
+    { IFS= read -r _cs_res; IFS= read -r _cs_theme; IFS= read -r _cs_path; IFS= read -r _cs_base; } 2>/dev/null <"$_cs_cache"
+    _cs_ok=1
+    [ "$_cs_path" = "$_cs_settings" ] || _cs_ok=0
+    if [ "$_cs_ok" = 1 ]; then
+      if [ -e "$_cs_settings" ]; then
+        [[ "$_cs_cache" -nt "$_cs_settings" ]] || _cs_ok=0
+      elif [ -n "$_cs_theme" ]; then
+        _cs_ok=0   # 前回あった theme が、settings.json の削除でなくなった
+      fi
+    fi
+    if [ "$_cs_ok" = 1 ]; then
+      case "$_cs_theme" in
+        custom:*)
+          _cs_slug=${_cs_theme#custom:}
+          case "$_cs_slug" in
+            ''|*/*) ;;
+            *)
+              _cs_tf="$_cs_dir/themes/$_cs_slug.json"
+              if [ -e "$_cs_tf" ]; then
+                [[ "$_cs_cache" -nt "$_cs_tf" ]] || _cs_ok=0
+              elif [ -n "$_cs_base" ]; then
+                _cs_ok=0   # 前回あった base が、テーマファイルの削除でなくなった
+              fi
+              ;;
+          esac
+          ;;
+        auto)
+          if [ -z "$_cs_fgbg" ]; then
+            [ -n "$_cs_res" ] || _cs_ok=0   # 前回は COLORFGBG で決まり、OS の外観を取っていない
+            if [ -n "$OS_APPEARANCE_FILE" ]; then
+              if [ -e "$OS_APPEARANCE_FILE" ]; then
+                [[ "$_cs_cache" -nt "$OS_APPEARANCE_FILE" ]] || _cs_ok=0
+              else
+                _cs_ok=0   # 比べる相手がないので、毎回取り直す
+              fi
+            fi
+          fi
+          ;;
+      esac
+    fi
+    if [ "$_cs_ok" = 1 ]; then
+      if [ "$_cs_theme" = auto ] && [ -n "$_cs_fgbg" ]; then _cs_res=$_cs_fgbg; fi
+      case "$_cs_res" in
+        dark|light) COLOR_SCHEME=$_cs_res; return ;;
+      esac
+    fi
+  fi
+
+  _cs_theme=""
+  _cs_base=""
+  _cs_res=dark
+  if [ -e "$_cs_settings" ]; then
+    # 不正な JSON で jq が失敗したら theme なし (dark) として扱う。キャッシュを行で区切るので、複数行の値も捨てる。
+    _cs_theme=$(jq -r '.theme // empty' "$_cs_settings" 2>/dev/null) || _cs_theme=""
+    case "$_cs_theme" in *$'\n'*) _cs_theme="" ;; esac
+  fi
+  case "$_cs_theme" in
+    auto)
+      if [ -n "$_cs_fgbg" ]; then
+        _cs_res=""
+      else
+        os_appearance
+        _cs_res=$_cs_os
+      fi
+      ;;
+    custom:*)
+      _cs_slug=${_cs_theme#custom:}
+      case "$_cs_slug" in
+        ''|*/*) ;;
+        *)
+          _cs_tf="$_cs_dir/themes/$_cs_slug.json"
+          if [ -e "$_cs_tf" ]; then
+            _cs_base=$(jq -r '.base // empty' "$_cs_tf" 2>/dev/null) || _cs_base=""
+            case "$_cs_base" in *$'\n'*) _cs_base="" ;; esac
+          fi
+          map_theme_scheme "$_cs_base"
+          _cs_res=$_cs_mapped
+          ;;
+      esac
+      ;;
+    *)
+      map_theme_scheme "$_cs_theme"
+      _cs_res=$_cs_mapped
+      ;;
+  esac
+
+  # 一時ファイルに書いてから mv で置き換え、並行する別の描画が書きかけのファイルを読まないようにする。
+  # 書けなくても描画は判定結果で続ける。
+  if [ -n "$_cs_cache" ]; then
+    _cs_tmp="$_cs_cache.$$"
+    { printf '%s\n%s\n%s\n%s\n' "$_cs_res" "$_cs_theme" "$_cs_settings" "$_cs_base" 2>/dev/null >"$_cs_tmp" \
+      && mv -- "$_cs_tmp" "$_cs_cache" 2>/dev/null; } || rm -- "$_cs_tmp" 2>/dev/null
+  fi
+
+  if [ "$_cs_theme" = auto ] && [ -n "$_cs_fgbg" ]; then
+    COLOR_SCHEME=$_cs_fgbg
+  else
+    COLOR_SCHEME=$_cs_res
+  fi
+}
+
+if [ "$COLOR_SCHEME" = auto ]; then
+  resolve_color_scheme
+fi
+
+# --- カラースキーム ---
+# 以下の COLOR_* は Claude Code の light/dark テーマの配色に合わせた RGB 値。値を変更しない。
+# セマンティック名 (success/error/warning/claude/permission ...) は公式キーをそのまま維持し、
+# 未使用キーも将来用に保持する。各使用箇所はこの定数を参照する。
+# COLOR_subagent_* は公式キー <color>_FOR_SUBAGENTS_ONLY に対応する (名前のみ短縮)。
+# 各分岐の末尾の COLOR_prDraft は公式キーではなく、このスクリプトが定める別名 (テーマごとに上の公式キーの値を参照する)。
+
+# R;G;B を truecolor 前景 ESC (\033[38;2;R;G;Bm) に変換する。定義時のみ使う。
+_fg() { printf '\033[38;2;%sm' "$1"; }
+
+# shellcheck disable=SC2034
+case "$COLOR_SCHEME" in
+  light)
+    COLOR_autoAccept=$(_fg '135;0;255');             COLOR_bashBorder=$(_fg '255;0;135')
+    COLOR_claude=$(_fg '215;119;87');                COLOR_permission=$(_fg '87;105;247')
+    COLOR_secondaryBorder=$(_fg '153;153;153');      COLOR_text=$(_fg '0;0;0')
+    COLOR_secondaryText=$(_fg '102;102;102');        COLOR_suggestion=$(_fg '87;105;247')
+    COLOR_remember=$(_fg '0;0;255');                 COLOR_success=$(_fg '44;122;57')
+    COLOR_error=$(_fg '171;43;63');                  COLOR_warning=$(_fg '150;108;30')
+    COLOR_diff_added=$(_fg '105;219;124');           COLOR_diff_removed=$(_fg '255;168;180')
+    COLOR_diff_addedDimmed=$(_fg '199;225;203');     COLOR_diff_removedDimmed=$(_fg '253;210;216')
+    COLOR_diff_addedWord=$(_fg '47;157;68');         COLOR_diff_removedWord=$(_fg '209;69;75')
+    COLOR_diff_addedWordDimmed=$(_fg '144;194;156'); COLOR_diff_removedWordDimmed=$(_fg '232;165;173')
+    COLOR_planMode=$(_fg '51;102;102');              COLOR_effortUltra=$(_fg '135;0;255')
+    COLOR_rate_limit_fill=$(_fg '51;102;255');       COLOR_rate_limit_empty=$(_fg '23;46;114')
+    COLOR_claudeShimmer=$(_fg '255;183;101');        COLOR_permissionShimmer=$(_fg '101;152;255')
+    COLOR_warningShimmer=$(_fg '255;183;50');        COLOR_professionalBlue=$(_fg '106;155;204')
+    COLOR_chromeYellow=$(_fg '251;188;4');           COLOR_subtle=$(_fg '175;175;175')
+    COLOR_inactive=$(_fg '102;102;102');             COLOR_merged=$(_fg '135;0;255')
+    COLOR_fastMode=$(_fg '255;106;0');               COLOR_fastModeShimmer=$(_fg '255;150;50')
+    COLOR_subagent_red=$(_fg '204;0;0');             COLOR_subagent_orange=$(_fg '255;128;0')
+    COLOR_subagent_yellow=$(_fg '255;204;0');        COLOR_subagent_green=$(_fg '0;204;0')
+    COLOR_subagent_cyan=$(_fg '0;178;178');          COLOR_subagent_blue=$(_fg '0;102;204')
+    COLOR_subagent_purple=$(_fg '128;0;128');        COLOR_subagent_pink=$(_fg '255;102;178')
+    # PR の draft の #<番号>。subtle は白背景で、inactive は黒背景で読みにくいため、テーマ別に選ぶ
+    COLOR_prDraft=$COLOR_inactive
+    ;;
+  *)  # dark (既定)
+    COLOR_autoAccept=$(_fg '175;135;255');           COLOR_bashBorder=$(_fg '253;93;177')
+    COLOR_claude=$(_fg '215;119;87');                COLOR_permission=$(_fg '177;185;249')
+    COLOR_secondaryBorder=$(_fg '136;136;136');      COLOR_text=$(_fg '255;255;255')
+    COLOR_secondaryText=$(_fg '153;153;153');        COLOR_suggestion=$(_fg '177;185;249')
+    COLOR_remember=$(_fg '177;185;249');             COLOR_success=$(_fg '78;186;101')
+    COLOR_error=$(_fg '255;107;128');                COLOR_warning=$(_fg '255;193;7')
+    COLOR_diff_added=$(_fg '34;92;43');              COLOR_diff_removed=$(_fg '122;41;54')
+    COLOR_diff_addedDimmed=$(_fg '71;88;74');        COLOR_diff_removedDimmed=$(_fg '105;72;77')
+    COLOR_diff_addedWord=$(_fg '56;166;96');         COLOR_diff_removedWord=$(_fg '179;89;107')
+    COLOR_diff_addedWordDimmed=$(_fg '46;107;58');   COLOR_diff_removedWordDimmed=$(_fg '139;57;69')
+    COLOR_planMode=$(_fg '0;102;102');               COLOR_effortUltra=$(_fg '135;0;255')
+    COLOR_rate_limit_fill=$(_fg '87;105;247');       COLOR_rate_limit_empty=$(_fg '39;47;111')
+    COLOR_claudeShimmer=$(_fg '245;149;117');        COLOR_permissionShimmer=$(_fg '137;155;255')
+    COLOR_warningShimmer=$(_fg '200;158;80');        COLOR_professionalBlue=$(_fg '106;155;204')
+    COLOR_chromeYellow=$(_fg '251;188;4');           COLOR_subtle=$(_fg '175;175;175')
+    COLOR_inactive=$(_fg '102;102;102');             COLOR_merged=$(_fg '135;0;255')
+    COLOR_fastMode=$(_fg '255;106;0');               COLOR_fastModeShimmer=$(_fg '255;150;50')
+    COLOR_subagent_red=$(_fg '220;38;38');           COLOR_subagent_orange=$(_fg '217;119;87')
+    COLOR_subagent_yellow=$(_fg '202;138;4');        COLOR_subagent_green=$(_fg '22;163;74')
+    COLOR_subagent_cyan=$(_fg '8;145;178');          COLOR_subagent_blue=$(_fg '106;155;204')
+    COLOR_subagent_purple=$(_fg '130;125;189');      COLOR_subagent_pink=$(_fg '196;102;134')
+    # PR の draft の #<番号>。subtle は白背景で、inactive は黒背景で読みにくいため、テーマ別に選ぶ
+    COLOR_prDraft=$COLOR_subtle
+    ;;
+esac
 
 # spark_of <変数名> <0-100 の値>
 # 値を ▁..█ の 8 階調の 1 文字にして変数に入れる。値が空なら · にする。
