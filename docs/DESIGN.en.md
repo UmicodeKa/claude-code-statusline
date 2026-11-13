@@ -686,9 +686,12 @@ Using the same order in both versions confines the implementation difference to 
 - The cache has 4 lines: the result, the raw `theme` value, the path of the `settings.json` that was read, and the raw `base` value of a `custom` theme
 - The cache is used only when `[[ cache -nt src ]]` is true for every file compared (a builtin, so no fork).
   The files compared are `settings.json` and, when `theme` is `custom:<slug>`, the theme file
-- Why `cache -nt src`: with `src -nt cache` (refetch only when the source is newer), if the source is rewritten after it is read but before the cache is written, the cache becomes newer and the change is missed.
-  The `-nt` of bash 3.2 compares in whole seconds, so a change within the same second is also missed.
-  If the form is "refetch when `cache -nt src` is false", both cases only cost repeated refetching during that second
+- Why `cache -nt src`: with `src -nt cache` (refetch only when the source is newer), a change within the same second as the cache is missed, because the `-nt` of bash 3.2 compares in whole seconds.
+  If the form is "refetch when `cache -nt src` is false", it only costs repeated refetching during that second
+- The mark that guards against changes while reading: if the source is rewritten in a later second after `jq` reads it but before the cache is written, the written cache is newer and the comparison above misses the change.
+  So a temporary file is created before reading, and its mtime is used as a mark. The cache is written only when every file read is strictly older than the mark.
+  Otherwise it is not written, and the next render refetches (a change within the same second is also treated as not writable).
+  Temporary files left by interrupted renders are removed at the next refetch (no fork when none are left)
 - Why the cache holds the path of `settings.json`: `HISTORY_DIR` is one per uid, and sessions with different `CLAUDE_CONFIG_DIR` share the same cache.
   Unless a path that differs from the current one triggers a refetch, the result of another config directory is used
 - Why it holds `base`: when the theme file is deleted, `cache -nt src` stays true because src does not exist.
@@ -696,7 +699,7 @@ Using the same order in both versions confines the implementation difference to 
 - Why `COLORFGBG` is not cached: it can differ per terminal and per session. It can be read with builtins only, so it is read every time. The cached result is treated as "the result when `COLORFGBG` did not decide"
 - Why `COLORFGBG` is not compared arithmetically: `default` would evaluate to 0 and give `dark`. A `case` looks only at digits, and a non-numeric value means "not decided"
 - When `jq` fails (invalid JSON and so on), the result is `dark` as if there were no `theme`. A multi-line `theme` value (such as an object) is discarded because the cache is split by lines
-- It is written to a temporary file and then `mv`ed.
+- It is written to a temporary file (the mark above) and then `mv`ed.
   If it cannot be written, rendering continues with the result.
   When `HISTORY_DIR` is disabled, the scheme is decided every time without a cache (more `jq` forks, but this is an abnormal path and accepted)
 - Known limitation: replacing a file with one that has an older mtime (restoring with `mv`, repointing a symlink) cannot be detected, because the mtime value itself cannot be recorded without a fork

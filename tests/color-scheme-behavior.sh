@@ -55,11 +55,25 @@ TMP_ROOT="$(mktemp -d -t claude-statusline-color.XXXXXX)"
 trap 'rm -r "$TMP_ROOT" 2>/dev/null || true' EXIT
 
 # 呼び出しを記録するスタブ。jq は記録して本物に渡す。defaults は STUB_DEFAULTS_RC で終了する。
+# STUB_RACE_SETTINGS が空でなければ、theme を読む jq の初回だけ、読んだ直後に settings.json をその内容で書き換え、
+# 秒をまたぐまで待つ (読んでからキャッシュを書くまでの間に、別の秒で書き換わった状況を作る)。
 STUBS="$TMP_ROOT/stubs"
 mkdir -p "$STUBS"
 cat > "$STUBS/jq" <<'EOF'
 #!/bin/bash
 printf '%s\n' "jq $*" >> "$STUB_LOG"
+case "$*" in
+  *'.theme // empty'*)
+    if [ -n "${STUB_RACE_SETTINGS:-}" ] && [ ! -e "$STUB_LOG.raced" ]; then
+      out=$("$REAL_JQ" "$@"); rc=$?
+      : > "$STUB_LOG.raced"
+      printf '%s\n' "$STUB_RACE_SETTINGS" > "$CLAUDE_CONFIG_DIR/settings.json"
+      sleep 1
+      printf '%s\n' "$out"
+      exit "$rc"
+    fi
+    ;;
+esac
 exec "$REAL_JQ" "$@"
 EOF
 cat > "$STUBS/defaults" <<'EOF'
@@ -86,6 +100,7 @@ new_case() {
   R_SCHEME=""
   R_CONF="$NO_CONFIG"
   R_DEFAULTS_RC=0
+  R_RACE_SETTINGS=""
 }
 
 # 現在のケースの設定ディレクトリに settings.json を書く。
@@ -101,7 +116,7 @@ render() {
   CLAUDE_CONFIG_DIR="$R_CFG" COLORFGBG="$R_FGBG" \
   CLAUDE_STATUSLINE_COLOR_SCHEME="$R_SCHEME" CLAUDE_STATUSLINE_CONFIG="$R_CONF" \
   CLAUDE_STATUSLINE_HISTORY_DIR="$R_HIST" HOME="$R_HOME" TZ=UTC \
-  STUB_LOG="$LOG" STUB_DEFAULTS_RC="$R_DEFAULTS_RC" REAL_JQ="$REAL_JQ" \
+  STUB_LOG="$LOG" STUB_DEFAULTS_RC="$R_DEFAULTS_RC" STUB_RACE_SETTINGS="$R_RACE_SETTINGS" REAL_JQ="$REAL_JQ" \
   PATH="$GIT_SHIM_DIR:$STUBS:$PATH" \
     "$bash_bin" "$script" < "$FIXTURE" 2>/dev/null
 }
@@ -321,6 +336,24 @@ run_cache() {
   write_settings '{"theme":"dark"}'
   expect "cache:settings-rewritten-same-second [$label]" dark "$(scheme "$bash_bin" "$script")"
   expect "cache:settings-rewritten-calls [$label]" 2 "$(calls '.theme // empty')"
+
+  # jq で読んだ後、キャッシュを書く前に (秒をまたいで) settings.json が書き換わったら、キャッシュに書かず次の描画で取り直す。
+  new_case
+  write_settings '{"theme":"dark"}'
+  age "$R_CFG/settings.json"
+  R_RACE_SETTINGS='{"theme":"light"}'
+  expect "cache:race-read-old [$label]" dark "$(scheme "$bash_bin" "$script")"
+  expect "cache:race-not-written [$label]" no "$([ -e "$R_HIST/color-scheme" ] && printf yes || printf no)"
+  expect "cache:race-next-render [$label]" light "$(scheme "$bash_bin" "$script")"
+  expect "cache:race-no-tmp-left [$label]" 0 "$(find "$R_HIST" -name 'color-scheme.*' | wc -l | tr -d ' ')"
+
+  # 中断された描画が残した一時ファイルは、次に取り直すときに消す。
+  new_case
+  write_settings '{"theme":"light"}'
+  age "$R_CFG/settings.json"
+  : > "$R_HIST/color-scheme.99999"
+  expect "cache:stale-tmp-render [$label]" light "$(scheme "$bash_bin" "$script")"
+  expect "cache:stale-tmp-removed [$label]" no "$([ -e "$R_HIST/color-scheme.99999" ] && printf yes || printf no)"
 
   # custom テーマのファイルを書き換えたら取り直す。
   new_case

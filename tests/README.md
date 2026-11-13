@@ -127,7 +127,7 @@ PATH の先頭に `jq` と `defaults` のスタブを置き、呼び出しを記
 | `colorfgbg:*` | `theme` が `auto` のとき `0;15` は light、`15;0` と `15;default;0` は dark、`0;default;15` は light。数字でない値は次の判定へ進む。`COLORFGBG` はキャッシュしない |
 | `os:*` | `theme` が `auto` で `COLORFGBG` で決まらないときは、OS がライトモードでも dark。`defaults` を呼ばない。前回 `COLORFGBG` で決まっていても、`COLORFGBG` がなくなれば dark |
 | `priority:*` | env / conf の `dark` / `light` は `settings.json` の値より優先され、`theme` を読まない。未知の値は dark |
-| `cache:*` | 2 回目以降は `jq` を起動しない。`settings.json` / テーマファイルの書き換え (キャッシュと同じ秒でも)、削除、出現で取り直す。`CLAUDE_CONFIG_DIR` が違えば取り直す。キャッシュが壊れていても描画できる。`HISTORY_DIR` が無効でもテーマに従う |
+| `cache:*` | 2 回目以降は `jq` を起動しない。`settings.json` / テーマファイルの書き換え (キャッシュと同じ秒でも)、削除、出現で取り直す。読んでからキャッシュを書くまでに書き換わったら書かずに次の描画で取り直す。中断された描画の一時ファイルを消す。`CLAUDE_CONFIG_DIR` が違えば取り直す。キャッシュが壊れていても描画できる。`HISTORY_DIR` が無効でもテーマに従う |
 
 ### e2e-preview.sh
 

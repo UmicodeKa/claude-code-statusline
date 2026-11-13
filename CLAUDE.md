@@ -57,7 +57,7 @@ CI は Linux 版のみを実行します。macOS 版の変更はローカルの 
 - clamp の順序は `RATE_CHART_LEN` → `POLL_INTERVAL_MAX_SEC` の計算 → `POLL_INTERVAL_SEC`。`POLL_INTERVAL_SEC` の上限は丸めた後のチャート長から決まるため、入れ替えると丸める前の値で上限を求めてしまう。([詳細](docs/DESIGN.md#間引き間隔の-clamp))
 - `HISTORY_DIR` の安全性チェック (symlink、所有 uid、mode 700): 外すと `/tmp` 上で他ユーザーが用意したディレクトリやリンクに書き込みうる。([詳細](docs/DESIGN.md#履歴ディレクトリの安全性チェック))
 - `COLOR_SCHEME=auto` の判定 (`resolve_color_scheme`) を描画のたびに `jq` で行わない。OS の外観 (`defaults`) は端末のテーマと一致するとは限らないので見ない。判定結果を `${HISTORY_DIR}/color-scheme` に置き、`[[ cache -nt src ]]` がすべてのファイルで真のときだけ使う。
-  `src -nt cache` に逆にすると、ソースを読んだ後にキャッシュを書くまでの間の変更と、同じ秒の変更を取りこぼす。
+  `src -nt cache` に逆にすると同じ秒の変更を取りこぼす。読む前に作った一時ファイルの mtime を印にし、読んだファイルが印より厳密に古いときだけ書く。外すと、読んでからキャッシュを書くまでに秒をまたいだ変更を取りこぼす。
   キャッシュに settings.json のパスを持たせないと、`CLAUDE_CONFIG_DIR` の異なるセッションが判定結果を取り違える。`COLORFGBG` はキャッシュしない。([詳細](docs/DESIGN.md#color_schemeauto-の判定とキャッシュ))
 - 色定義ブロック (`_fg` と `case "$COLOR_SCHEME"`) は両スクリプトで同一に保つ。`npm test` は実行できる側のスクリプトだけを検証するため、ドリフトは `tests/script-parity.sh` で検出する。([詳細](docs/DESIGN.md#色定義ブロックの両版一致))
 - 冒頭の `export LC_ALL=C.UTF-8`: 外すと `${#var}` がバイト数換算になり、トリム位置が変わる。([詳細](docs/DESIGN.md#ロケール固定))

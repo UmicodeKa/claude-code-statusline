@@ -138,7 +138,7 @@ The cases below are run for each version.
 | `colorfgbg:*` | When `theme` is `auto`, `0;15` gives light, `15;0` and `15;default;0` give dark, and `0;default;15` gives light. A non-numeric value falls through to the next step. `COLORFGBG` is not cached |
 | `os:*` | When `theme` is `auto` and `COLORFGBG` does not decide, the result is dark even if the OS is in light mode, and `defaults` is not called. Even if `COLORFGBG` decided last time, dark is used once `COLORFGBG` is gone |
 | `priority:*` | `dark` / `light` from env / conf take precedence over `settings.json` and `theme` is not read. An unknown value gives dark |
-| `cache:*` | `jq` is not started from the second render on. Rewriting (even within the same second as the cache), deleting or creating `settings.json` or a theme file triggers a refetch. A different `CLAUDE_CONFIG_DIR` triggers a refetch. A corrupted cache still renders. A disabled `HISTORY_DIR` still follows the theme |
+| `cache:*` | `jq` is not started from the second render on. Rewriting (even within the same second as the cache), deleting or creating `settings.json` or a theme file triggers a refetch. A rewrite between reading and writing the cache leaves the cache unwritten, and the next render refetches. Temporary files of interrupted renders are removed. A different `CLAUDE_CONFIG_DIR` triggers a refetch. A corrupted cache still renders. A disabled `HISTORY_DIR` still follows the theme |
 
 ### e2e-preview.sh
 

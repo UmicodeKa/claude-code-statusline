@@ -274,9 +274,10 @@ fi
 #   3 行目: 読んだ settings.json のパス
 #   4 行目: custom テーマの base の生の値
 # キャッシュを使うのは、キャッシュが比較対象のどのファイルよりも厳密に新しいときだけ (`cache -nt src` が偽なら取り直す)。
-# `src -nt cache` (ソースが新しいときだけ取り直す) にすると、ソースを読んだ後キャッシュを書く前にソースが書き換わったとき、
-# キャッシュの方が新しくなって変更を取りこぼす。bash 3.2 の -nt は秒単位なので、同じ秒の変更も見落とす。
-# 向きを逆にすれば、どちらも同じ秒の間は取り直しが続くだけで済む。
+# `src -nt cache` (ソースが新しいときだけ取り直す) にすると、bash 3.2 の -nt は秒単位なので、キャッシュと同じ秒の変更を見落とす。
+# 読んでいる間 (jq を起動してからキャッシュを書くまで) の変更は、読む前に作った一時ファイルの mtime を印にして防ぐ。
+# 読んだファイルが印より厳密に古いときだけ書き、そうでなければ書かずに次の描画で取り直す。
+# 書いた後で比べるだけでは、読んだ後に秒をまたいで書き換わったとき、キャッシュの方が新しくなって変更を取りこぼす。
 # 3 行目が今回の settings.json のパスと違うときも取り直す (CLAUDE_CONFIG_DIR の違うセッションが HISTORY_DIR を共有するため)。
 # COLORFGBG はセッションごとに違いうるのでキャッシュせず毎回読む。
 # HISTORY_DIR が無効なときはキャッシュなしで毎回判定する。判定はすべて組み込みだけで行い、取り直すときだけ jq を起動する。
@@ -291,7 +292,7 @@ map_theme_scheme() {
 
 resolve_color_scheme() {
   local _cs_dir _cs_settings _cs_cache="" _cs_bg _cs_fgbg="" _cs_ok=0
-  local _cs_res="" _cs_theme="" _cs_path="" _cs_base="" _cs_slug _cs_tf _cs_tmp
+  local _cs_res="" _cs_theme="" _cs_path="" _cs_base="" _cs_slug _cs_tf _cs_tmp _cs_old
   _cs_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
   _cs_settings="$_cs_dir/settings.json"
   [ -n "$HISTORY_DIR" ] && _cs_cache="$HISTORY_DIR/color-scheme"
@@ -336,49 +337,68 @@ resolve_color_scheme() {
       esac
     fi
     if [ "$_cs_ok" = 1 ]; then
-      if [ "$_cs_theme" = auto ] && [ -n "$_cs_fgbg" ]; then _cs_res=$_cs_fgbg; fi
       case "$_cs_res" in
-        dark|light) COLOR_SCHEME=$_cs_res; return ;;
+        dark|light) ;;
+        *) _cs_ok=0 ;;   # 壊れたキャッシュ
       esac
     fi
   fi
 
-  _cs_theme=""
-  _cs_base=""
-  _cs_res=dark
-  if [ -e "$_cs_settings" ]; then
-    # 不正な JSON で jq が失敗したら theme なし (dark) として扱う。キャッシュを行で区切るので、複数行の値も捨てる。
-    _cs_theme=$(jq -r '.theme // empty' "$_cs_settings" 2>/dev/null) || _cs_theme=""
-    case "$_cs_theme" in *$'\n'*) _cs_theme="" ;; esac
-  fi
-  case "$_cs_theme" in
-    custom:*)
-      _cs_slug=${_cs_theme#custom:}
-      case "$_cs_slug" in
-        ''|*/*) ;;
-        *)
-          _cs_tf="$_cs_dir/themes/$_cs_slug.json"
-          if [ -e "$_cs_tf" ]; then
-            _cs_base=$(jq -r '.base // empty' "$_cs_tf" 2>/dev/null) || _cs_base=""
-            case "$_cs_base" in *$'\n'*) _cs_base="" ;; esac
-          fi
-          map_theme_scheme "$_cs_base"
-          _cs_res=$_cs_mapped
-          ;;
-      esac
-      ;;
-    *)
-      map_theme_scheme "$_cs_theme"
-      _cs_res=$_cs_mapped
-      ;;
-  esac
+  if [ "$_cs_ok" != 1 ]; then
+    _cs_theme=""
+    _cs_base=""
+    _cs_tf=""
+    _cs_tmp=""
+    _cs_res=dark
+    # 読む前に一時ファイルを作り、その mtime を読み始めの印にする (書き込むかどうかの判定に使う)。
+    # 先に、中断された描画が残した一時ファイルを消す。残っていなければ fork しない。
+    if [ -n "$_cs_cache" ]; then
+      for _cs_old in "$_cs_cache".[0-9]*; do
+        [ -e "$_cs_old" ] && rm -- "$_cs_old" 2>/dev/null
+      done
+      _cs_tmp="$_cs_cache.$$"
+      : 2>/dev/null >"$_cs_tmp" || _cs_tmp=""
+    fi
+    if [ -e "$_cs_settings" ]; then
+      # 不正な JSON で jq が失敗したら theme なし (dark) として扱う。キャッシュを行で区切るので、複数行の値も捨てる。
+      _cs_theme=$(jq -r '.theme // empty' "$_cs_settings" 2>/dev/null) || _cs_theme=""
+      case "$_cs_theme" in *$'\n'*) _cs_theme="" ;; esac
+    fi
+    case "$_cs_theme" in
+      custom:*)
+        _cs_slug=${_cs_theme#custom:}
+        case "$_cs_slug" in
+          ''|*/*) ;;
+          *)
+            _cs_tf="$_cs_dir/themes/$_cs_slug.json"
+            if [ -e "$_cs_tf" ]; then
+              _cs_base=$(jq -r '.base // empty' "$_cs_tf" 2>/dev/null) || _cs_base=""
+              case "$_cs_base" in *$'\n'*) _cs_base="" ;; esac
+            fi
+            map_theme_scheme "$_cs_base"
+            _cs_res=$_cs_mapped
+            ;;
+        esac
+        ;;
+      *)
+        map_theme_scheme "$_cs_theme"
+        _cs_res=$_cs_mapped
+        ;;
+    esac
 
-  # 一時ファイルに書いてから mv で置き換え、並行する別の描画が書きかけのファイルを読まないようにする。
-  # 書けなくても描画は判定結果で続ける。
-  if [ -n "$_cs_cache" ]; then
-    _cs_tmp="$_cs_cache.$$"
-    { printf '%s\n%s\n%s\n%s\n' "$_cs_res" "$_cs_theme" "$_cs_settings" "$_cs_base" 2>/dev/null >"$_cs_tmp" \
-      && mv -- "$_cs_tmp" "$_cs_cache" 2>/dev/null; } || rm -- "$_cs_tmp" 2>/dev/null
+    # 読んだファイルが印より厳密に古いときだけキャッシュに書く。読んでいる間に書き換わっていたら、読んだ値が古いかもしれない。
+    # 一時ファイルに書いてから mv で置き換え、並行する別の描画が書きかけのファイルを読まないようにする。
+    # 書かなくても (書けなくても) 描画は判定結果で続ける。
+    if [ -n "$_cs_tmp" ]; then
+      if { [ ! -e "$_cs_settings" ] || [[ "$_cs_tmp" -nt "$_cs_settings" ]]; } \
+         && { [ -z "$_cs_tf" ] || [ ! -e "$_cs_tf" ] || [[ "$_cs_tmp" -nt "$_cs_tf" ]]; } \
+         && printf '%s\n%s\n%s\n%s\n' "$_cs_res" "$_cs_theme" "$_cs_settings" "$_cs_base" 2>/dev/null >"$_cs_tmp" \
+         && mv -- "$_cs_tmp" "$_cs_cache" 2>/dev/null; then
+        :
+      else
+        rm -- "$_cs_tmp" 2>/dev/null
+      fi
+    fi
   fi
 
   if [ "$_cs_theme" = auto ] && [ -n "$_cs_fgbg" ]; then
