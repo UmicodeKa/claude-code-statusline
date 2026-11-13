@@ -114,18 +114,18 @@ conf は一時ファイルに書いて渡します。`RATE_CHART_LEN` と `POLL_
 
 ### color-scheme-behavior.sh
 
-`COLOR_SCHEME=auto` の判定は、`settings.json` / テーマファイル / `COLORFGBG` / OS の外観とキャッシュの組み合わせで決まるため、
+`COLOR_SCHEME=auto` の判定は、`settings.json` / テーマファイル / `COLORFGBG` とキャッシュの組み合わせで決まるため、
 固定の fixture では確かめきれません。本スクリプトはケースごとに一時の設定ディレクトリ (`CLAUDE_CONFIG_DIR`) と履歴ディレクトリを作り、
 `fixtures/08-ctx-warning.json` を流して、ctx 75% の warning の色 (dark `38;2;255;193;7` / light `38;2;150;108;30`) で配色を判定します。
-PATH の先頭に `jq` と `defaults` のスタブを置き、呼び出しを記録します (`jq` は記録して本物に渡す)。
-ケースは次のグループで、両版それぞれで実行します。macOS 版だけが `defaults` の分岐を持つため、`os:*` は版ごとに内容が違います。
+PATH の先頭に `jq` と `defaults` のスタブを置き、呼び出しを記録します (`jq` は記録して本物に渡す。`defaults` は呼ばれないことを確かめる)。
+ケースは次のグループで、両版それぞれで実行します。
 
 | グループ | 確かめること |
 | --- | --- |
 | `theme:*` | `light` / `light-daltonized` / `light-ansi` は light。`dark` 系、キーなし、ファイルなし、不正な JSON、未知の値、文字列でない値は dark |
 | `custom:*` | `custom:<slug>` はテーマファイルの `base` に従う。`base` なし、ファイルなし、不正な JSON は dark。`<slug>` に `/` を含むときはファイルを読まずに dark |
 | `colorfgbg:*` | `theme` が `auto` のとき `0;15` は light、`15;0` と `15;default;0` は dark、`0;default;15` は light。数字でない値は次の判定へ進む。`COLORFGBG` はキャッシュしない |
-| `os:*` | macOS 版は `COLORFGBG` で決まらないとき `defaults` の成否で dark / light が切り替わり、`COLORFGBG` で決まるときは `defaults` を呼ばない。`.GlobalPreferences.plist` が新しくなると取り直す。Linux 版は dark |
+| `os:*` | `theme` が `auto` で `COLORFGBG` で決まらないときは、OS がライトモードでも dark。`defaults` を呼ばない。前回 `COLORFGBG` で決まっていても、`COLORFGBG` がなくなれば dark |
 | `priority:*` | env / conf の `dark` / `light` は `settings.json` の値より優先され、`theme` を読まない。未知の値は dark |
 | `cache:*` | 2 回目以降は `jq` を起動しない。`settings.json` / テーマファイルの書き換え (キャッシュと同じ秒でも)、削除、出現で取り直す。`CLAUDE_CONFIG_DIR` が違えば取り直す。キャッシュが壊れていても描画できる。`HISTORY_DIR` が無効でもテーマに従う |
 
@@ -146,7 +146,7 @@ PATH の先頭に `jq` と `defaults` のスタブを置き、呼び出しを記
 | `block:config-load` | 設定ファイルの読み込みブロックが両版で一字一句一致する |
 | `block:settings` | カスタマイズ設定ブロックが両版で一致する |
 | `block:interval-clamp` | 間引き定数の clamp ブロックが両版で一致する |
-| `block:color-scheme-detect` | カラースキームの判定 (`resolve_color_scheme`) が両版で一致する。OS の外観を返す `os_appearance` は対象外 |
+| `block:color-scheme-detect` | カラースキームの判定 (`resolve_color_scheme`) が両版で一致する |
 | `block:color-scheme` | カラースキーム定義ブロックが両版で一致する |
 | `block:pr-constants` | PR の状態表示の内部定数が両版で一致する |
 | `block:pr-common` | PR の状態表示の共通部分 (クエリ、`--jq`、キャッシュの読み書き、子プロセスの起動と本体、描画) が両版で一致する |

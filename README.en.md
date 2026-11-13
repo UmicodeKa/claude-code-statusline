@@ -150,7 +150,8 @@ LAYOUT_LINE1="session|directory|branch|commit"
 With the default `auto`, the dark / light colors are chosen automatically to match the theme you picked with `/theme` in Claude Code (`theme` in `~/.claude/settings.json`). When you switch with `/theme`, the colors change from the next render.
 
 - `light`-family themes give light; `dark`-family themes, and a missing setting, give dark. A `custom:<name>` theme follows the `base` of its theme file (`~/.claude/themes/<name>.json`)
-- When the theme is `auto`, the environment variable `COLORFGBG` (the terminal's background color) is used, then the OS appearance (macOS only). If neither decides, dark is used
+- When the theme is `auto`, the environment variable `COLORFGBG` (the terminal's background color) is used. If it does not decide, dark is used. The OS appearance is not looked at
+- Note: with a light background in a terminal that does not set `COLORFGBG` (such as Warp), dark is used even when the theme is `auto`. In that case, set `COLOR_SCHEME=light`
 - Only the user settings are read (`~/.claude/settings.json`, or the one under `CLAUDE_CONFIG_DIR` if set). Project settings are not looked at. A theme provided by a plugin gives dark, because the value saved for it is not known
 - If you copied `statusline.conf` earlier and it contains `COLOR_SCHEME=dark`, the scheme is fixed to dark and does not follow the theme. To follow it, change the line to `COLOR_SCHEME=auto` or delete it
 - See [docs/SPEC.md](docs/SPEC.en.md#color-scheme-detection-color_schemeauto) for the detailed rules

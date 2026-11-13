@@ -2,18 +2,18 @@
 # COLOR_SCHEME=auto (Claude Code の theme に合わせた配色の自動切り替え) の挙動テスト。
 #
 # regression.sh は固定の入力に対する出力を見るが、auto は settings.json / テーマファイル /
-# COLORFGBG / OS の外観 (macOS) とキャッシュの組み合わせで決まる。そこで本スクリプトは
+# COLORFGBG とキャッシュの組み合わせで決まる。そこで本スクリプトは
 # ケースごとに一時の設定ディレクトリと履歴ディレクトリを作り、次を検証する:
 #
 #   1. theme            : theme の値 (dark / light 系、キーなし、不正な JSON など) と配色の対応
 #   2. custom           : custom:<slug> は themes/<slug>.json の base に従う
 #   3. colorfgbg        : theme が auto のとき COLORFGBG の最後のフィールドで決まる
-#   4. os-appearance    : COLORFGBG で決まらなければ macOS 版は OS の外観 (defaults)、Linux 版は dark
+#   4. os-appearance    : COLORFGBG で決まらなければ、OS の外観を見ずに dark
 #   5. priority         : env / conf の dark / light は theme より優先され、theme を読まない
-#   6. cache            : 変化がなければ jq / defaults を起動せず、変化があれば取り直す
+#   6. cache            : 変化がなければ jq を起動せず、変化があれば取り直す
 #
 # 配色は、ctx 75% の warning の色 (dark 255;193;7 / light 150;108;30) で判定する。
-# jq と defaults は PATH 先頭のスタブで呼び出しを記録する (jq は本物に委ねる)。
+# jq と defaults は PATH 先頭のスタブで呼び出しを記録する (jq は本物に委ねる。defaults は呼ばれないことを確かめる)。
 
 set -euo pipefail
 
@@ -210,9 +210,7 @@ run_colorfgbg() {
   write_settings '{"theme":"auto"}'
   R_FGBG='0;default'
   R_DEFAULTS_RC=1
-  want=dark
-  [ "$label" = macOS ] && want=light
-  expect "colorfgbg:non-numeric-falls-through [$label]" "$want" "$(scheme "$bash_bin" "$script")"
+  expect "colorfgbg:non-numeric-falls-through [$label]" dark "$(scheme "$bash_bin" "$script")"
 
   # theme が auto でなければ COLORFGBG は見ない。
   new_case
@@ -230,73 +228,29 @@ run_colorfgbg() {
   expect "colorfgbg:not-cached [$label]" dark "$(scheme "$bash_bin" "$script")"
 }
 
-# --- 4. OS の外観 (macOS 版のみ defaults を使う) ---
-run_os_appearance_macos() {
+# --- 4. OS の外観を見ない ---
+# OS の外観は端末のテーマと一致するとは限らないので、COLORFGBG で決まらなければ OS がライトでも dark。
+# defaults のスタブはライトモード (失敗) を返す。
+run_os_appearance() {
   local bash_bin=$1 script=$2 label=$3
 
   new_case
   write_settings '{"theme":"auto"}'
-  R_DEFAULTS_RC=0
-  expect "os:dark-mode [$label]" dark "$(scheme "$bash_bin" "$script")"
-
-  new_case
-  write_settings '{"theme":"auto"}'
   R_DEFAULTS_RC=1
-  expect "os:light-mode [$label]" light "$(scheme "$bash_bin" "$script")"
-
-  # COLORFGBG で決まるときは defaults を呼ばない。
-  new_case
-  write_settings '{"theme":"auto"}'
-  R_DEFAULTS_RC=1
-  R_FGBG='15;0'
-  expect "os:colorfgbg-wins [$label]" dark "$(scheme "$bash_bin" "$script")"
+  expect "os:light-os-still-dark [$label]" dark "$(scheme "$bash_bin" "$script")"
   expect "os:defaults-not-called [$label]" 0 "$(calls 'defaults')"
 
-  # 前回が COLORFGBG で決まって OS の外観を取っていなくても、次に COLORFGBG がなければ取り直す。
+  # 前回が COLORFGBG で決まっていても、次に COLORFGBG がなければ dark。
   new_case
   write_settings '{"theme":"auto"}'
   age "$R_CFG/settings.json"
   R_DEFAULTS_RC=1
-  R_FGBG='15;0'
-  render "$bash_bin" "$script" >/dev/null
+  R_FGBG='0;15'
+  expect "os:colorfgbg-first [$label]" light "$(scheme "$bash_bin" "$script")"
   R_FGBG=''
-  expect "os:refetch-after-colorfgbg [$label]" light "$(scheme "$bash_bin" "$script")"
-  expect "os:refetch-called-once [$label]" 1 "$(calls 'defaults')"
-
-  # .GlobalPreferences.plist がないときは比べる相手がないので、毎回取り直す。
-  new_case
-  write_settings '{"theme":"auto"}'
-  age "$R_CFG/settings.json"
-  R_DEFAULTS_RC=0
-  expect "os:plist-missing-first [$label]" dark "$(scheme "$bash_bin" "$script")"
-  R_DEFAULTS_RC=1
-  expect "os:plist-missing-refetch [$label]" light "$(scheme "$bash_bin" "$script")"
-  expect "os:plist-missing-calls [$label]" 2 "$(calls 'defaults')"
-
-  # .GlobalPreferences.plist が新しくなったら取り直す。変わらなければ呼ばない。
-  new_case
-  write_settings '{"theme":"auto"}'
-  age "$R_CFG/settings.json"
-  mkdir -p "$R_HOME/Library/Preferences"
-  : > "$R_HOME/Library/Preferences/.GlobalPreferences.plist"
-  age "$R_HOME/Library/Preferences/.GlobalPreferences.plist"
-  R_DEFAULTS_RC=0
-  expect "os:plist-first [$label]" dark "$(scheme "$bash_bin" "$script")"
-  R_DEFAULTS_RC=1
-  expect "os:plist-unchanged-cached [$label]" dark "$(scheme "$bash_bin" "$script")"
-  expect "os:plist-unchanged-calls [$label]" 1 "$(calls 'defaults')"
-  touch "$R_HOME/Library/Preferences/.GlobalPreferences.plist"
-  expect "os:plist-changed-refetch [$label]" light "$(scheme "$bash_bin" "$script")"
-  expect "os:plist-changed-calls [$label]" 2 "$(calls 'defaults')"
-}
-
-run_os_appearance_linux() {
-  local bash_bin=$1 script=$2 label=$3
-  new_case
-  write_settings '{"theme":"auto"}'
-  R_DEFAULTS_RC=1
-  expect "os:linux-undetermined-dark [$label]" dark "$(scheme "$bash_bin" "$script")"
-  expect "os:linux-defaults-not-called [$label]" 0 "$(calls 'defaults')"
+  expect "os:no-colorfgbg-dark [$label]" dark "$(scheme "$bash_bin" "$script")"
+  expect "os:no-colorfgbg-cached [$label]" 1 "$(calls '.theme // empty')"
+  expect "os:no-colorfgbg-defaults-not-called [$label]" 0 "$(calls 'defaults')"
 }
 
 # --- 5. env / conf の優先 ---
@@ -439,11 +393,7 @@ run_variant() {
   run_theme "$bash_bin" "$script" "$label"
   run_custom "$bash_bin" "$script" "$label"
   run_colorfgbg "$bash_bin" "$script" "$label"
-  if [ "$label" = macOS ]; then
-    run_os_appearance_macos "$bash_bin" "$script" "$label"
-  else
-    run_os_appearance_linux "$bash_bin" "$script" "$label"
-  fi
+  run_os_appearance "$bash_bin" "$script" "$label"
   run_priority "$bash_bin" "$script" "$label"
   run_cache "$bash_bin" "$script" "$label"
 }

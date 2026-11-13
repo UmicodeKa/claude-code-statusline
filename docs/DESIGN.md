@@ -43,11 +43,8 @@ Linux 版はステップ 1 の前に bash 4.1+ ゲートを置き、ステップ
 | ロックの実体 | `<対象>.lockd` ディレクトリ | `<対象>.lock` ファイル |
 | `date` / `stat` | `uname -s` で BSD 版と GNU 版を切り替える | GNU 版 (`date -d "@.."`、`stat -c`) |
 | 依存コマンドの確認 | `jq` | `jq` と `flock` |
-| `COLOR_SCHEME=auto` で `COLORFGBG` が決まらないとき | OS の外観 (`defaults read -g AppleInterfaceStyle`。キャッシュの比較に `.GlobalPreferences.plist` の mtime) | 見ない (`dark`) |
 
 macOS 版で `flock` を使わないのは、macOS に標準で入っておらず、無い環境では黙って失敗するためです。代わりに POSIX で原子性が保証されている `mkdir` でロックを取り、`LOCK_TIMEOUT_SEC` × 5 秒 (既定 10 秒) より古いロックディレクトリは stale とみなして削除します。Linux 版の `flock` はプロセス終了時に自動で解放されるため、stale 処理は持ちません。
-
-`COLOR_SCHEME=auto` の判定で版ごとに違うのは、OS の外観を返す `os_appearance` と、キャッシュの比較に使う `OS_APPEARANCE_FILE` の定義だけです。この 2 つは判定のブロックの手前の｢OS の外観｣に分けてあり、判定のブロック自体は両版で同じです。
 
 これ以外のブロック (設定の読み込み、カスタマイズ設定、clamp、カラースキームの判定、カラースキーム、PR の状態表示の定数と共通部分、スパークと残量の計算、履歴の読み出し、色付けと整形、レイアウトの組み立て、main の描画部分) は両版で一字一句同じに保ちます。履歴まわりで両版が違うのは、ロックを取る `history_push` だけです。PR の状態表示で両版が違うのは、ロックを取る `maybe_pr_refresh` だけです。`tests/script-parity.sh` がこれらのブロックを抜き出して比較します。
 
@@ -580,16 +577,17 @@ ssh-agent に鍵が無い環境では fetch が黙って失敗し、`↓behind` 
 ### `COLOR_SCHEME=auto` の判定とキャッシュ
 
 - 箇所: 両版の｢カラースキームの判定｣ブロック (`resolve_color_scheme`)
-- 何をしているか: `auto` のとき `settings.json` の `theme` (`custom:<slug>` はテーマファイルの `base`、`auto` は `COLORFGBG`、次に OS の外観) から `dark` / `light` を決める。判定結果を `${HISTORY_DIR}/color-scheme` に置き、変化がなければ `jq` / `defaults` を起動しない
-- キャッシュは 4 行: 判定結果、`theme` の生の値、読んだ `settings.json` のパス、`custom` の `base` の生の値。`theme` が `auto` で `COLORFGBG` により決まったときだけ、1 行目は空 (OS の外観を取っていない)
-- キャッシュを使う条件は、`[[ cache -nt src ]]` が比較対象のすべてで真のとき (組み込みなので fork しない)。比較対象は `settings.json`、`theme` が `custom:<slug>` のときのテーマファイル、macOS 版で `theme` が `auto` かつ `COLORFGBG` で決まらないときの `.GlobalPreferences.plist`。このファイルがないときは比較できないので、毎回取り直す
+- 何をしているか: `auto` のとき `settings.json` の `theme` (`custom:<slug>` はテーマファイルの `base`、`auto` は `COLORFGBG`) から `dark` / `light` を決める。判定結果を `${HISTORY_DIR}/color-scheme` に置き、変化がなければ `jq` を起動しない
+- `theme` が `auto` で `COLORFGBG` が決まらないときは `dark`。OS の外観は見ない (理由は[カラースキームの自動判定の方法](#カラースキームの自動判定の方法))
+- キャッシュは 4 行: 判定結果、`theme` の生の値、読んだ `settings.json` のパス、`custom` の `base` の生の値
+- キャッシュを使う条件は、`[[ cache -nt src ]]` が比較対象のすべてで真のとき (組み込みなので fork しない)。比較対象は `settings.json` と、`theme` が `custom:<slug>` のときのテーマファイル
 - `cache -nt src` の向きにする理由: `src -nt cache` (ソースが新しいときだけ取り直す) だと、ソースを読んだあと、キャッシュを書く前にソースが書き換わると、キャッシュの方が新しくなって変更を取りこぼす。bash 3.2 の `-nt` は秒単位の比較なので、同じ秒の変更も見落とす。`cache -nt src` が偽なら取り直す形にすれば、どちらの場合も同じ秒の間は取り直しが続くだけで済む
 - キャッシュに `settings.json` のパスを持つ理由: `HISTORY_DIR` は uid ごとに 1 つで、`CLAUDE_CONFIG_DIR` の異なるセッションが同じキャッシュを共有する。パスが今回と違えば取り直さないと、別の設定ディレクトリの判定結果を使ってしまう
 - `base` を持つ理由: テーマファイルが消えると、`cache -nt src` は src がないために真のままになる。前回 `base` があったのにファイルがなければ取り直す (`settings.json` が消えたときは、前回の `theme` が空でなければ取り直す)。`[ -e ]` は組み込み
 - `COLORFGBG` をキャッシュしない理由: 端末ごと、セッションごとに違いうる。組み込みだけで読めるので毎回読む。キャッシュの判定結果は｢`COLORFGBG` で決まらなかったときの結果｣として扱う
 - `COLORFGBG` の判定に算術比較を使わない理由: `default` が 0 と評価されて `dark` になる。`case` で数字だけを見て、数字でない値は｢決まらない｣にする
 - `jq` が失敗した (不正な JSON など) ときは `theme` なしとして `dark`。`theme` が複数行になる値 (オブジェクトなど) は、キャッシュを行で区切るため捨てる
-- 書き込みは一時ファイル → `mv`。書けなくても描画は判定結果で続ける。`HISTORY_DIR` が無効なときはキャッシュなしで毎回判定する (`jq` / `defaults` の fork が増えるが、異常時の経路なので許容する)
+- 書き込みは一時ファイル → `mv`。書けなくても描画は判定結果で続ける。`HISTORY_DIR` が無効なときはキャッシュなしで毎回判定する (`jq` の fork が増えるが、異常時の経路なので許容する)
 - 既知の制約: 古い mtime のファイルで置き換えた場合 (`mv` での復元や、symlink の付け替え) は検出できない。fork なしでは mtime の値そのものを記録できないため
 - 外すと何が起きるか: 判定をキャッシュしないと、描画のたびに `jq` が増える。キャッシュの比較の向きを逆にすると、変更の取りこぼしが起きる。パスや `base` を外すと、別の設定ディレクトリや削除済みのファイルの判定結果が残る
 - 守っているテスト: `tests/color-scheme-behavior.sh` (`cache:*`、`theme:*`、`custom:*`、`colorfgbg:*`、`os:*`、`priority:*`)、`tests/script-parity.sh` の `block:color-scheme-detect`
@@ -750,10 +748,12 @@ CI 記号は `statusCheckRollup.state` (GitHub が集約した値) をそのま�
 
 ### カラースキームの自動判定の方法
 
-- OSC 11 で端末の背景色を問い合わせる: Claude Code の `auto` は端末の背景色を検出しているとみられるが、statusline は出力を Claude Code に捕捉されていて端末に直接つながっていないため、同じ方法は使えない。代わりに `COLORFGBG` と OS の外観を使う
+- OSC 11 で端末の背景色を問い合わせる: Claude Code の `auto` は端末の背景色を検出しているとみられるが、statusline は出力を Claude Code に捕捉されていて端末に直接つながっていないため、同じ方法は使えない。代わりに `COLORFGBG` を使う
+- `COLORFGBG` で決まらないとき OS の外観 (`defaults read -g AppleInterfaceStyle`) で決める: OS の外観と端末のテーマは別々に設定でき、OS はライトで端末は暗いテーマ、という組み合わせがよくある。そのとき暗い背景に light の配色が出て、Claude Code 本体 (端末の背景色に従う) とも食い違う。
+  決まらないときは既定の `dark` にし、明るい背景の端末では `COLOR_SCHEME=light` で上書きしてもらう
 - project / local / managed / `--settings` の `theme` も読む: project の settings を読むには stdin の `workspace.project_dir` が要るが、色定義ブロックは stdin を読むより前にある。順序を大きく組み替えるほどの効果はない。
   `/theme` で選んだ値はユーザー設定に書かれるので、大半のケースはユーザー設定だけで足りる。managed の保存先は OS ごとに違い、`--settings` は外から知る方法がない
-- 有効期限つきのキャッシュ: 現在時刻が要り、描画の前半に `date +%s` の fork を足すことになる。mtime の比較だけで足りているので採らなかった。`.GlobalPreferences.plist` の mtime が更新されないと分かったときの代案として残す
+- 有効期限つきのキャッシュ: 現在時刻が要り、描画の前半に `date +%s` の fork を足すことになる。mtime の比較だけで足りているので採らなかった
 - `CLAUDE_CODE_THEME` の環境変数を読む: 一部の記事に書かれているが、公式ドキュメントでは確認できなかったため扱わない
 
 ### その他
@@ -772,7 +772,6 @@ CI 記号は `statusCheckRollup.state` (GitHub が集約した値) をそのま�
 - 依存コマンド確認のメッセージ
 - 履歴ディレクトリの uid と mode の確認
 - `HIGHLIGHT` で塗る範囲が、実際の Claude Code の statusline で読みやすいこと (`COLOR_SCHEME` とテーマが食い違うと読めなくなる。`npm run preview` で目視で確認する)
-- `.GlobalPreferences.plist` の mtime が、OS の外観の切り替え (手動と、外観の｢自動｣による時刻での切り替え) のたびに更新されること (手元では、外観が自動で切り替わる時刻と更新時刻が合うことまでしか確かめていない。更新されないと、macOS 版の `auto` は次に `settings.json` が更新されるまで前の外観のままになる)
 - プラグインが提供するテーマを選んだときに `theme` へ保存される値 (公式ドキュメントに書かれておらず、未知の値として `dark` になる)
 - ブランチ取得の空 `cwd` ガード
 - 描画経路に同期 fetch や git 呼び出しを足していないこと

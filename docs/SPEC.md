@@ -314,20 +314,20 @@ statusline の stdin にはテーマや配色のフィールドがないため�
 | `dark` / `dark-daltonized` / `dark-ansi` | `dark` |
 | `light` / `light-daltonized` / `light-ansi` | `light` |
 | `custom:<slug>` | `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/themes/<slug>.json` の `base` を、上の 2 行と同じ対応付けで判定する。`base` がない、読めない、ファイルがないときは `dark`。`<slug>` が空、または `/` を含むときはファイルを読まずに `dark` |
-| `auto` | `COLORFGBG`、次に OS の外観 (macOS 版のみ) の順に判定する。決まらなければ `dark` |
+| `auto` | `COLORFGBG` で判定する。決まらなければ `dark` |
 | キーがない / ファイルがない / 不正な JSON / 未知の値 | `dark` |
 
 `theme` が `auto` のときの判定:
 
 1. `COLORFGBG` の `;` で区切った最後のフィールドを背景色として読む。`7` / `9` / `10`〜`15` は `light`、それ以外の数字は `dark`。`default` などの数字でない値、空、未設定は決まらないものとして次へ進む。`15;0` のほか `15;default;0` のような 3 フィールドの形も、最後のフィールドで判定する。両版で同じ規則
-2. `defaults read -g AppleInterfaceStyle` が成功すれば `dark`、失敗すれば `light` (macOS 版のみ。`defaults` がなければ `dark`)。端末のテーマが OS の外観に連動していることが前提になる
-3. 決まらなければ `dark` (Linux 版は常にここ)
+2. 決まらなければ `dark`。OS の外観 (macOS のダークモードなど) は見ない。OS の外観と端末のテーマは別々に設定でき、一致するとは限らないため
 
 制約:
 
+- Claude Code の `auto` は端末の背景色を検出するが、statusline は出力を Claude Code に捕捉されていて、端末に背景色を問い合わせられない。`COLORFGBG` を設定しない端末 (Warp など) で明るい背景を使うと、Claude Code は light、statusline は `dark` になる。そのときは `COLOR_SCHEME=light` を指定する
 - 読むのはユーザー設定 (`settings.json`) だけで、project / local / managed / `--settings` の `theme` は見ない。それらで `theme` を指定していると、実際のテーマと食い違いうる
 - プラグインが提供するテーマを選んだときに `theme` へ保存される値は、公式ドキュメントに書かれていない。未知の値として `dark` になる。プラグインのテーマも `base` を持つファイルだが、保存される値が分からないため辿れない
-- 判定結果は `${HISTORY_DIR}/color-scheme` にキャッシュし、`settings.json` などの変化がなければ `jq` / `defaults` を起動しない ([設計](DESIGN.md#color_schemeauto-の判定とキャッシュ))。`/theme` で切り替えると、次の描画から配色が変わる
+- 判定結果は `${HISTORY_DIR}/color-scheme` にキャッシュし、`settings.json` などの変化がなければ `jq` を起動しない ([設計](DESIGN.md#color_schemeauto-の判定とキャッシュ))。`/theme` で切り替えると、次の描画から配色が変わる
 - `HISTORY_DIR` が無効なときは、キャッシュなしで毎回判定する
 - 設定ファイルを古い mtime のファイルで置き換えた場合 (`mv` での復元、symlink の付け替え) は変更を検出できず、次に設定ファイルが更新されるまで前の判定結果が残る
 

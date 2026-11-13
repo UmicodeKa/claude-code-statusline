@@ -143,7 +143,8 @@ LAYOUT_LINE1="session|directory|branch|commit"
 既定の `auto` では、Claude Code の `/theme` で選んだテーマ (`~/.claude/settings.json` の `theme`) に合わせて、dark / light の配色を自動で選ぶ。`/theme` で切り替えると、次の描画から配色が変わる。
 
 - `light` 系のテーマは light、`dark` 系と、設定がないときは dark。`custom:<名前>` のテーマは、テーマファイル (`~/.claude/themes/<名前>.json`) の `base` に従う
-- テーマが `auto` のときは、環境変数 `COLORFGBG` (端末の背景色)、次に OS の外観 (macOS のみ) で決め、決まらなければ dark
+- テーマが `auto` のときは、環境変数 `COLORFGBG` (端末の背景色) で決め、決まらなければ dark。OS の外観は見ない
+- 注意: `COLORFGBG` を設定しない端末 (Warp など) で明るい背景を使っていると、テーマが `auto` でも dark になる。そのときは `COLOR_SCHEME=light` を指定する
 - 読むのはユーザー設定 (`~/.claude/settings.json`。`CLAUDE_CONFIG_DIR` があればその下) だけで、プロジェクトの設定は見ない。プラグインが提供するテーマは、保存される値が分からないため dark になる
 - 以前に `statusline.conf` をコピーして `COLOR_SCHEME=dark` が書いてある場合は、自動にならず dark に固定される。自動にするには `COLOR_SCHEME=auto` に変えるか、その行を消す
 - 詳しい判定は [docs/SPEC.md](docs/SPEC.md#カラースキームの判定-color_schemeauto) を参照

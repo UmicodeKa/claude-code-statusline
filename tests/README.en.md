@@ -126,17 +126,17 @@ The conf is written to a temporary file and passed in. `RATE_CHART_LEN` and `POL
 
 ### color-scheme-behavior.sh
 
-The detection of `COLOR_SCHEME=auto` depends on a combination of `settings.json`, theme files, `COLORFGBG`, the OS appearance and the cache, so fixed fixtures cannot cover it.
+The detection of `COLOR_SCHEME=auto` depends on a combination of `settings.json`, theme files, `COLORFGBG` and the cache, so fixed fixtures cannot cover it.
 This script creates a temporary config directory (`CLAUDE_CONFIG_DIR`) and a history directory for each case, feeds `fixtures/08-ctx-warning.json`, and decides the scheme by the color of the ctx 75% warning (dark `38;2;255;193;7` / light `38;2;150;108;30`).
-Stubs for `jq` and `defaults` are placed at the front of `PATH` and record their calls (`jq` records and then passes through to the real one).
-The cases below are run for each version. Only the macOS version has the `defaults` branch, so `os:*` differs by version.
+Stubs for `jq` and `defaults` are placed at the front of `PATH` and record their calls (`jq` records and then passes through to the real one; `defaults` is checked not to be called).
+The cases below are run for each version.
 
 | Group | What it verifies |
 | --- | --- |
 | `theme:*` | `light` / `light-daltonized` / `light-ansi` give light. The `dark` family, a missing key, a missing file, invalid JSON, an unknown value and a non-string value give dark |
 | `custom:*` | `custom:<slug>` follows the `base` of the theme file. A missing `base`, a missing file and invalid JSON give dark. When `<slug>` contains `/`, dark without reading the file |
 | `colorfgbg:*` | When `theme` is `auto`, `0;15` gives light, `15;0` and `15;default;0` give dark, and `0;default;15` gives light. A non-numeric value falls through to the next step. `COLORFGBG` is not cached |
-| `os:*` | In the macOS version, when `COLORFGBG` does not decide, the success or failure of `defaults` switches dark / light, and `defaults` is not called when `COLORFGBG` decides. A newer `.GlobalPreferences.plist` triggers a refetch. The Linux version gives dark |
+| `os:*` | When `theme` is `auto` and `COLORFGBG` does not decide, the result is dark even if the OS is in light mode, and `defaults` is not called. Even if `COLORFGBG` decided last time, dark is used once `COLORFGBG` is gone |
 | `priority:*` | `dark` / `light` from env / conf take precedence over `settings.json` and `theme` is not read. An unknown value gives dark |
 | `cache:*` | `jq` is not started from the second render on. Rewriting (even within the same second as the cache), deleting or creating `settings.json` or a theme file triggers a refetch. A different `CLAUDE_CONFIG_DIR` triggers a refetch. A corrupted cache still renders. A disabled `HISTORY_DIR` still follows the theme |
 
@@ -160,7 +160,7 @@ The cases below are run for each version. Only the macOS version has the `defaul
 | `block:config-load` | The config file loading block is character-for-character identical in both versions |
 | `block:settings` | The customization settings block is identical in both versions |
 | `block:interval-clamp` | The clamp block for the throttling constants is identical in both versions |
-| `block:color-scheme-detect` | The color scheme detection (`resolve_color_scheme`) is identical in both versions. `os_appearance`, which returns the OS appearance, is not covered |
+| `block:color-scheme-detect` | The color scheme detection (`resolve_color_scheme`) is identical in both versions |
 | `block:color-scheme` | The color scheme definition block is identical in both versions |
 | `block:pr-constants` | The internal constants of the PR status display are identical in both versions |
 | `block:pr-common` | The common part of the PR status display (query, `--jq`, cache read and write, child process spawn and body, rendering) is identical in both versions |

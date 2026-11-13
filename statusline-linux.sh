@@ -234,15 +234,6 @@ if ! command -v flock >/dev/null 2>&1; then
   exit 0
 fi
 
-# --- OS の外観 ---
-# Linux 版は OS の外観を見ない。COLOR_SCHEME=auto で COLORFGBG から背景色が決まらなければ dark になる。
-OS_APPEARANCE_FILE=""
-
-# os_appearance: _cs_os に dark / light を入れる。
-os_appearance() {
-  _cs_os=dark
-}
-
 # --- カラースキームの判定 ---
 # COLOR_SCHEME が auto のとき、Claude Code の theme の設定から dark / light を決めて COLOR_SCHEME に書き戻す。
 # dark / light はそのまま使い、それ以外の値は下の色定義の case で dark になる。
@@ -252,9 +243,11 @@ os_appearance() {
 #   light / light-daltonized / light-ansi → light
 #   custom:<slug>                         → themes/<slug>.json の base を同じ対応付けで判定 (<slug> に / を含む、
 #                                           base がない、読めない、ファイルがないときは dark。/ のときはファイルを読まない)
-#   auto                                  → COLORFGBG、次に OS の外観 (os_appearance)。決まらなければ dark
-# 描画のたびに jq / defaults を起動しないよう、判定結果を ${HISTORY_DIR}/color-scheme に置く。
-#   1 行目: 判定結果 (dark / light)。theme が auto で COLORFGBG により決まったときは取っていないので空
+#   auto                                  → COLORFGBG。決まらなければ dark
+# Claude Code の auto は端末の背景色を見るが、statusline は出力を Claude Code に捕捉されていて、端末に背景色を問い合わせられない。
+# OS の外観は端末のテーマと一致するとは限らない (OS はライトで端末は暗いテーマ、など) ので見ない。
+# 描画のたびに jq を起動しないよう、判定結果を ${HISTORY_DIR}/color-scheme に置く。
+#   1 行目: 判定結果 (dark / light)。theme が auto のときは、COLORFGBG で決まらなかったときの結果 (dark)
 #   2 行目: theme の生の値
 #   3 行目: 読んだ settings.json のパス
 #   4 行目: custom テーマの base の生の値
@@ -263,8 +256,8 @@ os_appearance() {
 # キャッシュの方が新しくなって変更を取りこぼす。bash 3.2 の -nt は秒単位なので、同じ秒の変更も見落とす。
 # 向きを逆にすれば、どちらも同じ秒の間は取り直しが続くだけで済む。
 # 3 行目が今回の settings.json のパスと違うときも取り直す (CLAUDE_CONFIG_DIR の違うセッションが HISTORY_DIR を共有するため)。
-# COLORFGBG はセッションごとに違いうるのでキャッシュせず毎回読む。キャッシュの 1 行目は｢COLORFGBG で決まらなかったときの結果｣。
-# HISTORY_DIR が無効なときはキャッシュなしで毎回判定する。判定はすべて組み込みだけで行い、取り直すときだけ jq / defaults を起動する。
+# COLORFGBG はセッションごとに違いうるのでキャッシュせず毎回読む。
+# HISTORY_DIR が無効なときはキャッシュなしで毎回判定する。判定はすべて組み込みだけで行い、取り直すときだけ jq を起動する。
 
 # map_theme_scheme <theme または base の値>: _cs_mapped に dark / light を入れる。未知の値は dark。
 map_theme_scheme() {
@@ -318,18 +311,6 @@ resolve_color_scheme() {
               ;;
           esac
           ;;
-        auto)
-          if [ -z "$_cs_fgbg" ]; then
-            [ -n "$_cs_res" ] || _cs_ok=0   # 前回は COLORFGBG で決まり、OS の外観を取っていない
-            if [ -n "$OS_APPEARANCE_FILE" ]; then
-              if [ -e "$OS_APPEARANCE_FILE" ]; then
-                [[ "$_cs_cache" -nt "$OS_APPEARANCE_FILE" ]] || _cs_ok=0
-              else
-                _cs_ok=0   # 比べる相手がないので、毎回取り直す
-              fi
-            fi
-          fi
-          ;;
       esac
     fi
     if [ "$_cs_ok" = 1 ]; then
@@ -349,14 +330,6 @@ resolve_color_scheme() {
     case "$_cs_theme" in *$'\n'*) _cs_theme="" ;; esac
   fi
   case "$_cs_theme" in
-    auto)
-      if [ -n "$_cs_fgbg" ]; then
-        _cs_res=""
-      else
-        os_appearance
-        _cs_res=$_cs_os
-      fi
-      ;;
     custom:*)
       _cs_slug=${_cs_theme#custom:}
       case "$_cs_slug" in

@@ -332,7 +332,7 @@ The `theme` value in `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json`, and th
 | `dark` / `dark-daltonized` / `dark-ansi` | `dark` |
 | `light` / `light-daltonized` / `light-ansi` | `light` |
 | `custom:<slug>` | The `base` in `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/themes/<slug>.json`, mapped the same way as the two rows above. `dark` when `base` is missing, unreadable, or the file is missing. When `<slug>` is empty or contains `/`, `dark` without reading the file |
-| `auto` | Decided by `COLORFGBG`, then the OS appearance (macOS version only). `dark` if neither decides |
+| `auto` | Decided by `COLORFGBG`. `dark` if it does not decide |
 | Key missing / file missing / invalid JSON / unknown value | `dark` |
 
 Detection when `theme` is `auto`:
@@ -340,15 +340,16 @@ Detection when `theme` is `auto`:
 1. The last `;`-separated field of `COLORFGBG` is read as the background color. `7` / `9` / `10` to `15` give `light`, and any other number gives `dark`.
    A non-numeric value such as `default`, an empty value, or an unset variable does not decide, so the next step is tried.
    Besides forms such as `15;0`, three-field forms such as `15;default;0` are also decided by the last field. The rule is the same in both versions
-2. `dark` if `defaults read -g AppleInterfaceStyle` succeeds, `light` if it fails (macOS version only; `dark` if `defaults` is missing). This assumes that the terminal theme follows the OS appearance
-3. `dark` if nothing decides (always this step in the Linux version)
+2. `dark` if it does not decide. The OS appearance (such as macOS dark mode) is not looked at, because the OS appearance and the terminal theme are set separately and do not always match
 
 Constraints:
 
+- Claude Code's `auto` detects the terminal's background color, but the statusline cannot ask the terminal for it, because its output is captured by Claude Code.
+  With a light background in a terminal that does not set `COLORFGBG` (such as Warp), Claude Code uses light and the statusline uses `dark`. In that case, set `COLOR_SCHEME=light`
 - Only the user settings (`settings.json`) are read. `theme` in project / local / managed settings or `--settings` is not looked at, so if `theme` is specified there, the result can differ from the actual theme
 - The value saved in `theme` when a plugin-provided theme is selected is not documented in the official documentation. It is treated as an unknown value and gives `dark`.
   A plugin theme is also a file with a `base`, but it cannot be followed because the saved value is unknown
-- The result is cached in `${HISTORY_DIR}/color-scheme`, and `jq` / `defaults` are not started while `settings.json` and the other files are unchanged ([design](DESIGN.en.md#detecting-color_schemeauto-and-its-cache)).
+- The result is cached in `${HISTORY_DIR}/color-scheme`, and `jq` is not started while `settings.json` and the other files are unchanged ([design](DESIGN.en.md#detecting-color_schemeauto-and-its-cache)).
   When you switch with `/theme`, the colors change from the next render
 - When `HISTORY_DIR` is disabled, the scheme is decided every time without a cache
 - Replacing a settings file with a file that has an older mtime (restoring with `mv`, repointing a symlink) cannot be detected, and the previous result remains until the settings file is next updated
