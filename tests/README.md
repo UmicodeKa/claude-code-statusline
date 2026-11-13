@@ -12,11 +12,12 @@ macOS 版 (`statusline-macos.sh`) と Linux 版 (`statusline-linux.sh`) が同�
 | `git-fetch-behavior.sh` | `npm run test:fetch` | `GIT_FETCH=1` のバックグラウンド fetch の挙動を検証する |
 | `pr-status-behavior.sh` | `npm run test:pr` | PR の状態表示のバックグラウンド取得の挙動と、`--jq` による変換を検証する |
 | `rate-history-behavior.sh` | `npm run test:history` | rate 履歴ファイルの書き込み (初回の埋め込み、間引き、保存件数) と、間引き間隔の丸めを検証する |
+| `color-scheme-behavior.sh` | `npm run test:color` | `COLOR_SCHEME=auto` が Claude Code の `theme` などから dark / light を決めることと、判定のキャッシュを検証する |
 | `e2e-preview.sh` | `npm run preview` | 実際の ANSI 色付き出力を端末に流し、目視で確認する |
 | `script-parity.sh` | `npm run test:parity` | 両スクリプトの共通ブロックの一致と、必要な記述が残っていることを静的に確かめる |
 | `translation-parity.sh` | `npm run test:translation` | 日本語のドキュメントと英語版 (`*.en.md`) の構造が食い違っていないことを静的に確かめる |
 
-`npm test` は `test:regression`、`test:fetch`、`test:pr`、`test:history`、`test:parity`、`test:translation` を順に実行します。`e2e-preview.sh` は合否を判定しないため `npm test` には含まれません。
+`npm test` は `test:regression`、`test:fetch`、`test:pr`、`test:history`、`test:color`、`test:parity`、`test:translation` を順に実行します。`e2e-preview.sh` は合否を判定しないため `npm test` には含まれません。
 
 ### regression.sh
 
@@ -111,6 +112,23 @@ PR の状態表示の取得も投げっぱなしの非同期処理のため、fa
 
 conf は一時ファイルに書いて渡します。`RATE_CHART_LEN` と `POLL_INTERVAL_SEC` には env の上書き口が無いため、開発者のシェルの環境変数で結果は変わりません。
 
+### color-scheme-behavior.sh
+
+`COLOR_SCHEME=auto` の判定は、`settings.json` / テーマファイル / `COLORFGBG` とキャッシュの組み合わせで決まるため、
+固定の fixture では確かめきれません。本スクリプトはケースごとに一時の設定ディレクトリ (`CLAUDE_CONFIG_DIR`) と履歴ディレクトリを作り、
+`fixtures/08-ctx-warning.json` を流して、ctx 75% の warning の色 (dark `38;2;255;193;7` / light `38;2;150;108;30`) で配色を判定します。
+PATH の先頭に `jq` と `defaults` のスタブを置き、呼び出しを記録します (`jq` は記録して本物に渡す。`defaults` は呼ばれないことを確かめる)。
+ケースは次のグループで、両版それぞれで実行します。
+
+| グループ | 確かめること |
+| --- | --- |
+| `theme:*` | `light` / `light-daltonized` / `light-ansi` は light。`dark` 系、キーなし、ファイルなし、不正な JSON、未知の値、文字列でない値は dark |
+| `custom:*` | `custom:<slug>` はテーマファイルの `base` に従う。`base` なし、ファイルなし、不正な JSON は dark。`<slug>` に `/` を含むときはファイルを読まずに dark |
+| `colorfgbg:*` | `theme` が `auto` のとき `0;15` は light、`15;0` と `15;default;0` は dark、`0;default;15` は light。数字でない値は次の判定へ進む。`COLORFGBG` はキャッシュしない |
+| `os:*` | `theme` が `auto` で `COLORFGBG` で決まらないときは、OS がライトモードでも dark。`defaults` を呼ばない。前回 `COLORFGBG` で決まっていても、`COLORFGBG` がなくなれば dark |
+| `priority:*` | env / conf の `dark` / `light` は `settings.json` の値より優先され、`theme` を読まない。未知の値は dark |
+| `cache:*` | 2 回目以降は `jq` を起動しない。`settings.json` / テーマファイルの書き換え (キャッシュと同じ秒でも)、削除、出現で取り直す。読んでからキャッシュを書くまでに書き換わったら書かずに次の描画で取り直す。中断された描画の一時ファイルを消す。`CLAUDE_CONFIG_DIR` が違えば取り直す。キャッシュが壊れていても描画できる。`HISTORY_DIR` が無効でもテーマに従う |
+
 ### e2e-preview.sh
 
 - 全 fixture について、入力 JSON と実出力を並べて表示します。
@@ -128,6 +146,7 @@ conf は一時ファイルに書いて渡します。`RATE_CHART_LEN` と `POLL_
 | `block:config-load` | 設定ファイルの読み込みブロックが両版で一字一句一致する |
 | `block:settings` | カスタマイズ設定ブロックが両版で一致する |
 | `block:interval-clamp` | 間引き定数の clamp ブロックが両版で一致する |
+| `block:color-scheme-detect` | カラースキームの判定 (`resolve_color_scheme`) が両版で一致する |
 | `block:color-scheme` | カラースキーム定義ブロックが両版で一致する |
 | `block:pr-constants` | PR の状態表示の内部定数が両版で一致する |
 | `block:pr-common` | PR の状態表示の共通部分 (クエリ、`--jq`、キャッシュの読み書き、子プロセスの起動と本体、描画) が両版で一致する |
@@ -321,6 +340,9 @@ PR の状態表示の子プロセスが呼ぶ `gh api graphql ... --jq <式>` �
 - `CLAUDE_STATUSLINE_*` の環境変数: マーカーが無いときは空文字で渡します。本体は空を未設定と同じに扱うため、conf → 既定値の順にフォールバックします。既定値を直接渡すと conf の値が常に環境変数に負け、conf の検証ができなくなるためです。`CLAUDE_STATUSLINE_COLOR_SCHEME` も空で渡し、開発者のシェルの値が混ざらないようにしています。
   - `CLAUDE_STATUSLINE_HIGHLIGHT` は `regression.sh` / `pr-status-behavior.sh` / `e2e-preview.sh` のすべてで必ず渡します。渡さないと、ハイライトを export している開発者の手元だけで、branch などを含むケースが落ちます。
 - 短縮名の変数: `regression.sh` は `SHOW_MODEL_NAME` や `LAYOUT_LINE1` などの短縮名 11 個を、全ケースで既定値と異なる値にして渡します (`HIGHLIGHT` は全トークンを指定した値)。本体は conf を読む前にこれらを `unset` するため、出力には影響しません。この `unset` が消えると全ケースが失敗するので、その回帰ガードを兼ねています。
+- `CLAUDE_CONFIG_DIR` / `COLORFGBG`: `COLOR_SCHEME` の既定値は `auto` で、開発者の実際の `~/.claude/settings.json` の `theme` や端末の背景色を読みます。
+  `regression.sh` / `git-fetch-behavior.sh` / `pr-status-behavior.sh` / `rate-history-behavior.sh` / `e2e-preview.sh`
+  は、起動時に `CLAUDE_CONFIG_DIR` を存在しないディレクトリ (`theme` なし = dark) に向け、`COLORFGBG` を空にします。`color-scheme-behavior.sh` はケースごとの一時ディレクトリを使い、`HOME` も一時ディレクトリに向けます。
 - git / gh: 前述の fake git と fake gh を `PATH` の先頭に置きます。
 - `FORCE_HYPERLINK`: `regression.sh` と `e2e-preview.sh` は、`hyperlink-off/` にマーカーがあるケースを除き空で渡します。
 

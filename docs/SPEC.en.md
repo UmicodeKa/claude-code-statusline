@@ -311,12 +311,48 @@ Common:
 
 ## Colors
 
-The colors match Claude Code's light/dark themes. `COLOR_SCHEME` switches between `dark` (default) and `light`. Any value other than `light` is treated as `dark`.
+The colors match Claude Code's light/dark themes. `COLOR_SCHEME` switches between `auto` (default), `dark` and `light`. `auto` decides `dark` / `light` from the Claude Code theme setting ([Color Scheme Detection](#color-scheme-detection-color_schemeauto)).
+Any value other than `auto` / `dark` / `light` is treated as `dark`.
 
 All colors are truecolor foreground colors (`\033[38;2;R;G;Bm`), and `\033[0m` is appended at the end of a colored span.
 
 Color is applied only where a color is deliberately specified (the rows in the table below whose color is not "uncolored"). All other elements are left uncolored and take the terminal and Claude Code foreground color.
 Among the uncolored elements, those specified in [`HIGHLIGHT`](#highlight-highlight) are painted with `text`, only while they are uncolored.
+
+### Color Scheme Detection (`COLOR_SCHEME=auto`)
+
+The statusline's stdin has no theme or color field, so the scheme is decided by reading `theme` in the Claude Code settings file directly.
+
+The order of precedence is env `CLAUDE_STATUSLINE_COLOR_SCHEME` > `COLOR_SCHEME` in the conf > the default `auto`. If any of them decides `dark` / `light`, that is used and the theme setting is not read. Only for `auto` are the following rules applied.
+
+The `theme` value in `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json`, and the scheme it gives:
+
+| `theme` value | Scheme |
+| --- | --- |
+| `dark` / `dark-daltonized` / `dark-ansi` | `dark` |
+| `light` / `light-daltonized` / `light-ansi` | `light` |
+| `custom:<slug>` | The `base` in `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/themes/<slug>.json`, mapped the same way as the two rows above. `dark` when `base` is missing, unreadable, or the file is missing. When `<slug>` is empty or contains `/`, `dark` without reading the file |
+| `auto` | Decided by `COLORFGBG`. `dark` if it does not decide |
+| Key missing / file missing / invalid JSON / unknown value | `dark` |
+
+Detection when `theme` is `auto`:
+
+1. The last `;`-separated field of `COLORFGBG` is read as the background color. `7` / `9` / `10` to `15` give `light`, and any other number gives `dark`.
+   A non-numeric value such as `default`, an empty value, or an unset variable does not decide, so the next step is tried.
+   Besides forms such as `15;0`, three-field forms such as `15;default;0` are also decided by the last field. The rule is the same in both versions
+2. `dark` if it does not decide. The OS appearance (such as macOS dark mode) is not looked at, because the OS appearance and the terminal theme are set separately and do not always match
+
+Constraints:
+
+- Claude Code's `auto` detects the terminal's background color, but the statusline cannot ask the terminal for it, because its output is captured by Claude Code.
+  With a light background in a terminal that does not set `COLORFGBG` (such as Warp), Claude Code uses light and the statusline uses `dark`. In that case, set `COLOR_SCHEME=light`
+- Only the user settings (`settings.json`) are read. `theme` in project / local / managed settings or `--settings` is not looked at, so if `theme` is specified there, the result can differ from the actual theme
+- The value saved in `theme` when a plugin-provided theme is selected is not documented in the official documentation. It is treated as an unknown value and gives `dark`.
+  A plugin theme is also a file with a `base`, but it cannot be followed because the saved value is unknown
+- The result is cached in `${HISTORY_DIR}/color-scheme`, and `jq` is not started while `settings.json` and the other files are unchanged ([design](DESIGN.en.md#detecting-color_schemeauto-and-its-cache)).
+  When you switch with `/theme`, the colors change from the next render
+- When `HISTORY_DIR` is disabled, the scheme is decided every time without a cache
+- Replacing a settings file with a file that has an older mtime (restoring with `mv`, repointing a symlink) cannot be detected, and the previous result remains until the settings file is next updated
 
 ### Color Thresholds
 
@@ -477,7 +513,7 @@ Numeric settings (`RATE_CHART_LEN`, `POLL_INTERVAL_SEC`, `GIT_FETCH_INTERVAL_SEC
 | Constant | Default | env | Value |
 | --- | --- | --- | --- |
 | `SHOW_MODEL_NAME` | `1` | `CLAUDE_STATUSLINE_SHOW_MODEL_NAME` | `1` shows the model name. Anything else hides it (`✻` remains) |
-| `COLOR_SCHEME` | `dark` | `CLAUDE_STATUSLINE_COLOR_SCHEME` | `light` selects light. Anything else is dark |
+| `COLOR_SCHEME` | `auto` | `CLAUDE_STATUSLINE_COLOR_SCHEME` | `auto` matches the Claude Code theme ([detection](#color-scheme-detection-color_schemeauto)). `light` selects light and `dark` selects dark. Anything else is dark |
 | `SHOW_CWD` | `1` | `CLAUDE_STATUSLINE_SHOW_CWD` | `1` shows the directory column. Anything else hides it |
 | `GIT_FETCH` | `0` | `CLAUDE_STATUSLINE_GIT_FETCH` | `1` enables background fetch. Anything else disables it |
 | `PR_STATUS` | `0` | `CLAUDE_STATUSLINE_PR_STATUS` | `1` shows the [PR status](#pr-status-pr_status1) in the branch column. Anything else disables it |
@@ -601,7 +637,7 @@ The following uncolored elements are not targets.
 
 > [!WARNING]
 > `text` is a fixed color decided by `COLOR_SCHEME`, so if `COLOR_SCHEME` does not match the Claude Code theme it becomes unreadable (using `dark` on a light background puts white text on a white background).
-> Set `COLOR_SCHEME` to match the Claude Code theme. The diff file count uses the same color.
+> The default `auto` matches the Claude Code theme. When you fix `dark` / `light`, match it to the Claude Code theme. The diff file count uses the same color.
 
 ## Background Fetch (`GIT_FETCH=1`)
 

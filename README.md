@@ -122,7 +122,7 @@ LAYOUT_LINE1="session|directory|branch|commit"
 | 設定 | 既定値 | 内容 |
 | --- | --- | --- |
 | `SHOW_MODEL_NAME` | `1` | `0` でモデル名を隠し `✻` (モデル別の色) と effort だけにする |
-| `COLOR_SCHEME` | `dark` | `dark` / `light` で配色を切替える |
+| `COLOR_SCHEME` | `auto` | `auto` で Claude Code のテーマに合わせて自動で切替える。`dark` / `light` で固定する ([詳細](#テーマへの自動追従-color_schemeauto)) |
 | `SHOW_CWD` | `1` | `0` で 1 行目のディレクトリ名を隠す |
 | `LAYOUT_LINE1` | `directory\|branch\|commit\|session` | 1 行目の要素と並び |
 | `LAYOUT_LINE2` | `model_ctx\|rate\|weekly` | 2 行目の並び |
@@ -137,6 +137,17 @@ LAYOUT_LINE1="session|directory|branch|commit"
 - 変数代入以外のコマンドも描画のたびに実行される。標準出力に何か出すコマンドはその文字列が statusline に混ざり、`exit` を書くと描画が止まる。`COLOR_SCHEME = light` のように `=` の前後にスペースを入れると代入ではなくコマンド実行になる
 - 読めないファイル (権限が無い、ディレクトリである等) は無視して既定値で描画する
 - 各項目の詳しい挙動は [docs/SPEC.md](docs/SPEC.md) を参照
+
+### テーマへの自動追従 (`COLOR_SCHEME=auto`)
+
+既定の `auto` では、Claude Code の `/theme` で選んだテーマ (`~/.claude/settings.json` の `theme`) に合わせて、dark / light の配色を自動で選ぶ。`/theme` で切り替えると、次の描画から配色が変わる。
+
+- `light` 系のテーマは light、`dark` 系と、設定がないときは dark。`custom:<名前>` のテーマは、テーマファイル (`~/.claude/themes/<名前>.json`) の `base` に従う
+- テーマが `auto` のときは、環境変数 `COLORFGBG` (端末の背景色) で決め、決まらなければ dark。OS の外観は見ない
+- 注意: `COLORFGBG` を設定しない端末 (Warp など) で明るい背景を使っていると、テーマが `auto` でも dark になる。そのときは `COLOR_SCHEME=light` を指定する
+- 読むのはユーザー設定 (`~/.claude/settings.json`。`CLAUDE_CONFIG_DIR` があればその下) だけで、プロジェクトの設定は見ない。プラグインが提供するテーマは、保存される値が分からないため dark になる
+- 以前に `statusline.conf` をコピーして `COLOR_SCHEME=dark` が書いてある場合は、自動にならず dark に固定される。自動にするには `COLOR_SCHEME=auto` に変えるか、その行を消す
+- 詳しい判定は [docs/SPEC.md](docs/SPEC.md#カラースキームの判定-color_schemeauto) を参照
 
 ### 優先順位
 
@@ -188,7 +199,7 @@ HIGHLIGHT="directory|branch|session|rate_chart|rate_reset"
 
 - 警戒域の ctx やレートリミット、Opus などのモデル色、approved などの PR 番号のように、もともと色が付いている状態ではその色が優先される
 - 既定は `branch` (ブランチ名の末尾だけ)。どれも塗らないときは `HIGHLIGHT="none"` のように未知のトークンだけを書く (未知のトークンは無視され、空の値は既定値になる)
-- `COLOR_SCHEME` を Claude Code のテーマに合わせておく。食い違うと、明るい背景に白い文字が重なるなどして読めなくなる
+- `COLOR_SCHEME` は Claude Code のテーマに合わせる (既定の `auto` は自動で合わせる)。食い違うと、明るい背景に白い文字が重なるなどして読めなくなる
 - 環境変数 `CLAUDE_STATUSLINE_HIGHLIGHT` を空にしても設定ファイルの値は消えない。一時的に無効にするときは `none` などの未知のトークンを渡す
 
 ### 数値の設定の範囲
@@ -310,7 +321,7 @@ my-project
 
 ## 色の早見表
 
-配色は Claude Code の light/dark テーマに合わせたもので、`COLOR_SCHEME` で切替える。下表は dark の場合の見え方。RGB 値を含む全パレットは [docs/SPEC.md](docs/SPEC.md) を参照。
+配色は Claude Code の light/dark テーマに合わせたもので、`COLOR_SCHEME` で切替える (既定の `auto` はテーマに自動で追従する)。下表は dark の場合の見え方。RGB 値を含む全パレットは [docs/SPEC.md](docs/SPEC.md) を参照。
 
 | 対象 | 色 |
 | --- | --- |
@@ -399,7 +410,7 @@ Claude Code が値を渡していない間は `--` が表示される。
 ### 色がおかしい
 
 - 端末が truecolor (24bit カラー) に対応しているか確認する。非対応の端末では近似色になったり、制御文字がそのまま見えたりする
-- 明るい背景の端末では `COLOR_SCHEME=light` を設定する
+- 明るい背景の端末では、Claude Code のテーマを light にする (`COLOR_SCHEME=auto` が追従する)。`statusline.conf` に `COLOR_SCHEME=dark` が書いてあると追従しないので、`auto` に変えるか `COLOR_SCHEME=light` を設定する
 
 ## プライバシーとセキュリティ
 
