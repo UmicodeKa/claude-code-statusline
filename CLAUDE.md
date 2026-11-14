@@ -80,7 +80,7 @@ CI は Linux 版のみを実行します。macOS 版の変更はローカルの 
 
 | コマンド | 内容 |
 | --- | --- |
-| `npm test` | 回帰テスト (`tests/regression.sh`) 、fetch 挙動テスト (`tests/git-fetch-behavior.sh`)、PR 取得の挙動テスト (`tests/pr-status-behavior.sh`)、rate 履歴の挙動テスト (`tests/rate-history-behavior.sh`)、カラースキームの自動判定の挙動テスト (`tests/color-scheme-behavior.sh`)、両版の静的一致チェック (`tests/script-parity.sh`)、日英ドキュメントの同期チェック (`tests/translation-parity.sh`) |
+| `npm test` | 回帰テスト (`tests/regression.sh`) 、fetch 挙動テスト (`tests/git-fetch-behavior.sh`)、PR 取得の挙動テスト (`tests/pr-status-behavior.sh`)、rate 履歴の挙動テスト (`tests/rate-history-behavior.sh`)、カラースキームの自動判定の挙動テスト (`tests/color-scheme-behavior.sh`)、テストハーネスの起動環境の隔離チェック (`tests/harness-isolation.sh`)、両版の静的一致チェック (`tests/script-parity.sh`)、日英ドキュメントの同期チェック (`tests/translation-parity.sh`) |
 | `npm run preview` | ANSI 色付きの実出力を端末に表示する (`tests/e2e-preview.sh`) |
 | `npm run check` | Markdown の整形チェックと markdownlint |
 | `npm run fix` | Markdown の整形と markdownlint の自動修正 |

@@ -16,11 +16,12 @@ For the mapping between each defensive piece of code and the test that guards it
 | `pr-status-behavior.sh` | `npm run test:pr` | Verifies the behavior of the background retrieval of the PR status display, and the transformation done by `--jq` |
 | `rate-history-behavior.sh` | `npm run test:history` | Verifies writes to the rate history file (initial fill, throttling, number of saved entries) and the clamping of the throttling interval |
 | `color-scheme-behavior.sh` | `npm run test:color` | Verifies that `COLOR_SCHEME=auto` decides dark / light from the Claude Code `theme` and so on, and verifies the cache of that decision |
+| `harness-isolation.sh` | `npm run test:isolation` | Runs each harness in a hostile environment and checks that the statusline start environment is isolated (it never reaches the real `git` / `gh`, and the developer's environment variables do not leak in) |
 | `e2e-preview.sh` | `npm run preview` | Prints the actual ANSI-colored output to the terminal for visual inspection |
 | `script-parity.sh` | `npm run test:parity` | Statically checks that the shared blocks of both scripts match and that required code is still present |
 | `translation-parity.sh` | `npm run test:translation` | Statically checks that the structure of each Japanese document and its English version (`*.en.md`) has not drifted apart |
 
-`npm test` runs `test:regression`, `test:fetch`, `test:pr`, `test:history`, `test:color`, `test:parity`, and `test:translation` in order. `e2e-preview.sh` does not judge pass or fail, so it is not part of `npm test`.
+`npm test` runs `test:regression`, `test:fetch`, `test:pr`, `test:history`, `test:color`, `test:isolation`, `test:parity`, and `test:translation` in order. `e2e-preview.sh` does not judge pass or fail, so it is not part of `npm test`.
 
 ### regression.sh
 
@@ -247,7 +248,7 @@ Notes for each marker follow.
   `fetched_at` depends on the current time, so `@NOW@` (the current time) and `@STALE@` (the current time minus 4000 seconds) are replaced just before seeding. If line 1 is empty, no cache is placed.
   In every case a new marker is placed, so rendering does not start a retrieval and the seeded cache is read as is
 - `hyperlink-off/`: For a case with no marker, `FORCE_HYPERLINK` is passed empty so that the value in the developer's shell does not leak in
-- `pr-status-on/`: For a case with no marker, `CLAUDE_STATUSLINE_PR_STATUS` is passed as `0` (the main script defaults to `1`, and otherwise the fake gh would be called).
+- `pr-status-on/`: For a case with no marker, `CLAUDE_STATUSLINE_PR_STATUS` is the `sl_run` default of `0` (the main script defaults to `1`, and otherwise the fake gh would be called).
   The PR is received by the fake gh, and this is used for cases that show the cache seeded via `pr-cache/` in the branch column
 
 The contents of `lib/` are as follows.
@@ -256,6 +257,7 @@ The contents of `lib/` are as follows.
 | --- | --- |
 | `lib/escape-ansi.sh` | Replaces ESC with `\e` and BEL with `\a` (uses `perl`) |
 | `lib/config-file.sh` | Resolves the conf path with `config_for_case`. If there is no marker, it returns a nonexistent path (`NO_CONFIG`) |
+| `lib/statusline-env.sh` | Starts the statusline with `sl_run`. It discards the inherited environment with `env -i` and passes only the defaults and the caller's `VAR=value`. The check that empties the env when the conf specifies `GIT_FETCH` / `PR_STATUS` also lives here |
 | `lib/layout.sh` | Resolves the layout string with `layout_for_case` |
 | `lib/highlight.sh` | Resolves the highlight setting with `highlight_for_case` |
 | `lib/find-debian-bash.sh` | Finds a bash that can run the Linux version. Also has the check that makes it mandatory on CI |
@@ -370,28 +372,41 @@ This is a fake that accepts only `gh api graphql ... --jq <expression>`, which t
 
 ## Isolating the Execution Environment
 
-So that case results do not depend on the developer's environment, the harness starts the statusline with the following preamble for every case.
+So that case results do not depend on the developer's environment and no real `git fetch` or `gh` runs, every harness starts the statusline through `sl_run` in `lib/statusline-env.sh`.
+`sl_run` discards the inherited environment with `env -i` and passes only the allowed variables (an allowlist).
+A variable that is forgotten ends up unset, so even when the main script gains a new environment variable, values from the developer's shell never leak in silently.
 
+- Variables passed by default
+  - `PATH`: The directories added with `--path`, then the fake git, the fake gh, and the outer `PATH`, in that order. Real commands such as `jq` / `perl` / `flock` come from the outer `PATH`.
+  - `HOME` / `CLAUDE_CONFIG_DIR`: Paths that do not exist. The default locations of the conf and `settings.json` never point at the developer's real files, and `COLOR_SCHEME=auto` sees no `theme` = dark.
+  - `CLAUDE_STATUSLINE_CONFIG`: A path that does not exist (no conf). The developer's `~/.claude/statusline.conf` is never read. Cases that have a marker in `config-file/` pass the result of `config_for_case` (`lib/config-file.sh`).
+  - `CLAUDE_STATUSLINE_GIT_FETCH` / `CLAUDE_STATUSLINE_PR_STATUS`: `0`. Both default to `1` in the main script, and leaving them out would start a real `git fetch` and `gh`.
+  - `TZ`: `UTC`.
+  - `LANG` / `LC_*` / `TMPDIR` are not passed. The main script sets `LC_ALL=C.UTF-8` at the top and does not use `TMPDIR`.
+- Overrides: They are passed as arguments of `sl_run` (`VAR=value` before `--`) and apply to that single start only. There is no global state, so an override for one case (for example `STATUSLINE_TEST_GH_SLEEP=20`) does not remain for later cases.
+  For the same name the later one wins, so a harness-specific wrapper (such as `run_sl` in `pr-status-behavior.sh`) lists its defaults first and the caller's values after them.
+  Test-only variables (`STATUSLINE_TEST_*`, and `STUB_*` / `REAL_JQ` for the stubs in `color-scheme-behavior.sh`) are also passed explicitly. A forgotten one does not silently fall back to the real thing; it shows up as a failing case.
+- Replacing `PATH`: `sl_run` rejects `PATH=` with an error, because writing the whole value makes it possible to drop the shims. Directories are added with `--path`.
+  Only a case that needs a `PATH` without the outer `PATH` (`no-gh` in `pr-status-behavior.sh`) replaces it explicitly with `--replace-path`.
+  Combining `--replace-path` with `--path`, and an empty `--replace-path`, are also rejected, because they would silently drop the added directories or fall back to the outer `PATH`.
+- Conf and env: env takes precedence over conf, so when the conf at the final `CLAUDE_STATUSLINE_CONFIG` assigns `GIT_FETCH` / `PR_STATUS`, `sl_run` empties those env values and lets the conf decide.
+  The check runs in one place only, inside `sl_run`, after all arguments are lined up, so the conf setting beats both the marker values in `regression.sh` (`git-fetch-on/` / `pr-status-on/`) and a `CLAUDE_STATUSLINE_CONFIG` swapped in at call time.
+  That they work by default is verified by `default-on` in `git-fetch-behavior.sh` and `pr-status-behavior.sh`, which pass an empty value (such as `CLAUDE_STATUSLINE_PR_STATUS=`) explicitly with no conf.
+- `CLAUDE_STATUSLINE_*` without a marker: `regression.sh` and `e2e-preview.sh` pass them as empty strings. The main script treats empty the same as unset, so it falls back in the order conf, then default.
+  Passing the default directly would make the environment variable always beat the conf value, and the conf could not be verified.
 - History directory: `regression.sh` / `git-fetch-behavior.sh` / `pr-status-behavior.sh` / `e2e-preview.sh` all pass a temporary directory made per case with `mktemp -d` as `CLAUDE_STATUSLINE_HISTORY_DIR` and delete it on exit.
   The production `/tmp/claude-statusline-<uid>/` is never touched. The directory is created with the real uid, so it passes the main script's owner check, and the history write on first startup actually runs.
-- Config file: `CLAUDE_STATUSLINE_CONFIG` is fixed to a nonexistent path, except for cases that have a marker in `config-file/`. The developer's `~/.claude/statusline.conf` is never read.
-  All harnesses follow this rule through `lib/config-file.sh`.
-- `CLAUDE_STATUSLINE_*` environment variables: When there is no marker, they are passed as empty strings. The main script treats empty the same as unset, so it falls back in the order conf, then default.
-  Passing the default directly would make the environment variable always beat the conf value, and the conf could not be verified.
-  `CLAUDE_STATUSLINE_COLOR_SCHEME` is also passed empty so that the value in the developer's shell does not leak in.
-  - `CLAUDE_STATUSLINE_GIT_FETCH` and `CLAUDE_STATUSLINE_PR_STATUS` are exceptions and are passed as `0` when there is no marker.
-    Both default to `1` in the main script, and passing them empty would run a real `git fetch` and `gh` on the developer's machine.
-    A case whose `config-file/` conf specifies the option passes it empty so the conf decides (env takes precedence over conf).
-    That they work by default is verified by `default-on` in `git-fetch-behavior.sh` and `pr-status-behavior.sh`.
-  - `CLAUDE_STATUSLINE_HIGHLIGHT` is always passed by `regression.sh` / `pr-status-behavior.sh` / `e2e-preview.sh`.
-    If it is not passed, cases that include the branch and so on would fail only on the machine of a developer who exports a highlight setting.
 - Short-name variables: `regression.sh` passes 11 short-name variables such as `SHOW_MODEL_NAME` and `LAYOUT_LINE1` with values different from the defaults in every case (`HIGHLIGHT` is set to a value that specifies all tokens).
   The main script `unset`s these before reading the conf, so they do not affect the output. If that `unset` disappears, every case fails, so this also serves as a regression guard for it.
-- `CLAUDE_CONFIG_DIR` / `COLORFGBG`: The default of `COLOR_SCHEME` is `auto`, which reads `theme` in the developer's real `~/.claude/settings.json` and the terminal background color.
-  At startup, `regression.sh` / `git-fetch-behavior.sh` / `pr-status-behavior.sh` / `rate-history-behavior.sh` / `e2e-preview.sh` point `CLAUDE_CONFIG_DIR` at a directory that does not exist (no `theme` = dark) and empty `COLORFGBG`.
-  `color-scheme-behavior.sh` uses a temporary directory per case and also points `HOME` at a temporary directory.
-- git / gh: The fake git and fake gh described above are placed at the front of `PATH`.
-- `FORCE_HYPERLINK`: `regression.sh` and `e2e-preview.sh` pass it empty, except for cases that have a marker in `hyperlink-off/`.
+- `e2e-preview.sh`: It does not read the `git-fetch-on/` markers, and `GIT_FETCH` is always the `sl_run` default of `0`.
+- Detecting missed isolation: `harness-isolation.sh` places `git` / `gh` stubs that record the call and fail at the front of the outer `PATH`.
+  It exports the environment variables the main script reads (`CLAUDE_STATUSLINE_*` / `FORCE_HYPERLINK` / `COLORFGBG` / `CLAUDE_CONFIG_DIR` / `HOME` / `TZ`) with hostile values,
+  and runs each harness that reports pass or fail in that environment. It checks that every case passes and that the stubs were called 0 times.
+  After all harnesses finish it waits a little longer and checks that no call arrived late.
+  The same script also checks the contract of `sl_run` itself (defaults, rejecting `PATH=`, overrides not remaining, and the conf winning).
+  A start that bypasses `sl_run` hits the stubs on the outer `PATH` when the input reaches the git path, and in a harness that compares output it fails because the hostile values change the output.
+  A start that does neither (such as `rate-history-behavior.sh`, whose input has no cwd and whose output is not checked) is not detected.
+  Such a start never reaches the real `git` / `gh`, and its result does not depend on environment variables.
 
 ## Execution Environment and Skips
 

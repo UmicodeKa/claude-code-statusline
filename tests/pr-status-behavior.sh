@@ -13,15 +13,8 @@
 
 set -euo pipefail
 
-# COLOR_SCHEME の既定値は auto で、開発者の実際の settings.json の theme や端末の背景色 (COLORFGBG) を読む。
-# 結果が環境に依存しないよう、存在しない設定ディレクトリを指し (theme なし = dark)、COLORFGBG を空にする。
-export CLAUDE_CONFIG_DIR="/nonexistent-claude-config-dir"
-export COLORFGBG=""
-
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$TESTS_DIR/.." && pwd)"
-GIT_SHIM_DIR="$TESTS_DIR/lib/git-shim"
-GH_SHIM_DIR="$TESTS_DIR/lib/gh-shim"
 RESPONSES_DIR="$TESTS_DIR/pr-responses"
 
 MACOS_SCRIPT="$REPO_DIR/statusline-macos.sh"
@@ -29,8 +22,9 @@ DEBIAN_SCRIPT="$REPO_DIR/statusline-linux.sh"
 
 # shellcheck source=lib/find-debian-bash.sh
 source "$TESTS_DIR/lib/find-debian-bash.sh"
-# shellcheck source=lib/config-file.sh
-source "$TESTS_DIR/lib/config-file.sh"
+# statusline は sl_run で起動する (許可リスト方式の起動環境。fake git / fake gh を PATH 先頭に置く)。
+# shellcheck source=lib/statusline-env.sh
+source "$TESTS_DIR/lib/statusline-env.sh"
 # shellcheck source=lib/is-macos-host.sh
 source "$TESTS_DIR/lib/is-macos-host.sh"
 # shellcheck source=lib/escape-ansi.sh
@@ -96,21 +90,20 @@ cleanup_case() {
 }
 
 # statusline を 1 回実行し、ANSI を可読化した出力を stdout に返す。
-#   $1 bash / $2 script / 以降は env に渡す追加の VAR=value
+#   $1 bash / $2 script / 以降は sl_run に渡す追加の VAR=value (と --path / --replace-path)
 # 既定では PR_STATUS=1 で LAYOUT_LINE1=branch、応答は open-approved。
+# 追加の引数は既定値の後ろに並ぶので、同じ名前なら追加の側が勝つ。上書きはこの 1 回の起動だけに効く。
 run_sl() {
   local bash_bin=$1 script=$2
   shift 2
-  env CLAUDE_STATUSLINE_HISTORY_DIR="$hist" TZ=UTC \
-    CLAUDE_STATUSLINE_CONFIG="$NO_CONFIG" \
-    CLAUDE_STATUSLINE_COLOR_SCHEME="" CLAUDE_STATUSLINE_GIT_FETCH=0 \
+  sl_run \
+    CLAUDE_STATUSLINE_HISTORY_DIR="$hist" \
     CLAUDE_STATUSLINE_PR_STATUS=1 CLAUDE_STATUSLINE_LAYOUT_LINE1="branch" CLAUDE_STATUSLINE_LAYOUT_LINE2="" \
-    CLAUDE_STATUSLINE_HIGHLIGHT="" FORCE_HYPERLINK=0 \
+    FORCE_HYPERLINK=0 \
     STATUSLINE_TEST_GH_SENTINEL="$sentinel" \
     STATUSLINE_TEST_GH_RESPONSE="$RESPONSES_DIR/open-approved.json" \
-    PATH="$GIT_SHIM_DIR:$GH_SHIM_DIR:$PATH" \
     "$@" \
-    "$bash_bin" "$script" < "$input" 2>&1 | escape_ansi
+    -- "$bash_bin" "$script" < "$input" 2>&1 | escape_ansi
 }
 
 # 条件 ($@ を eval) が真になるまで最大 $1 秒待つ。真になれば 0、時間切れなら 1。
@@ -207,7 +200,7 @@ case_opt_out_conf() {
   trap 'cleanup_case; rm "${hist}.conf" 2>/dev/null || true; trap - RETURN' RETURN
 
   printf 'PR_STATUS=0\n' > "${hist}.conf"
-  run_sl "$bash_bin" "$script" CLAUDE_STATUSLINE_PR_STATUS= CLAUDE_STATUSLINE_CONFIG="${hist}.conf" >/dev/null
+  run_sl "$bash_bin" "$script" CLAUDE_STATUSLINE_CONFIG="${hist}.conf" >/dev/null
   sleep 0.5
   if [ "$(sentinel_count)" = "0" ] && ! compgen -G "$hist/pr-*" >/dev/null; then
     pass_case "opt-out-conf [$label]"
@@ -482,9 +475,9 @@ case_no_gh() {
   # 前回の取得結果が残っていても、gh がなければ表示しない。
   printf '%s\t12\topen\tapproved\tpass\t0\t1\thttps://github.com/my-org/my-project/pull/12\n' \
     "$(date +%s)" > "$(cache_path main)"
-  # env は後に書いた PATH が勝つので、run_sl の PATH を差し替えられる。
+  # 外側の PATH を含めない PATH にするため、--replace-path で丸ごと差し替える。
   local out
-  out=$(run_sl "$bash_bin" "$script" PATH="$GIT_SHIM_DIR:$bin")
+  out=$(run_sl "$bash_bin" "$script" --replace-path "$GIT_SHIM_DIR:$bin")
   if [ "${out%%$'\n'*}" = '\e[38;2;255;255;255mmain\e[0m' ] && [ ! -e "$(cache_path main).marker" ]; then
     pass_case "no-gh [$label]"
   else
@@ -1149,10 +1142,9 @@ case_early_no_extra_commands() {
     printf '#!/bin/sh\nprintf "%%s\\n" %s >> "%s"\nexec "%s" "$@"\n' "$cmd" "$log" "$real" > "$bin/$cmd"
     chmod +x "$bin/$cmd"
   done
-  local path="PATH=$bin:$GIT_SHIM_DIR:$GH_SHIM_DIR:$PATH"
   count_render() {
     : > "$log"
-    run_sl "$bash_bin" "$script" "$path" >/dev/null
+    run_sl "$bash_bin" "$script" --path "$bin" >/dev/null
     wc -l < "$log" | tr -d ' '
   }
 

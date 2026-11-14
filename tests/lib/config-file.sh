@@ -2,11 +2,11 @@
 # statusline の設定ファイル (CLAUDE_STATUSLINE_CONFIG) をテストごとに解決するヘルパ。
 #
 # 既定の読み込み先 ~/.claude/statusline.conf は $HOME 依存なので、テストで固定し
-# 忘れると開発者の実 conf を読んで環境依存で落ちる/通るテストになる。全ハーネスは
-# statusline 起動時の共通前置きで、必ず config_for_case の結果 (または NO_CONFIG) を
-# CLAUDE_STATUSLINE_CONFIG に渡すこと。
+# 忘れると開発者の実 conf を読んで環境依存で落ちる/通るテストになる。statusline の起動は
+# lib/statusline-env.sh の sl_run が担い、CLAUDE_STATUSLINE_CONFIG の既定を NO_CONFIG にする。
+# ケースごとの conf は config_for_case の結果を sl_run に渡す。
 #
-# regression.sh / e2e-preview.sh / git-fetch-behavior.sh から使う (ドリフト防止のため共有)。
+# lib/statusline-env.sh (NO_CONFIG / conf_sets) と、config-file マーカーを読むハーネスから使う。
 
 CONFIG_LIB_TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -25,8 +25,8 @@ config_for_case() {
 }
 
 # conf $1 が設定 $2 (例: PR_STATUS) を代入していれば 0 を返す。
-# GIT_FETCH / PR_STATUS は本体の既定が 1 のため、ハーネスはマーカーが無いと env で 0 を渡す。
-# env は conf に勝つので、conf でこれらを指定するケースは env を空にして conf に決めさせる必要がある。
+# GIT_FETCH / PR_STATUS は本体の既定が 1 のため、sl_run は env で 0 を渡す。env は conf に勝つので、
+# conf でこれらを指定するときは env を空にして conf に決めさせる必要がある。判定は sl_run だけが行う。
 conf_sets() {
   [ -f "$1" ] && grep -Eq "^[[:space:]]*(export[[:space:]]+)?$2=" "$1"
 }

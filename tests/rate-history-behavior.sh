@@ -15,15 +15,9 @@
 #   poll-invalid-default       : POLL_INTERVAL_SEC=abc は既定 300 に戻る
 #
 # conf は一時ファイルに書いて CLAUDE_STATUSLINE_CONFIG で渡し、開発者の ~/.claude/statusline.conf は
-# 読ませない。RATE_CHART_LEN と POLL_INTERVAL_SEC には env の口が無いので、開発者のシェルの環境変数で
-# 結果が変わることもない。
+# 読ませない。開発者のシェルの環境変数は sl_run (lib/statusline-env.sh) が捨てるので、結果は変わらない。
 
 set -euo pipefail
-
-# COLOR_SCHEME の既定値は auto で、開発者の実際の settings.json の theme や端末の背景色 (COLORFGBG) を読む。
-# 結果が環境に依存しないよう、存在しない設定ディレクトリを指し (theme なし = dark)、COLORFGBG を空にする。
-export CLAUDE_CONFIG_DIR="/nonexistent-claude-config-dir"
-export COLORFGBG=""
 
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$TESTS_DIR/.." && pwd)"
@@ -33,8 +27,9 @@ DEBIAN_SCRIPT="$REPO_DIR/statusline-linux.sh"
 
 # shellcheck source=lib/find-debian-bash.sh
 source "$TESTS_DIR/lib/find-debian-bash.sh"
-# shellcheck source=lib/config-file.sh
-source "$TESTS_DIR/lib/config-file.sh"
+# statusline は sl_run で起動する (許可リスト方式の起動環境。GIT_FETCH / PR_STATUS は 0)。
+# shellcheck source=lib/statusline-env.sh
+source "$TESTS_DIR/lib/statusline-env.sh"
 # shellcheck source=lib/is-macos-host.sh
 source "$TESTS_DIR/lib/is-macos-host.sh"
 # shellcheck source=lib/age-file.sh
@@ -98,9 +93,10 @@ seed_history() {
 run_sl() {
   local bash_bin=$1 script=$2
   printf '{"rate_limits":{"five_hour":{"used_percentage":%d}}}' "$((100 - NEW_REMAINING))" \
-    | CLAUDE_STATUSLINE_HISTORY_DIR="$hist" TZ=UTC \
+    | sl_run \
+      CLAUDE_STATUSLINE_HISTORY_DIR="$hist" \
       CLAUDE_STATUSLINE_CONFIG="$config" \
-      "$bash_bin" "$script" >/dev/null 2>&1
+      -- "$bash_bin" "$script" >/dev/null 2>&1
 }
 
 line_count() { wc -l < "$rate_file" | tr -d ' '; }

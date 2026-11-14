@@ -73,7 +73,7 @@ git config commit.template .gitmessage
 
 | コマンド | 内容 |
 | --- | --- |
-| `npm test` | 回帰テスト (`tests/regression.sh`) 、バックグラウンド fetch の挙動テスト (`tests/git-fetch-behavior.sh`)、PR の状態表示の取得の挙動テスト (`tests/pr-status-behavior.sh`)、rate 履歴の挙動テスト (`tests/rate-history-behavior.sh`)、両版の静的一致チェック (`tests/script-parity.sh`)、日本語版と英語版のドキュメントの同期チェック (`tests/translation-parity.sh`) を順に実行 |
+| `npm test` | 回帰テスト (`tests/regression.sh`) 、バックグラウンド fetch の挙動テスト (`tests/git-fetch-behavior.sh`)、PR の状態表示の取得の挙動テスト (`tests/pr-status-behavior.sh`)、rate 履歴の挙動テスト (`tests/rate-history-behavior.sh`)、カラースキームの自動判定の挙動テスト (`tests/color-scheme-behavior.sh`)、テストハーネスの起動環境の隔離チェック (`tests/harness-isolation.sh`)、両版の静的一致チェック (`tests/script-parity.sh`)、日本語版と英語版のドキュメントの同期チェック (`tests/translation-parity.sh`) を順に実行 |
 | `npm run preview` | 各 fixture の実出力を ANSI 色付きのまま端末に表示 (`tests/e2e-preview.sh`)。`--macos` / `--linux` で片方だけ表示できる (`bash tests/e2e-preview.sh --linux`) |
 | `npm run check` | Markdown の整形チェックと lint を実行 |
 | `npm run fix` | Markdown の整形と lint の自動修正を実行 |

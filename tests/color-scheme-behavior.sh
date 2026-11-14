@@ -17,12 +17,8 @@
 
 set -euo pipefail
 
-export CLAUDE_CONFIG_DIR="/nonexistent-claude-config-dir"
-export COLORFGBG=""
-
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$TESTS_DIR/.." && pwd)"
-GIT_SHIM_DIR="$TESTS_DIR/lib/git-shim"
 FIXTURE="$TESTS_DIR/fixtures/08-ctx-warning.json"
 
 MACOS_SCRIPT="$REPO_DIR/statusline-macos.sh"
@@ -30,8 +26,9 @@ DEBIAN_SCRIPT="$REPO_DIR/statusline-linux.sh"
 
 # shellcheck source=lib/find-debian-bash.sh
 source "$TESTS_DIR/lib/find-debian-bash.sh"
-# shellcheck source=lib/config-file.sh
-source "$TESTS_DIR/lib/config-file.sh"
+# statusline は sl_run で起動する (許可リスト方式の起動環境。fake git / fake gh を PATH 先頭に置く)。
+# shellcheck source=lib/statusline-env.sh
+source "$TESTS_DIR/lib/statusline-env.sh"
 # shellcheck source=lib/is-macos-host.sh
 source "$TESTS_DIR/lib/is-macos-host.sh"
 DEBIAN_BASH="$(find_debian_bash)"
@@ -110,16 +107,16 @@ write_theme_file() { printf '%s\n' "$2" > "$R_CFG/themes/$1.json"; }
 # 古い mtime にする (キャッシュより必ず古くする)。
 age() { touch -t 202001010000 "$@"; }
 
-# statusline を 1 回実行して出力を返す。
+# statusline を 1 回実行して出力を返す。スタブ (jq / defaults) は --path で shim の前に置く。
+# スタブが読む STUB_* / REAL_JQ も sl_run の許可リストに明示的に渡す (渡し忘れはケースの失敗として出る)。
 render() {
   local bash_bin=$1 script=$2
-  CLAUDE_CONFIG_DIR="$R_CFG" COLORFGBG="$R_FGBG" \
-  CLAUDE_STATUSLINE_COLOR_SCHEME="$R_SCHEME" CLAUDE_STATUSLINE_CONFIG="$R_CONF" \
-  CLAUDE_STATUSLINE_GIT_FETCH=0 CLAUDE_STATUSLINE_PR_STATUS=0 \
-  CLAUDE_STATUSLINE_HISTORY_DIR="$R_HIST" HOME="$R_HOME" TZ=UTC \
-  STUB_LOG="$LOG" STUB_DEFAULTS_RC="$R_DEFAULTS_RC" STUB_RACE_SETTINGS="$R_RACE_SETTINGS" REAL_JQ="$REAL_JQ" \
-  PATH="$GIT_SHIM_DIR:$STUBS:$PATH" \
-    "$bash_bin" "$script" < "$FIXTURE" 2>/dev/null
+  sl_run --path "$STUBS" \
+    CLAUDE_CONFIG_DIR="$R_CFG" COLORFGBG="$R_FGBG" \
+    CLAUDE_STATUSLINE_COLOR_SCHEME="$R_SCHEME" CLAUDE_STATUSLINE_CONFIG="$R_CONF" \
+    CLAUDE_STATUSLINE_HISTORY_DIR="$R_HIST" HOME="$R_HOME" \
+    STUB_LOG="$LOG" STUB_DEFAULTS_RC="$R_DEFAULTS_RC" STUB_RACE_SETTINGS="$R_RACE_SETTINGS" REAL_JQ="$REAL_JQ" \
+    -- "$bash_bin" "$script" < "$FIXTURE" 2>/dev/null
 }
 
 # 出力の配色 (dark / light / unknown)。

@@ -20,14 +20,8 @@
 
 set -euo pipefail
 
-# COLOR_SCHEME の既定値は auto で、開発者の実際の settings.json の theme や端末の背景色 (COLORFGBG) を読む。
-# 結果が環境に依存しないよう、存在しない設定ディレクトリを指し (theme なし = dark)、COLORFGBG を空にする。
-export CLAUDE_CONFIG_DIR="/nonexistent-claude-config-dir"
-export COLORFGBG=""
-
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$TESTS_DIR/.." && pwd)"
-GIT_SHIM_DIR="$TESTS_DIR/lib/git-shim"
 
 # upstream あり (ab=2,0) の fixture。maybe_git_fetch が fetch を投げる正常系。
 FIXTURE="$TESTS_DIR/fixtures/67-git-fetch-ahead.json"
@@ -37,8 +31,9 @@ DEBIAN_SCRIPT="$REPO_DIR/statusline-linux.sh"
 
 # shellcheck source=lib/find-debian-bash.sh
 source "$TESTS_DIR/lib/find-debian-bash.sh"
-# shellcheck source=lib/config-file.sh
-source "$TESTS_DIR/lib/config-file.sh"
+# statusline は sl_run で起動する (許可リスト方式の起動環境。fake git / fake gh を PATH 先頭に置く)。
+# shellcheck source=lib/statusline-env.sh
+source "$TESTS_DIR/lib/statusline-env.sh"
 # shellcheck source=lib/age-file.sh
 source "$TESTS_DIR/lib/age-file.sh"
 # shellcheck source=lib/is-macos-host.sh
@@ -71,15 +66,16 @@ fail_case() {
 # 引数: $1 bash 実行ファイル / $2 スクリプト / $3 履歴 dir / $4 sentinel / $5 fetch の sleep 秒
 #       $6 設定ファイル (省略時は存在しないパス = conf 無し)
 #       $7 CLAUDE_STATUSLINE_GIT_FETCH に渡す値 (省略時は 1。空文字なら env 未指定と同じで、conf → 既定値に従う)
+#          conf が GIT_FETCH を指定するときは、sl_run が env を空にして conf に決めさせる。
 run_statusline() {
   local bash_bin=$1 script=$2 hist=$3 sentinel=$4 sleep_sec=$5 config=${6:-$NO_CONFIG} fetch_env=${7-1}
-  CLAUDE_STATUSLINE_HISTORY_DIR="$hist" TZ=UTC \
-  CLAUDE_STATUSLINE_CONFIG="$config" \
-  CLAUDE_STATUSLINE_GIT_FETCH="$fetch_env" CLAUDE_STATUSLINE_PR_STATUS=0 \
-  STATUSLINE_TEST_FETCH_SLEEP="$sleep_sec" \
-  STATUSLINE_TEST_FETCH_SENTINEL="$sentinel" \
-  PATH="$GIT_SHIM_DIR:$PATH" \
-    "$bash_bin" "$script" < "$FIXTURE" >/dev/null 2>&1
+  sl_run \
+    CLAUDE_STATUSLINE_HISTORY_DIR="$hist" \
+    CLAUDE_STATUSLINE_CONFIG="$config" \
+    CLAUDE_STATUSLINE_GIT_FETCH="$fetch_env" \
+    STATUSLINE_TEST_FETCH_SLEEP="$sleep_sec" \
+    STATUSLINE_TEST_FETCH_SENTINEL="$sentinel" \
+    -- "$bash_bin" "$script" < "$FIXTURE" >/dev/null 2>&1
 }
 
 # sentinel が $2 行以上になるまで最大 $3 秒待つ。到達したら 0、時間切れなら 1。
@@ -156,13 +152,12 @@ case_non_blocking() {
   start=$(date +%s)
   local output
   output=$(
-    CLAUDE_STATUSLINE_HISTORY_DIR="$hist" TZ=UTC \
-    CLAUDE_STATUSLINE_CONFIG="$NO_CONFIG" \
-    CLAUDE_STATUSLINE_GIT_FETCH=1 CLAUDE_STATUSLINE_PR_STATUS=0 \
-    STATUSLINE_TEST_FETCH_SLEEP="$SLOW_FETCH_SEC" \
-    STATUSLINE_TEST_FETCH_SENTINEL="$sentinel" \
-    PATH="$GIT_SHIM_DIR:$PATH" \
-      "$bash_bin" "$script" < "$FIXTURE" 2>/dev/null
+    sl_run \
+      CLAUDE_STATUSLINE_HISTORY_DIR="$hist" \
+      CLAUDE_STATUSLINE_GIT_FETCH=1 \
+      STATUSLINE_TEST_FETCH_SLEEP="$SLOW_FETCH_SEC" \
+      STATUSLINE_TEST_FETCH_SENTINEL="$sentinel" \
+      -- "$bash_bin" "$script" < "$FIXTURE" 2>/dev/null
   )
   end=$(date +%s)
   elapsed=$((end - start))
@@ -361,7 +356,7 @@ case_opt_out_conf() {
   # shellcheck disable=SC2064
   trap "rm -r '$hist' 2>/dev/null || true; rm '$sentinel' '$config' 2>/dev/null || true" RETURN
 
-  run_statusline "$bash_bin" "$script" "$hist" "$sentinel" 0 "$config" ""
+  run_statusline "$bash_bin" "$script" "$hist" "$sentinel" 0 "$config"
   sleep 0.5
 
   count=$(wc -l < "$sentinel" | tr -d ' ')
