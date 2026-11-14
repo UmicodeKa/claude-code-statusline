@@ -363,7 +363,7 @@ Tokens not written in `LAYOUT_LINE1` are not shown.
 
 `GIT_FETCH` and `PR_STATUS` are now enabled by default (the default of `GIT_FETCH_INTERVAL_SEC` also changed from 15 minutes to 3 minutes).
 If your configuration file has no lines for them, the background `git fetch` and the queries via `gh` start after the update.
-To avoid them, write `GIT_FETCH=0` / `PR_STATUS=0` in the configuration file.
+To avoid them, write `GIT_FETCH=0` / `PR_STATUS=0` in the configuration file. An empty `GIT_FETCH=` / `PR_STATUS=` is treated as not written, so the default (enabled) applies.
 
 ```bash
 cd claude-code-statusline

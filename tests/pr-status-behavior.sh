@@ -1210,7 +1210,7 @@ run_all_cases() {
   case_not_invoked_when_disabled  "$bash_bin" "$script" "$label"
   case_default_on                 "$bash_bin" "$script" "$label"
   case_opt_out_conf               "$bash_bin" "$script" "$label"
-  case_non_blocking              "$bash_bin" "$script" "$label"
+  case_non_blocking               "$bash_bin" "$script" "$label"
   case_throttle                   "$bash_bin" "$script" "$label"
   case_single_flight              "$bash_bin" "$script" "$label"
   case_stale_inflight             "$bash_bin" "$script" "$label"

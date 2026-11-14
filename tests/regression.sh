@@ -377,7 +377,7 @@ run_case() {
       CLAUDE_STATUSLINE_HISTORY_DIR="$hist_override" TZ=UTC \
       CLAUDE_STATUSLINE_CONFIG="$config" \
       CLAUDE_STATUSLINE_COLOR_SCHEME="" \
-      SHOW_MODEL_NAME=0 COLOR_SCHEME=light GIT_FETCH=1 PR_STATUS=1 SHOW_CWD=0 \
+      SHOW_MODEL_NAME=0 COLOR_SCHEME=light GIT_FETCH=0 PR_STATUS=0 SHOW_CWD=0 \
       RATE_CHART_LEN=3 POLL_INTERVAL_SEC=0 GIT_FETCH_INTERVAL_SEC=0 \
       LAYOUT_LINE1="session" LAYOUT_LINE2="rate|model_ctx" \
       HIGHLIGHT="directory|branch|commit|session|model|ctx_chart|rate_chart|rate_reset|weekly_chart|weekly_reset|pr_comments|pr_number" \

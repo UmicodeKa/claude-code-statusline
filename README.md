@@ -343,7 +343,7 @@ my-project
 
 リポジトリを最新化し、使っている版のスクリプトを再度コピーする。`~/.claude/statusline.conf` はそのまま引き継がれる。設定ファイルに書いた値は既定値より優先されるため、既定値に従わせたい項目は設定ファイルから行を消す。テンプレート (`statusline.conf`) から設定ファイルを作ったときは、更新後のテンプレートと見比べ、増えたトークン (`LAYOUT_LINE1` や `HIGHLIGHT` の値) や項目を取り込む。`LAYOUT_LINE1` に書いていないトークンは表示されない。
 
-`GIT_FETCH` と `PR_STATUS` は既定で有効になった (`GIT_FETCH_INTERVAL_SEC` の既定も 15 分から 3 分になった)。設定ファイルにこれらの行が無ければ、更新後はバックグラウンドの `git fetch` と `gh` による問い合わせが始まる。使いたくないときは設定ファイルに `GIT_FETCH=0` / `PR_STATUS=0` を書く。
+`GIT_FETCH` と `PR_STATUS` は既定で有効になった (`GIT_FETCH_INTERVAL_SEC` の既定も 15 分から 3 分になった)。設定ファイルにこれらの行が無ければ、更新後はバックグラウンドの `git fetch` と `gh` による問い合わせが始まる。使いたくないときは設定ファイルに `GIT_FETCH=0` / `PR_STATUS=0` を書く。空の `GIT_FETCH=` / `PR_STATUS=` は書かなかったものとして扱われ、既定の有効になる。
 
 ```bash
 cd claude-code-statusline

@@ -28,5 +28,5 @@ config_for_case() {
 # GIT_FETCH / PR_STATUS は本体の既定が 1 のため、ハーネスはマーカーが無いと env で 0 を渡す。
 # env は conf に勝つので、conf でこれらを指定するケースは env を空にして conf に決めさせる必要がある。
 conf_sets() {
-  [ -f "$1" ] && grep -q "^$2=" "$1"
+  [ -f "$1" ] && grep -Eq "^[[:space:]]*(export[[:space:]]+)?$2=" "$1"
 }
