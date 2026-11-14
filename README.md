@@ -19,14 +19,14 @@ my-project | main ↑2↓3 | c9b8fce 3+13-5 | my-session
 ✻ Opus 4.7∙high ▆ 72% | ▇▇▇▆▆▆▅▅▄▄▃▃ 35% - 18:30 | ▅ Thu
 ```
 
-[`PR_STATUS=1`](#pr_status1-で-pr-の状態を表示する) にすると、ブランチ列に PR の番号が出る。CI のチェックがあれば状態を、コメントがあれば件数を添える。
+[`PR_STATUS`](#pr_status1-で-pr-の状態を表示する) は既定で有効で、`gh` が使えて PR のあるブランチでは、ブランチ列に PR の番号が出る。CI のチェックがあれば状態を、コメントがあれば件数を添える。
 
 ```text
 my-project | main ↑2↓3 #12✓ 3 | c9b8fce 3+13-5 | my-session
 ✻ Opus 4.7∙high ▆ 72% | ▇▇▇▆▆▆▅▅▄▄▃▃ 35% - 18:30 | ▅ Thu
 ```
 
-- 1 行目: ディレクトリ名 / git ブランチ (リモートとの差つき。[`PR_STATUS=1`](#pr_status1-で-pr-の状態を表示する) で GitHub の PR の状態も表示) / コミットハッシュと作業ツリーの変更行数 / セッション名
+- 1 行目: ディレクトリ名 / git ブランチ (リモートとの差つき。[`PR_STATUS`](#pr_status1-で-pr-の状態を表示する) が有効 (既定) なら GitHub の PR の状態も表示) / コミットハッシュと作業ツリーの変更行数 / セッション名
 - 2 行目: モデル名と推論強度 (effort) / コンテキスト使用率 / 5 時間のレートリミット残量の推移とリセット時刻 / 週間 (7 日間) のレートリミット残量とリセットの曜日
 
 コンテキスト使用率が高まる、またはレートリミット残量が減ると、色と数値で知らせる。
@@ -39,11 +39,11 @@ my-project | main ↑2↓3 #12✓ 3 | c9b8fce 3+13-5 | my-session
 | bash | `/bin/bash` (3.2 以上) | 4.1 以上 |
 | 必須コマンド | `jq` | `jq`, `flock` (util-linux に含まれる) |
 | 任意 | `git` (2.22 以上) | `git` (2.22 以上) |
-| 任意 (`PR_STATUS=1`) | `gh` (最新版) | `gh` (最新版) |
+| 任意 (`PR_STATUS`) | `gh` (最新版) | `gh` (最新版) |
 | ロケール | `C.UTF-8` (現行 macOS は標準搭載) | `C.UTF-8` (Debian 11 以降は標準搭載) |
 
 - `git` が無い場合や git 管理外のディレクトリでは、ブランチ列と commit 列が省略されるだけで他は表示される。2.22 より古い git は `git branch --show-current` が無いため、git 管理外と同じ表示になる
-- `gh` は `PR_STATUS=1` のときだけ必要。最新版を前提にしている (動作確認は 2.103)
+- `gh` は PR の状態の表示 (`PR_STATUS`、既定で有効) にだけ必要。無い、または `gh auth login` 前のときは PR が出ないだけで、他は表示される。最新版を前提にしている (動作確認は 2.103)
 - ログインシェル (zsh など) は問わない
 - 上記以外は `awk`, `date`, `stat`, `mkdir` など各 OS の標準コマンドだけを使う
 - 色は 24bit カラー (truecolor) で出力する。truecolor に対応した端末を使う
@@ -115,7 +115,7 @@ cp statusline.conf ~/.claude/statusline.conf
 
 ```bash
 COLOR_SCHEME=light
-GIT_FETCH=1
+GIT_FETCH=0
 LAYOUT_LINE1="session|directory|branch|commit"
 ```
 
@@ -127,11 +127,11 @@ LAYOUT_LINE1="session|directory|branch|commit"
 | `LAYOUT_LINE1` | `directory\|branch\|commit\|session` | 1 行目の要素と並び |
 | `LAYOUT_LINE2` | `model_ctx\|rate\|weekly` | 2 行目の並び |
 | `HIGHLIGHT` | `branch` | 無色の要素のうち目立たせるもの ([詳細](#ハイライト)) |
-| `GIT_FETCH` | `0` | `1` でバックグラウンド `git fetch` を有効にする |
-| `PR_STATUS` | `0` | `1` でブランチ列に PR の状態を表示する ([詳細](#pr_status1-で-pr-の状態を表示する)) |
+| `GIT_FETCH` | `1` | `0` でバックグラウンド `git fetch` を無効にする ([詳細](#git_fetch1-を使うときの注意)) |
+| `PR_STATUS` | `1` | `0` でブランチ列の PR の状態の表示を無効にする ([詳細](#pr_status1-で-pr-の状態を表示する)) |
 | `RATE_CHART_LEN` | `12` | レートリミットのチャートの文字数 (2〜20) |
 | `POLL_INTERVAL_SEC` | `300` | レートリミット履歴を記録する間隔 (秒) |
-| `GIT_FETCH_INTERVAL_SEC` | `900` | バックグラウンド `git fetch` の最小間隔 (秒) |
+| `GIT_FETCH_INTERVAL_SEC` | `180` | バックグラウンド `git fetch` の最小間隔 (秒) |
 
 - 値は `名前=値` のシェル変数代入で書く
 - 変数代入以外のコマンドも描画のたびに実行される。標準出力に何か出すコマンドはその文字列が statusline に混ざり、`exit` を書くと描画が止まる。`COLOR_SCHEME = light` のように `=` の前後にスペースを入れると代入ではなくコマンド実行になる
@@ -165,7 +165,7 @@ LAYOUT_LINE1="session|directory|branch|commit"
 | 行 | トークン | 内容 |
 | --- | --- | --- |
 | 1 行目 | `directory` | ディレクトリ名 |
-| 1 行目 | `branch` | ブランチ名 + リモートとの差 (+ `PR_STATUS=1` なら PR の状態) |
+| 1 行目 | `branch` | ブランチ名 + リモートとの差 (+ PR の状態。`PR_STATUS=0` で無効) |
 | 1 行目 | `commit` | コミットハッシュ + 変更行数 |
 | 1 行目 | `session` | セッション名 |
 | 2 行目 | `model_ctx` | モデル名･effort･コンテキスト使用率 |
@@ -210,7 +210,8 @@ HIGHLIGHT="directory|branch|session|rate_chart|rate_reset"
 
 ### `GIT_FETCH=1` を使うときの注意
 
-既定では `↑ahead↓behind` は最後に `git fetch` / `git pull` した時点の差を表示し、ネットワークにはアクセスしない。`GIT_FETCH=1` にすると、描画とは別のバックグラウンド処理で `git fetch` を実行し、次回以降の描画で `↓behind` が最新化される。fetch はカレントディレクトリごとに `GIT_FETCH_INTERVAL_SEC` (既定 15 分) に 1 回までに間引かれる。
+既定 (`GIT_FETCH=1`) では、描画とは別のバックグラウンド処理で `git fetch` を実行し、次回以降の描画で `↑ahead↓behind` の `↓behind` が最新化される。
+fetch はカレントディレクトリごとに `GIT_FETCH_INTERVAL_SEC` (既定 3 分) に 1 回までに間引かれる。ネットワークにアクセスしたくないときは `GIT_FETCH=0` にする。その場合、`↓behind` は最後に `git fetch` / `git pull` した時点の差になる。
 
 バックグラウンド fetch は認証プロンプトを出さない。パスフレーズ入力やホスト鍵確認が Claude Code の画面に割り込むのを避けるためで、次の場合は fetch が表示なしで失敗し、`↓behind` は更新されない。
 
@@ -222,14 +223,16 @@ HIGHLIGHT="directory|branch|session|rate_chart|rate_reset"
 
 ### `PR_STATUS=1` で PR の状態を表示する
 
-`PR_STATUS=1` にすると、現在のブランチに紐付く GitHub の PR をブランチ列の末尾 (リモートとの差の右) に半角スペースで区切って表示する。既定 (`0`) では表示せず、`gh` で GitHub に問い合わせることもない。
-
-```bash
-PR_STATUS=1
-```
+既定 (`PR_STATUS=1`) では、現在のブランチに紐付く GitHub の PR をブランチ列の末尾 (リモートとの差の右) に半角スペースで区切って表示する。`gh` が無い、または未認証のときは何も出ない。
 
 ```text
 my-project | feature/login ↑1 #12✓ 3 | c9b8fce 3+10-2 | my-session
+```
+
+表示せず、`gh` で GitHub に問い合わせることもしたくないときは、次のように `0` にする。
+
+```bash
+PR_STATUS=0
 ```
 
 - `#12` には下線が付き、色は PR の状態を表す (approved 緑、レビュー待ち無色、changes requested 赤、draft グレー、merged 紫 + 取り消し線、closed 無色 + 取り消し線)
@@ -262,7 +265,7 @@ my-project | feature/login ↑1 #12✓ 3 | c9b8fce 3+10-2 | my-session
 | ブランチ名 | git ブランチ名。25 文字を超えると `…` で省略。最後の `/` より後ろが 22 文字以下なら、そこを残して中間を省略 (`feature/improve-sta…/trim`)。detached HEAD では `HEAD` |
 | `↑N↓M` | リモート追跡ブランチとの差。`↑` が push 待ち、`↓` が pull 待ち。同期済みなら出ない |
 | `*` | リモート追跡ブランチが無い (青) / detached HEAD (無色) |
-| `#12✓ 3` | PR の番号･CI･コメントの件数 (`PR_STATUS=1` のときだけ) |
+| `#12✓ 3` | PR の番号･CI･コメントの件数 (`PR_STATUS=0` のときは出ない) |
 | コミットハッシュ | HEAD の短縮ハッシュ。桁数は git の `core.abbrev` に従い、省略しない。まだコミットが無いリポジトリでは出ない |
 | `3+13-5` | 作業ツリーの変更 (ファイル数 / 追加行 / 削除行)。未追跡ファイルを含む。変更が無ければ出さない |
 | セッション名 | 設定されているときだけ表示。40 文字を超えると `…` で省略 |
@@ -340,6 +343,8 @@ my-project
 
 リポジトリを最新化し、使っている版のスクリプトを再度コピーする。`~/.claude/statusline.conf` はそのまま引き継がれる。設定ファイルに書いた値は既定値より優先されるため、既定値に従わせたい項目は設定ファイルから行を消す。テンプレート (`statusline.conf`) から設定ファイルを作ったときは、更新後のテンプレートと見比べ、増えたトークン (`LAYOUT_LINE1` や `HIGHLIGHT` の値) や項目を取り込む。`LAYOUT_LINE1` に書いていないトークンは表示されない。
 
+`GIT_FETCH` と `PR_STATUS` は既定で有効になった (`GIT_FETCH_INTERVAL_SEC` の既定も 15 分から 3 分になった)。設定ファイルにこれらの行が無ければ、更新後はバックグラウンドの `git fetch` と `gh` による問い合わせが始まる。使いたくないときは設定ファイルに `GIT_FETCH=0` / `PR_STATUS=0` を書く。空の `GIT_FETCH=` / `PR_STATUS=` は書かなかったものとして扱われ、既定の有効になる。
+
 ```bash
 cd claude-code-statusline
 git pull
@@ -390,11 +395,11 @@ Linux では `statusline-linux.sh` をコピーする。
 
 ### `↓behind` が更新されない
 
-既定では `git fetch` を実行しないため、`↓` は最後に fetch / pull した時点の値になる。自動で最新化するには `GIT_FETCH=1` を設定する。設定しても更新されない場合は、[`GIT_FETCH=1` を使うときの注意](#git_fetch1-を使うときの注意) の認証条件を確認する。
+`GIT_FETCH=0` にしていると `git fetch` を実行しないため、`↓` は最後に fetch / pull した時点の値になる。`GIT_FETCH=1` (既定) にしているのに更新されない場合は、[`GIT_FETCH=1` を使うときの注意](#git_fetch1-を使うときの注意) の認証条件を確認する。
 
 ### PR が表示されない
 
-- `PR_STATUS=1` になっているか、`LAYOUT_LINE1` に `branch` があるか確認する
+- `PR_STATUS=0` にしていないか、`LAYOUT_LINE1` に `branch` があるか確認する。`gh` がインストールされていないときも何も出ない
 - `gh auth status` で認証済みか、リポジトリで `gh pr view` が PR を表示できるか確認する。リモートが複数あるときは `gh repo set-default` を実行する
 - ブランチを push していない、または push 先のブランチに PR が無いときは表示されない。マージ済み･クローズ済みの PR は、ローカルの HEAD がその PR の最後のコミットと一致するときだけ表示する
 - 取得に失敗し続けると、最後に成功してから 30 分で表示が消える
@@ -415,7 +420,7 @@ Claude Code が値を渡していない間は `--` が表示される。
 ## プライバシーとセキュリティ
 
 - `~/.claude/statusline.conf` はシェルスクリプトとして読み込まれ、描画のたびに実行される。信頼できない内容を書かない
-- ネットワークにアクセスするのは、`GIT_FETCH=1` (`git fetch`) と `PR_STATUS=1` (`gh` による GitHub API への問い合わせ) を有効にしたときだけ
+- ネットワークにアクセスするのは、`GIT_FETCH=1` (`git fetch`) と `PR_STATUS=1` (`gh` による GitHub API への問い合わせ) が有効なときだけ。どちらも既定で有効で、`GIT_FETCH=0` / `PR_STATUS=0` で止められる
 - レートリミットの履歴や PR のキャッシュは `/tmp/claude-statusline-<uid>/` にパーミッション 700 で保存する。他ユーザー所有やシンボリックリンクの場合は使わず、履歴と PR の状態なしで表示を続ける
 - 保存先は環境変数 `CLAUDE_STATUSLINE_HISTORY_DIR` で変えられる (設定ファイルでは変えられない)。指定先は無ければ作成し、パーミッションを 700 に変更するため、専用のディレクトリを指定する
 

@@ -24,14 +24,15 @@ my-project | main ↑2↓3 | c9b8fce 3+13-5 | my-session
 ✻ Opus 4.7∙high ▆ 72% | ▇▇▇▆▆▆▅▅▄▄▃▃ 35% - 18:30 | ▅ Thu
 ```
 
-With [`PR_STATUS=1`](#showing-pr-status-with-pr_status1), the PR number appears in the branch column, followed by the CI state if there are checks and the number of comments if there are any.
+[`PR_STATUS`](#showing-pr-status-with-pr_status1) is enabled by default, so on a branch with a PR (when `gh` is usable) the PR number appears in the branch column, followed by the CI state if there are checks and the number of comments if there are any.
 
 ```text
 my-project | main ↑2↓3 #12✓ 3 | c9b8fce 3+13-5 | my-session
 ✻ Opus 4.7∙high ▆ 72% | ▇▇▇▆▆▆▅▅▄▄▃▃ 35% - 18:30 | ▅ Thu
 ```
 
-- Line 1: directory name / git branch (with the difference from the remote; [`PR_STATUS=1`](#showing-pr-status-with-pr_status1) also shows the GitHub PR status) / commit hash and the number of changed lines in the working tree / session name
+- Line 1: directory name / git branch (with the difference from the remote; the GitHub PR status is also shown while [`PR_STATUS`](#showing-pr-status-with-pr_status1) is enabled, which is the
+  default) / commit hash and the number of changed lines in the working tree / session name
 - Line 2: model name and reasoning effort / context usage / trend of the 5-hour rate limit remaining and its reset time / weekly (7-day) rate limit remaining and the day of the week it resets
 
 When context usage rises or the rate limit remaining drops, the color and the number tell you.
@@ -44,11 +45,11 @@ When context usage rises or the rate limit remaining drops, the color and the nu
 | bash | `/bin/bash` (3.2 or later) | 4.1 or later |
 | Required commands | `jq` | `jq`, `flock` (part of util-linux) |
 | Optional | `git` (2.22 or later) | `git` (2.22 or later) |
-| Optional (`PR_STATUS=1`) | `gh` (latest) | `gh` (latest) |
+| Optional (`PR_STATUS`) | `gh` (latest) | `gh` (latest) |
 | Locale | `C.UTF-8` (included in current macOS) | `C.UTF-8` (included in Debian 11 and later) |
 
 - Without `git`, or outside a git repository, only the branch and commit columns are omitted and the rest is shown. A git older than 2.22 has no `git branch --show-current`, so it is treated the same as outside a git repository
-- `gh` is needed only with `PR_STATUS=1`. It assumes the latest version (tested with 2.103)
+- `gh` is needed only for showing the PR status (`PR_STATUS`, enabled by default). If it is missing or `gh auth login` has not been done, only the PR is not shown and everything else is displayed. It assumes the latest version (tested with 2.103)
 - The login shell (zsh, etc.) does not matter
 - Everything else uses only each OS's standard commands such as `awk`, `date`, `stat` and `mkdir`
 - Colors are output as 24-bit color (truecolor). Use a terminal that supports truecolor
@@ -121,7 +122,7 @@ cp statusline.conf ~/.claude/statusline.conf
 
 ```bash
 COLOR_SCHEME=light
-GIT_FETCH=1
+GIT_FETCH=0
 LAYOUT_LINE1="session|directory|branch|commit"
 ```
 
@@ -133,11 +134,11 @@ LAYOUT_LINE1="session|directory|branch|commit"
 | `LAYOUT_LINE1` | `directory\|branch\|commit\|session` | Elements and order of line 1 |
 | `LAYOUT_LINE2` | `model_ctx\|rate\|weekly` | Order of line 2 |
 | `HIGHLIGHT` | `branch` | Which uncolored elements to emphasize ([details](#highlight)) |
-| `GIT_FETCH` | `0` | `1` enables the background `git fetch` |
-| `PR_STATUS` | `0` | `1` shows the PR status in the branch column ([details](#showing-pr-status-with-pr_status1)) |
+| `GIT_FETCH` | `1` | `0` disables the background `git fetch` ([details](#notes-on-using-git_fetch1)) |
+| `PR_STATUS` | `1` | `0` disables showing the PR status in the branch column ([details](#showing-pr-status-with-pr_status1)) |
 | `RATE_CHART_LEN` | `12` | Number of characters in the rate limit chart (2-20) |
 | `POLL_INTERVAL_SEC` | `300` | Interval for recording the rate limit history (seconds) |
-| `GIT_FETCH_INTERVAL_SEC` | `900` | Minimum interval of the background `git fetch` (seconds) |
+| `GIT_FETCH_INTERVAL_SEC` | `180` | Minimum interval of the background `git fetch` (seconds) |
 
 - Values are written as shell variable assignments of the form `NAME=value`
 - Commands other than variable assignments are also executed on every render. A command that prints to stdout mixes that text into the statusline, and writing `exit` stops rendering.
@@ -172,7 +173,7 @@ Write the elements (tokens) in `LAYOUT_LINE1` / `LAYOUT_LINE2` separated by `|`.
 | Line | Token | Description |
 | --- | --- | --- |
 | Line 1 | `directory` | Directory name |
-| Line 1 | `branch` | Branch name + difference from the remote (+ PR status with `PR_STATUS=1`) |
+| Line 1 | `branch` | Branch name + difference from the remote (+ PR status; disabled with `PR_STATUS=0`) |
 | Line 1 | `commit` | Commit hash + number of changed lines |
 | Line 1 | `session` | Session name |
 | Line 2 | `model_ctx` | Model name, effort and context usage |
@@ -219,8 +220,9 @@ The upper limit of `POLL_INTERVAL_SEC` is the interval at which the whole chart 
 
 ### Notes on using `GIT_FETCH=1`
 
-By default `↑ahead↓behind` shows the difference as of the last `git fetch` / `git pull` and does not access the network.
-With `GIT_FETCH=1`, `git fetch` runs in a background process separate from rendering, and `↓behind` is refreshed in later renders. The fetch is throttled to once per `GIT_FETCH_INTERVAL_SEC` (15 minutes by default) for each current directory.
+By default (`GIT_FETCH=1`), `git fetch` runs in a background process separate from rendering, and the `↓behind` of `↑ahead↓behind` is refreshed in later renders.
+The fetch is throttled to once per `GIT_FETCH_INTERVAL_SEC` (3 minutes by default) for each current directory.
+To avoid network access, set `GIT_FETCH=0`. Then `↓behind` shows the difference as of the last `git fetch` / `git pull`.
 
 The background fetch never shows an authentication prompt. This avoids passphrase or host key prompts interrupting the Claude Code screen. In the following cases the fetch fails silently and `↓behind` is not updated.
 
@@ -232,14 +234,16 @@ To use the automatic refresh, register the key in ssh-agent beforehand with `ssh
 
 ### Showing PR status with `PR_STATUS=1`
 
-With `PR_STATUS=1`, the GitHub PR linked to the current branch is shown at the end of the branch column (right of the difference from the remote), separated by a space. By default (`0`) it is not shown and `gh` is not used to query GitHub.
-
-```bash
-PR_STATUS=1
-```
+By default (`PR_STATUS=1`), the GitHub PR linked to the current branch is shown at the end of the branch column (right of the difference from the remote), separated by a space. Nothing is shown if `gh` is missing or not authenticated.
 
 ```text
 my-project | feature/login ↑1 #12✓ 3 | c9b8fce 3+10-2 | my-session
+```
+
+To neither show it nor query GitHub with `gh`, set it to `0` as follows.
+
+```bash
+PR_STATUS=0
 ```
 
 - `#12` is underlined and its color shows the PR state (approved green, awaiting review uncolored, changes requested red, draft gray, merged purple + strikethrough, closed uncolored + strikethrough)
@@ -275,7 +279,7 @@ Behavior:
 | Branch name | git branch name. Truncated with `…` beyond 25 characters. If the part after the last `/` is 22 characters or fewer, it is kept and the middle is truncated (`feature/improve-sta…/trim`). `HEAD` for a detached HEAD |
 | `↑N↓M` | Difference from the remote-tracking branch. `↑` is waiting to be pushed, `↓` is waiting to be pulled. Not shown when in sync |
 | `*` | No remote-tracking branch (blue) / detached HEAD (uncolored) |
-| `#12✓ 3` | PR number, CI and number of comments (only with `PR_STATUS=1`) |
+| `#12✓ 3` | PR number, CI and number of comments (not shown with `PR_STATUS=0`) |
 | Commit hash | Short hash of HEAD. The length follows git's `core.abbrev` and is never truncated. Not shown in a repository with no commits yet |
 | `3+13-5` | Changes in the working tree (files / added lines / deleted lines). Includes untracked files. Not shown if there are no changes |
 | Session name | Shown only when set. Truncated with `…` beyond 40 characters |
@@ -357,6 +361,10 @@ Values in the configuration file take precedence over the defaults, so delete th
 If you created the configuration file from the template (`statusline.conf`), compare it with the updated template and take in any new tokens (values of `LAYOUT_LINE1` or `HIGHLIGHT`) and options.
 Tokens not written in `LAYOUT_LINE1` are not shown.
 
+`GIT_FETCH` and `PR_STATUS` are now enabled by default (the default of `GIT_FETCH_INTERVAL_SEC` also changed from 15 minutes to 3 minutes).
+If your configuration file has no lines for them, the background `git fetch` and the queries via `gh` start after the update.
+To avoid them, write `GIT_FETCH=0` / `PR_STATUS=0` in the configuration file. An empty `GIT_FETCH=` / `PR_STATUS=` is treated as not written, so the default (enabled) applies.
+
 ```bash
 cd claude-code-statusline
 git pull
@@ -408,11 +416,11 @@ Change `export LC_ALL=C.UTF-8` at the top of the script to an available UTF-8 lo
 
 ### `↓behind` is not updated
 
-By default `git fetch` is not run, so `↓` is the value as of the last fetch / pull. Set `GIT_FETCH=1` to refresh it automatically. If it is still not updated, check the authentication conditions in [Notes on using `GIT_FETCH=1`](#notes-on-using-git_fetch1).
+With `GIT_FETCH=0`, `git fetch` is not run, so `↓` is the value as of the last fetch / pull. If it is not updated with `GIT_FETCH=1` (the default), check the authentication conditions in [Notes on using `GIT_FETCH=1`](#notes-on-using-git_fetch1).
 
 ### The PR is not shown
 
-- Check that `PR_STATUS=1` is set and that `LAYOUT_LINE1` contains `branch`
+- Check that `PR_STATUS=0` is not set and that `LAYOUT_LINE1` contains `branch`. Nothing is shown either if `gh` is not installed
 - Check that `gh auth status` shows you are authenticated and that `gh pr view` in the repository shows the PR. With several remotes, run `gh repo set-default`
 - It is not shown if the branch has not been pushed or the pushed branch has no PR. A merged or closed PR is shown only when the local HEAD matches that PR's last commit
 - If fetching keeps failing, the display disappears 30 minutes after the last success
@@ -433,7 +441,7 @@ By default `git fetch` is not run, so `↓` is the value as of the last fetch / 
 ## Privacy and security
 
 - `~/.claude/statusline.conf` is loaded as a shell script and executed on every render. Do not write untrusted content in it
-- The network is accessed only when you enable `GIT_FETCH=1` (`git fetch`) or `PR_STATUS=1` (queries to the GitHub API via `gh`)
+- The network is accessed only while `GIT_FETCH=1` (`git fetch`) or `PR_STATUS=1` (queries to the GitHub API via `gh`) is enabled. Both are enabled by default and can be stopped with `GIT_FETCH=0` / `PR_STATUS=0`
 - The rate limit history and the PR cache are saved in `/tmp/claude-statusline-<uid>/` with permission 700. If the directory is owned by another user or is a symbolic link, it is not used and the display continues without the history and the PR status
 - The location can be changed with the environment variable `CLAUDE_STATUSLINE_HISTORY_DIR` (not with the configuration file). The specified directory is created if missing and its permission is changed to 700, so specify a dedicated directory
 

@@ -38,6 +38,9 @@ fetch は投げっぱなしの非同期処理で描画出力に現れないた�
 | `lock-released` | fetch の実行中にロックが残っていない (Linux 版は `flock -n`、macOS 版はロック dir の有無で確認) |
 | `marker-unwritable` | 間引きマーカーを書けないときは fetch を投げない |
 | `clamp-zero-interval` | conf に `GIT_FETCH_INTERVAL_SEC=0` を書いても下限へ丸められ、間引きが効く |
+| `default-on` | env も conf も無い (既定) と fetch が起動される (オプトアウト形式) |
+| `opt-out-conf` | conf に `GIT_FETCH=0` を書くと fetch を起動しない |
+| `default-interval` | 既定の間引き間隔は 180 秒。170 秒前のマーカーなら起動せず、190 秒前なら起動する |
 
 `marker-unwritable` は、マーカーと同名のディレクトリを先に作ることで書き込み失敗を再現します。`chmod` で書き込みを禁止する方法は、root で動く CI では書けてしまうため使っていません。
 
@@ -49,6 +52,8 @@ PR の状態表示の取得も投げっぱなしの非同期処理のため、fa
 | --- | --- |
 | `invoked` | `PR_STATUS=1` のときに `gh` が起動され、次の描画に PR が出る |
 | `not-invoked-when-disabled` | `PR_STATUS=0` のときと、`PR_STATUS=1` でも branch 列を描画しないときは `gh` を起動せず、`pr-*` のファイルも作らない |
+| `default-on` | env も conf も無い (既定) と `gh` が起動される (オプトアウト形式) |
+| `opt-out-conf` | conf に `PR_STATUS=0` を書くと `gh` を起動せず、`pr-*` のファイルも作らない |
 | `non-blocking` | `gh` が 5 秒かかっても、描画は 3 秒未満で返る |
 | `throttle` | 間隔内の 2 回目の描画では `gh` を起動しない |
 | `single-flight` | 取得の実行中 (`.inflight` がある) は、間隔を過ぎても次の `gh` を起動しない |
@@ -193,13 +198,13 @@ PATH の先頭に `jq` と `defaults` のスタブを置き、呼び出しを記
 | `disable-history/<case>` | 空ファイル。履歴ディレクトリを無効化する |
 | `show-model-off/<case>` | 空ファイル。`CLAUDE_STATUSLINE_SHOW_MODEL_NAME=0` を渡す |
 | `show-cwd-off/<case>` | 空ファイル。`CLAUDE_STATUSLINE_SHOW_CWD=0` を渡す |
-| `git-fetch-on/<case>` | 空ファイル。`CLAUDE_STATUSLINE_GIT_FETCH=1` を渡す |
+| `git-fetch-on/<case>` | 空ファイル。`CLAUDE_STATUSLINE_GIT_FETCH=1` を渡す (マーカーが無いケースは `0` を渡す) |
 | `config-file/<case>` | 設定ファイルとして読ませる中身 |
 | `layout/<case>` | 1 行目 = `LAYOUT_LINE1`、2 行目 = `LAYOUT_LINE2` |
 | `highlight/<case>` | 1 行目 = `CLAUDE_STATUSLINE_HIGHLIGHT` |
 | `pr-cache/<case>` | PR の状態表示のキャッシュとして仕込む 1 行 (`lib/pr-cache.sh`) |
 | `hyperlink-off/<case>` | 空ファイル。`FORCE_HYPERLINK=0` を渡す |
-| `pr-status-on/<case>` | 空ファイル。`CLAUDE_STATUSLINE_PR_STATUS=1` を渡す |
+| `pr-status-on/<case>` | 空ファイル。`CLAUDE_STATUSLINE_PR_STATUS=1` を渡す (マーカーが無いケースは `0` を渡す) |
 | `pr-responses/*.json` | `pr-status-behavior.sh` で fake gh に返させる GraphQL の応答 |
 | `lib/` | ハーネス間で共有するヘルパと fake git / fake gh |
 
@@ -207,7 +212,7 @@ PATH の先頭に `jq` と `defaults` のスタブを置き、呼び出しを記
 
 - `seeds/`: コピー直後の履歴ファイルは mtime が新しいため、本体はサンプリング間隔内と判断して追記しません。仕込んだ値がそのままチャートの左側に使われ、右端だけが現在値になることを確かめられます。
 - `disable-history/`: 履歴ディレクトリへの symlink を `CLAUDE_STATUSLINE_HISTORY_DIR` に渡し、本体の symlink 判定で履歴機能を無効にします。履歴が無効でもチャート右端に現在値が出ることの検証に使います。
-- `git-fetch-on/`: fetch は fake git が受けるため、実際のネットワークには出ません。fetch 有効時も描画出力が変わらないことを確かめます。
+- `git-fetch-on/`: マーカーが無いケースでは `CLAUDE_STATUSLINE_GIT_FETCH` を `0` で渡します (本体の既定は `1` のため)。fetch は fake git が受けるため、実際のネットワークには出ません。fetch 有効時も描画出力が変わらないことを確かめます。
 - `config-file/`: 通常ファイルのほか、ディレクトリ (読めない conf の再現。`83-config-unreadable`) や、配布テンプレート `statusline.conf` への symlink (`86-config-template` / `95-config-template-layout`) も置けます。
   - `86-config-template` / `95-config-template-layout` は配布テンプレート `statusline.conf` を読ませ、出力が既定値のときと一致することで、テンプレートの値が既定値とずれていないことを確かめます。`86` は branch / session の無い fixture のため、1 行目の並びの一致は `95` で確かめます。
     - テンプレートは `HIGHLIGHT` だけをおすすめの設定 `branch|pr_number` にしています。どちらも PR を表示しない fixture のため、`pr_number` は出力に現れません。
@@ -216,7 +221,7 @@ PATH の先頭に `jq` と `defaults` のスタブを置き、呼び出しを記
 - `highlight/`: マーカーが無いケースでは空で渡します (conf → 既定値。既定は `branch`)。conf の `HIGHLIGHT` を確かめるケース (`166-highlight-config` など) は `config-file/` を使い、env が conf に勝つことは両方のマーカーを置いて確かめます。前後の空白やタブも含めて 1 行目をそのまま渡します (`165-highlight-tokens`)。
 - `pr-cache/`: 1 行目をキャッシュの 1 行として書きます。`printf %b` で展開するのでタブは `\t`、ESC は `\033` と書けます。`fetched_at` は現在時刻に依存するため、`@NOW@` (現在時刻) と `@STALE@` (現在時刻 - 4000 秒) を仕込む直前に置き換えます。1 行目が空ならキャッシュを置きません。どの場合も新しいマーカーを置くため、描画は取得を起動せず、仕込んだキャッシュがそのまま読まれます
 - `hyperlink-off/`: マーカーが無いケースでは `FORCE_HYPERLINK` を空で渡し、開発者のシェルの値が混ざらないようにしています
-- `pr-status-on/`: マーカーが無いケースでは `CLAUDE_STATUSLINE_PR_STATUS` を空で渡します。PR は fake gh が受け、`pr-cache/` で仕込んだキャッシュを branch 列に出すケースで使います
+- `pr-status-on/`: マーカーが無いケースでは `CLAUDE_STATUSLINE_PR_STATUS` を `0` で渡します (本体の既定は `1` で、渡さないと fake gh が呼ばれるため)。PR は fake gh が受け、`pr-cache/` で仕込んだキャッシュを branch 列に出すケースで使います
 
 `lib/` の中身は次のとおりです。
 
@@ -338,6 +343,8 @@ PR の状態表示の子プロセスが呼ぶ `gh api graphql ... --jq <式>` �
 - 履歴ディレクトリ: `regression.sh` / `git-fetch-behavior.sh` / `pr-status-behavior.sh` / `e2e-preview.sh` のいずれも、ケースごとに `mktemp -d` で作った一時ディレクトリを `CLAUDE_STATUSLINE_HISTORY_DIR` に渡し、終了時に削除します。本番の `/tmp/claude-statusline-<uid>/` には触れません。実 uid で作られたディレクトリなので本体の所有者チェックを通り、初回起動時の履歴書き込みも実際に動きます。
 - 設定ファイル: `CLAUDE_STATUSLINE_CONFIG` は、`config-file/` にマーカーがあるケースを除き、存在しないパスに固定します。開発者の `~/.claude/statusline.conf` を読むことはありません。すべてのハーネスが `lib/config-file.sh` を通してこの規則に従います。
 - `CLAUDE_STATUSLINE_*` の環境変数: マーカーが無いときは空文字で渡します。本体は空を未設定と同じに扱うため、conf → 既定値の順にフォールバックします。既定値を直接渡すと conf の値が常に環境変数に負け、conf の検証ができなくなるためです。`CLAUDE_STATUSLINE_COLOR_SCHEME` も空で渡し、開発者のシェルの値が混ざらないようにしています。
+  - `CLAUDE_STATUSLINE_GIT_FETCH` と `CLAUDE_STATUSLINE_PR_STATUS` は例外で、マーカーが無いときは `0` を渡します。本体の既定がどちらも `1` で、空で渡すと開発者の環境で実際に `git fetch` や `gh` が動くためです。
+    ただし、`config-file/` の conf がその項目を指定するケースは空で渡し、conf に決めさせます (env は conf に勝つため)。既定で動くことは `git-fetch-behavior.sh` と `pr-status-behavior.sh` の `default-on` が確かめます。
   - `CLAUDE_STATUSLINE_HIGHLIGHT` は `regression.sh` / `pr-status-behavior.sh` / `e2e-preview.sh` のすべてで必ず渡します。渡さないと、ハイライトを export している開発者の手元だけで、branch などを含むケースが落ちます。
 - 短縮名の変数: `regression.sh` は `SHOW_MODEL_NAME` や `LAYOUT_LINE1` などの短縮名 11 個を、全ケースで既定値と異なる値にして渡します (`HIGHLIGHT` は全トークンを指定した値)。本体は conf を読む前にこれらを `unset` するため、出力には影響しません。この `unset` が消えると全ケースが失敗するので、その回帰ガードを兼ねています。
 - `CLAUDE_CONFIG_DIR` / `COLORFGBG`: `COLOR_SCHEME` の既定値は `auto` で、開発者の実際の `~/.claude/settings.json` の `theme` や端末の背景色を読みます。

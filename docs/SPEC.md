@@ -56,7 +56,7 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 ✻ <model>∙<effort> <ctx> | <rate> | <weekly>
 ```
 
-上は既定のレイアウトでの並び。各行の並び順は [レイアウト](#レイアウト-layout_line1--layout_line2) で変えられる。`<pr>` は `PR_STATUS=1` のときだけ出る。
+上は既定のレイアウトでの並び。各行の並び順は [レイアウト](#レイアウト-layout_line1--layout_line2) で変えられる。`<pr>` は `PR_STATUS=1` (既定) のときだけ出る。
 
 ### 区切り
 
@@ -126,7 +126,7 @@ Claude Code から stdin で渡される JSON のうち、次のフィールド�
 
 #### PR の状態 (`<pr>`)
 
-現在のブランチに紐付く GitHub の PR を `#<番号>[<CI記号>][ <件数>]` で、`<ab>` の右 (`<ab>` が空ならブランチ名の右) に半角スペース区切りで出す (例 `main ↑1 #12✓ 3`)。`PR_STATUS=1` のときだけ表示する。詳細は [PR の状態 (`PR_STATUS=1`)](#pr-の状態-pr_status1)。
+現在のブランチに紐付く GitHub の PR を `#<番号>[<CI記号>][ <件数>]` で、`<ab>` の右 (`<ab>` が空ならブランチ名の右) に半角スペース区切りで出す (例 `main ↑1 #12✓ 3`)。`PR_STATUS=1` (既定) のときだけ表示する。詳細は [PR の状態 (`PR_STATUS=1`)](#pr-の状態-pr_status1)。
 
 ### commit 列
 
@@ -469,7 +469,7 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 
 | 値 | 扱い |
 | --- | --- |
-| 空、数字以外を含む (負値を含む) | 既定値 (`12` / `300` / `900`) |
+| 空、数字以外を含む (負値を含む) | 既定値 (`12` / `300` / `180`) |
 | 9 桁以上の数字 | 上限 |
 | 下限未満 (`0` を含む) | 下限 (`2` / `60` / `60`) |
 | 上限超 | 上限 |
@@ -490,14 +490,14 @@ effort `max` 専用。`COLOR_SCHEME` によらず固定。i 文字目 (0 始ま�
 | `SHOW_MODEL_NAME` | `1` | `CLAUDE_STATUSLINE_SHOW_MODEL_NAME` | `1` でモデル名を表示。それ以外は非表示 (`✻` は残る) |
 | `COLOR_SCHEME` | `auto` | `CLAUDE_STATUSLINE_COLOR_SCHEME` | `auto` は Claude Code のテーマに合わせる ([判定](#カラースキームの判定-color_schemeauto))。`light` で light、`dark` で dark。それ以外は dark |
 | `SHOW_CWD` | `1` | `CLAUDE_STATUSLINE_SHOW_CWD` | `1` で directory 列を表示。それ以外は非表示 |
-| `GIT_FETCH` | `0` | `CLAUDE_STATUSLINE_GIT_FETCH` | `1` でバックグラウンド fetch を有効化。それ以外は無効 |
-| `PR_STATUS` | `0` | `CLAUDE_STATUSLINE_PR_STATUS` | `1` で [PR の状態](#pr-の状態-pr_status1) を branch 列に表示。それ以外は無効 |
+| `GIT_FETCH` | `1` | `CLAUDE_STATUSLINE_GIT_FETCH` | `1` でバックグラウンド fetch を有効化。それ以外 (`0` を含む) は無効。空は既定値 (有効) |
+| `PR_STATUS` | `1` | `CLAUDE_STATUSLINE_PR_STATUS` | `1` で [PR の状態](#pr-の状態-pr_status1) を branch 列に表示。それ以外 (`0` を含む) は無効。空は既定値 (有効) |
 | `LAYOUT_LINE1` | `directory\|branch\|commit\|session` | `CLAUDE_STATUSLINE_LAYOUT_LINE1` | [レイアウト](#レイアウト-layout_line1--layout_line2) |
 | `LAYOUT_LINE2` | `model_ctx\|rate\|weekly` | `CLAUDE_STATUSLINE_LAYOUT_LINE2` | [レイアウト](#レイアウト-layout_line1--layout_line2) |
 | `HIGHLIGHT` | `branch` | `CLAUDE_STATUSLINE_HIGHLIGHT` | [ハイライト](#ハイライト-highlight) |
 | `RATE_CHART_LEN` | `12` | なし | rate チャートの文字数。[推奨レンジ](#間引き間隔の推奨レンジ) |
 | `POLL_INTERVAL_SEC` | `300` | なし | [推奨レンジ](#間引き間隔の推奨レンジ) |
-| `GIT_FETCH_INTERVAL_SEC` | `900` | なし | [推奨レンジ](#間引き間隔の推奨レンジ) |
+| `GIT_FETCH_INTERVAL_SEC` | `180` | なし | [推奨レンジ](#間引き間隔の推奨レンジ) |
 
 ### 優先順位と設定ファイル
 
@@ -612,7 +612,7 @@ branch の塗る範囲の例:
 
 ## バックグラウンド fetch (`GIT_FETCH=1`)
 
-`GIT_FETCH=1` のときだけ、`↓behind` を最新に近づけるために `git fetch --quiet` をバックグラウンドで起動する。`GIT_FETCH=0` (既定) では fetch を一切行わず、ネットワークにアクセスしない。
+`GIT_FETCH=1` (既定) のときだけ、`↓behind` を最新に近づけるために `git fetch --quiet` をバックグラウンドで起動する。`GIT_FETCH=0` では fetch を一切行わず、ネットワークにアクセスしない。
 
 - 描画は fetch の完了を待たない。fetch の結果は次回以降の描画の `<ab>` に反映される
 - 前回の起動から `GIT_FETCH_INTERVAL_SEC` 秒未満なら起動しない。間隔は `workspace.current_dir` ごとに数える (同じリポジトリでもサブディレクトリや worktree が違えば別に数える)
@@ -622,10 +622,10 @@ branch の塗る範囲の例:
 
 ## PR の状態 (`PR_STATUS=1`)
 
-`PR_STATUS=1` のときだけ、現在のブランチに紐付く GitHub の PR を branch 列の `<pr>` に表示する。情報は `gh api graphql` をバックグラウンドで起動して取得し、描画はキャッシュを読むだけにする。
+`PR_STATUS=1` (既定) のときだけ、現在のブランチに紐付く GitHub の PR を branch 列の `<pr>` に表示する。情報は `gh api graphql` をバックグラウンドで起動して取得し、描画はキャッシュを読むだけにする。
 
-- `PR_STATUS=0` (既定) では `gh` を一切起動せず、ネットワークにもアクセスしない
-- `PR_STATUS=1` でも、`LAYOUT_LINE1` に `branch` が無ければ `gh` を起動しない
+- `PR_STATUS=0` では `gh` を一切起動せず、ネットワークにもアクセスしない
+- `PR_STATUS=1` でも、`LAYOUT_LINE1` に `branch` が無ければ、または `gh` が PATH に無ければ `gh` を起動しない
 - 値が空のときは `<pr>` も前のスペースも出さない。branch 列そのものは残る
 - 環境変数 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` は見ない。設定されていても取得する
 

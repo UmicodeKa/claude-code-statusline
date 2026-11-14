@@ -42,6 +42,9 @@ The input is fixed to `fixtures/67-git-fetch-ahead.json` (with an upstream). The
 | `lock-released` | No lock remains while the fetch is running (checked with `flock -n` on the Linux version, and by the presence of the lock dir on the macOS version) |
 | `marker-unwritable` | No fetch is started when the throttling marker cannot be written |
 | `clamp-zero-interval` | Even if the conf sets `GIT_FETCH_INTERVAL_SEC=0`, it is clamped to the lower bound and throttling still works |
+| `default-on` | With neither env nor conf (the default), a fetch is started (opt-out form) |
+| `opt-out-conf` | A fetch is not started when the conf sets `GIT_FETCH=0` |
+| `default-interval` | The default throttling interval is 180 seconds. A marker 170 seconds old does not start a fetch, and one 190 seconds old does |
 
 `marker-unwritable` reproduces the write failure by first creating a directory with the same name as the marker. Disabling writes with `chmod` is not used, because the write would succeed on CI running as root.
 
@@ -55,6 +58,8 @@ The child process runs `cd` to the cwd and then calls `gh`, so it does not get a
 | --- | --- |
 | `invoked` | `gh` is started when `PR_STATUS=1`, and the PR appears in the next render |
 | `not-invoked-when-disabled` | `gh` is not started, and no `pr-*` files are created, when `PR_STATUS=0`, or when `PR_STATUS=1` but the branch column is not rendered |
+| `default-on` | With neither env nor conf (the default), `gh` is started (opt-out form) |
+| `opt-out-conf` | `gh` is not started, and no `pr-*` files are created, when the conf sets `PR_STATUS=0` |
 | `non-blocking` | Rendering returns in under 3 seconds even if `gh` takes 5 seconds |
 | `throttle` | A second render within the interval does not start `gh` |
 | `single-flight` | While a retrieval is running (`.inflight` exists), the next `gh` is not started even after the interval has passed |
@@ -211,13 +216,13 @@ The other directories are "markers" that take effect only for a case that has a 
 | `disable-history/<case>` | Empty file. Disables the history directory |
 | `show-model-off/<case>` | Empty file. Passes `CLAUDE_STATUSLINE_SHOW_MODEL_NAME=0` |
 | `show-cwd-off/<case>` | Empty file. Passes `CLAUDE_STATUSLINE_SHOW_CWD=0` |
-| `git-fetch-on/<case>` | Empty file. Passes `CLAUDE_STATUSLINE_GIT_FETCH=1` |
+| `git-fetch-on/<case>` | Empty file. Passes `CLAUDE_STATUSLINE_GIT_FETCH=1` (a case with no marker passes `0`) |
 | `config-file/<case>` | Contents to be read as the config file |
 | `layout/<case>` | Line 1 = `LAYOUT_LINE1`, line 2 = `LAYOUT_LINE2` |
 | `highlight/<case>` | Line 1 = `CLAUDE_STATUSLINE_HIGHLIGHT` |
 | `pr-cache/<case>` | The single line to seed as the PR status display cache (`lib/pr-cache.sh`) |
 | `hyperlink-off/<case>` | Empty file. Passes `FORCE_HYPERLINK=0` |
-| `pr-status-on/<case>` | Empty file. Passes `CLAUDE_STATUSLINE_PR_STATUS=1` |
+| `pr-status-on/<case>` | Empty file. Passes `CLAUDE_STATUSLINE_PR_STATUS=1` (a case with no marker passes `0`) |
 | `pr-responses/*.json` | GraphQL responses that the fake gh returns in `pr-status-behavior.sh` |
 | `lib/` | Helpers shared between harnesses, and the fake git / fake gh |
 
@@ -227,7 +232,8 @@ Notes for each marker follow.
   This lets you verify that the seeded values are used as-is for the left side of the chart, with only the right end being the current value.
 - `disable-history/`: Passes a symlink to the history directory as `CLAUDE_STATUSLINE_HISTORY_DIR`, so the main script's symlink check disables the history feature.
   It is used to verify that the current value still appears at the right end of the chart even when history is disabled.
-- `git-fetch-on/`: The fetch is received by the fake git, so it never reaches the real network. This verifies that the rendered output does not change when fetch is enabled.
+- `git-fetch-on/`: For a case with no marker, `CLAUDE_STATUSLINE_GIT_FETCH` is passed as `0` (the main script defaults to `1`).
+  The fetch is received by the fake git, so it never reaches the real network. This verifies that the rendered output does not change when fetch is enabled.
 - `config-file/`: Besides regular files, you can also place a directory (reproduces an unreadable conf; `83-config-unreadable`) or a symlink to the distributed template `statusline.conf` (`86-config-template` / `95-config-template-layout`).
   - `86-config-template` / `95-config-template-layout` load the distributed template `statusline.conf` and verify that its values have not drifted from the defaults, by checking that the output matches the output with default values.
     - The template sets only `HIGHLIGHT` to the recommended `branch|pr_number`. Neither fixture displays a PR, so `pr_number` does not show up in the output.
@@ -241,7 +247,8 @@ Notes for each marker follow.
   `fetched_at` depends on the current time, so `@NOW@` (the current time) and `@STALE@` (the current time minus 4000 seconds) are replaced just before seeding. If line 1 is empty, no cache is placed.
   In every case a new marker is placed, so rendering does not start a retrieval and the seeded cache is read as is
 - `hyperlink-off/`: For a case with no marker, `FORCE_HYPERLINK` is passed empty so that the value in the developer's shell does not leak in
-- `pr-status-on/`: For a case with no marker, `CLAUDE_STATUSLINE_PR_STATUS` is passed empty. The PR is received by the fake gh, and this is used for cases that show the cache seeded via `pr-cache/` in the branch column
+- `pr-status-on/`: For a case with no marker, `CLAUDE_STATUSLINE_PR_STATUS` is passed as `0` (the main script defaults to `1`, and otherwise the fake gh would be called).
+  The PR is received by the fake gh, and this is used for cases that show the cache seeded via `pr-cache/` in the branch column
 
 The contents of `lib/` are as follows.
 
@@ -372,6 +379,10 @@ So that case results do not depend on the developer's environment, the harness s
 - `CLAUDE_STATUSLINE_*` environment variables: When there is no marker, they are passed as empty strings. The main script treats empty the same as unset, so it falls back in the order conf, then default.
   Passing the default directly would make the environment variable always beat the conf value, and the conf could not be verified.
   `CLAUDE_STATUSLINE_COLOR_SCHEME` is also passed empty so that the value in the developer's shell does not leak in.
+  - `CLAUDE_STATUSLINE_GIT_FETCH` and `CLAUDE_STATUSLINE_PR_STATUS` are exceptions and are passed as `0` when there is no marker.
+    Both default to `1` in the main script, and passing them empty would run a real `git fetch` and `gh` on the developer's machine.
+    A case whose `config-file/` conf specifies the option passes it empty so the conf decides (env takes precedence over conf).
+    That they work by default is verified by `default-on` in `git-fetch-behavior.sh` and `pr-status-behavior.sh`.
   - `CLAUDE_STATUSLINE_HIGHLIGHT` is always passed by `regression.sh` / `pr-status-behavior.sh` / `e2e-preview.sh`.
     If it is not passed, cases that include the branch and so on would fail only on the machine of a developer who exports a highlight setting.
 - Short-name variables: `regression.sh` passes 11 short-name variables such as `SHOW_MODEL_NAME` and `LAYOUT_LINE1` with values different from the defaults in every case (`HIGHLIGHT` is set to a value that specifies all tokens).

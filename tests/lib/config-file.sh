@@ -23,3 +23,10 @@ config_for_case() {
     printf '%s' "$NO_CONFIG"
   fi
 }
+
+# conf $1 が設定 $2 (例: PR_STATUS) を代入していれば 0 を返す。
+# GIT_FETCH / PR_STATUS は本体の既定が 1 のため、ハーネスはマーカーが無いと env で 0 を渡す。
+# env は conf に勝つので、conf でこれらを指定するケースは env を空にして conf に決めさせる必要がある。
+conf_sets() {
+  [ -f "$1" ] && grep -Eq "^[[:space:]]*(export[[:space:]]+)?$2=" "$1"
+}

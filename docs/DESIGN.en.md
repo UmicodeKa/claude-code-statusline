@@ -318,7 +318,8 @@ The head branch name and owner are decided from the push target (`@{push}`) beca
 
 `MERGED` / `CLOSED` is selected only when `headRefOid` matches the local HEAD. This avoids showing an old PR when a branch with the same name as a merged PR is reused with new commits.
 
-`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is not checked. This keeps the PR status display usable for people who set that variable to hide Claude Code's built-in PR badge. Setting `PR_STATUS=1` is itself an explicit opt-in.
+`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is not checked. This keeps the PR status display usable for people who set that variable to hide Claude Code's built-in PR badge.
+`PR_STATUS` is enabled by default, so people who want to stop the traffic do so with `PR_STATUS=0` and `GIT_FETCH=0`, not with this variable.
 
 ### Early Fetch on a Change in the stdin `pr`
 
@@ -520,10 +521,11 @@ safety checks).
 ### Entry Guard of `maybe_git_fetch`
 
 - Location: `[ "$GIT_FETCH" = "1" ] || return` at the top of `maybe_git_fetch`, and the repo / branch / detached / `HISTORY_DIR` checks
-- What it does: with the default `GIT_FETCH=0`, returns without doing anything. Does not launch a fetch for a detached HEAD or for a branch with no upstream
-- What happens if removed: network access occurs in the environments of users who did not opt in
-- Rendering cost: with `GIT_FETCH=1`, even the normal path that does not launch a throttled fetch adds 3 forks (`cksum` / `date` / `stat`) per render. With `GIT_FETCH=0` (the default), it returns at the entry, so nothing is added
-- Tests that guard it: `60-ab-ahead` (`fetch_marker: absent`), `67-git-fetch-ahead` (`present`), `68-git-fetch-detached` / `69-git-fetch-no-upstream` (`absent`)
+- What it does: with `GIT_FETCH=0`, returns without doing anything. Does not launch a fetch for a detached HEAD or for a branch with no upstream
+- What happens if removed: network access occurs even in the environments of users who set `GIT_FETCH=0` (opted out)
+- Rendering cost: with `GIT_FETCH=1`, even the normal path that does not launch a throttled fetch adds 3 forks (`cksum` / `date` / `stat`) per render. With `GIT_FETCH=0`, it returns at the entry, so nothing is added
+- Tests that guard it: `default-on` (fetches by default) and `opt-out-conf` (does not fetch with `GIT_FETCH=0` in conf) in `tests/git-fetch-behavior.sh`, `60-ab-ahead` (`fetch_marker: absent`),
+  `67-git-fetch-ahead` (`present`), `68-git-fetch-detached` / `69-git-fetch-no-upstream` (`absent`)
 
 ### File Descriptor Redirection for the fetch Child Process
 
@@ -793,8 +795,21 @@ askpass-family environment variables are used to suppress prompts instead.
 
 ### Synchronous fetch in the Render Path
 
-Fetching on every render to keep `↓behind` up to date was not adopted, because rendering would stall on the network. Users who need it opt in with `GIT_FETCH=1`, and the result of a fetch fired and forgotten in a separate process is
-reflected in later renders.
+Fetching on every render to keep `↓behind` up to date was not adopted, because rendering would stall on the network. Instead, the result of a fetch fired and forgotten in a separate process is
+reflected in later renders. That fetch runs with `GIT_FETCH=1` (the default) and can be stopped with `GIT_FETCH=0`.
+
+### Disabling the Fetching Features by Default
+
+Having `GIT_FETCH` and `PR_STATUS` disabled by default, so that only people who set them to `1` use them (opt-in), was changed to having them default to `1` (opt-out).
+Neither the refreshed `↓behind` nor the PR status is noticed unless it is enabled, so they reached only people who write a configuration file.
+
+Enabling them by default does not make rendering wait. Both run in background child processes separate from the render path, and when `gh` is missing or not authenticated they fail without showing
+anything. In exchange, network access (`git fetch` and queries to the GitHub API) now happens even in the environment of a user who configured nothing.
+Those who want to avoid it stop it with `GIT_FETCH=0` / `PR_STATUS=0`.
+
+The default of `GIT_FETCH_INTERVAL_SEC` was also changed from 900 seconds to 180 seconds so that `↓behind` does not lag too far. The lower bound (60 seconds) and the upper bound (1800 seconds) are unchanged.
+
+A user without a configuration file gets the new defaults just by updating. A user whose configuration file already says `GIT_FETCH=0` / `PR_STATUS=0` keeps the current behavior, because those values take precedence.
 
 ### Unit of fetch Throttling
 
@@ -803,7 +818,7 @@ counted separately, and the number of fetches grows in proportion to how many ar
 
 ### Making PR Status a Standalone Layout Token
 
-Making PR status a standalone token of `LAYOUT_LINE1` was not adopted. A PR is information tied to a branch, so it is placed inside the branch column (to the right of ab), separated by a single half-width space, and enabled by the flag
+Making PR status a standalone token of `LAYOUT_LINE1` was not adopted. A PR is information tied to a branch, so it is placed inside the branch column (to the right of ab), separated by a single half-width space, and switched on or off by the flag
 `PR_STATUS`, which has the same form as `GIT_FETCH`. `gh` is launched only when building the branch column with `PR_STATUS=1`, so removing branch from the layout also stops `gh` from launching.
 
 ### The stdin `pr` Field

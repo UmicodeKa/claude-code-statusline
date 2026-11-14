@@ -61,7 +61,7 @@ The output has **two lines**.
 ✻ <model>∙<effort> <ctx> | <rate> | <weekly>
 ```
 
-The above is the order in the default layout. The order within each line can be changed with the [layout](#layout-layout_line1--layout_line2). `<pr>` appears only when `PR_STATUS=1`.
+The above is the order in the default layout. The order within each line can be changed with the [layout](#layout-layout_line1--layout_line2). `<pr>` appears only when `PR_STATUS=1` (default).
 
 ### Separators
 
@@ -133,7 +133,7 @@ Placed to the right of the branch name. Derived from the result of `git rev-list
 #### PR Status (`<pr>`)
 
 The GitHub PR linked to the current branch is shown as `#<number>[<CI symbol>][ <count>]`, to the right of `<ab>` (or to the right of the branch name if `<ab>` is empty), separated by a space (example: `main ↑1 #12✓ 3`).
-Shown only when `PR_STATUS=1`. For details, see [PR Status (`PR_STATUS=1`)](#pr-status-pr_status1).
+Shown only when `PR_STATUS=1` (default). For details, see [PR Status (`PR_STATUS=1`)](#pr-status-pr_status1).
 
 ### Commit column
 
@@ -494,7 +494,7 @@ Numeric settings (`RATE_CHART_LEN`, `POLL_INTERVAL_SEC`, `GIT_FETCH_INTERVAL_SEC
 
 | Value | Handling |
 | --- | --- |
-| Empty, or contains non-digits (including negative values) | Default (`12` / `300` / `900`) |
+| Empty, or contains non-digits (including negative values) | Default (`12` / `300` / `180`) |
 | 9 or more digits | Upper limit |
 | Below the lower limit (including `0`) | Lower limit (`2` / `60` / `60`) |
 | Above the upper limit | Upper limit |
@@ -515,14 +515,14 @@ Numeric settings (`RATE_CHART_LEN`, `POLL_INTERVAL_SEC`, `GIT_FETCH_INTERVAL_SEC
 | `SHOW_MODEL_NAME` | `1` | `CLAUDE_STATUSLINE_SHOW_MODEL_NAME` | `1` shows the model name. Anything else hides it (`✻` remains) |
 | `COLOR_SCHEME` | `auto` | `CLAUDE_STATUSLINE_COLOR_SCHEME` | `auto` matches the Claude Code theme ([detection](#color-scheme-detection-color_schemeauto)). `light` selects light and `dark` selects dark. Anything else is dark |
 | `SHOW_CWD` | `1` | `CLAUDE_STATUSLINE_SHOW_CWD` | `1` shows the directory column. Anything else hides it |
-| `GIT_FETCH` | `0` | `CLAUDE_STATUSLINE_GIT_FETCH` | `1` enables background fetch. Anything else disables it |
-| `PR_STATUS` | `0` | `CLAUDE_STATUSLINE_PR_STATUS` | `1` shows the [PR status](#pr-status-pr_status1) in the branch column. Anything else disables it |
+| `GIT_FETCH` | `1` | `CLAUDE_STATUSLINE_GIT_FETCH` | `1` enables background fetch. Anything else (including `0`) disables it. Empty means the default (enabled) |
+| `PR_STATUS` | `1` | `CLAUDE_STATUSLINE_PR_STATUS` | `1` shows the [PR status](#pr-status-pr_status1) in the branch column. Anything else (including `0`) disables it. Empty means the default (enabled) |
 | `LAYOUT_LINE1` | `directory\|branch\|commit\|session` | `CLAUDE_STATUSLINE_LAYOUT_LINE1` | [Layout](#layout-layout_line1--layout_line2) |
 | `LAYOUT_LINE2` | `model_ctx\|rate\|weekly` | `CLAUDE_STATUSLINE_LAYOUT_LINE2` | [Layout](#layout-layout_line1--layout_line2) |
 | `HIGHLIGHT` | `branch` | `CLAUDE_STATUSLINE_HIGHLIGHT` | [Highlight](#highlight-highlight) |
 | `RATE_CHART_LEN` | `12` | None | Number of rate chart characters. [Recommended ranges](#recommended-throttling-interval-ranges) |
 | `POLL_INTERVAL_SEC` | `300` | None | [Recommended ranges](#recommended-throttling-interval-ranges) |
-| `GIT_FETCH_INTERVAL_SEC` | `900` | None | [Recommended ranges](#recommended-throttling-interval-ranges) |
+| `GIT_FETCH_INTERVAL_SEC` | `180` | None | [Recommended ranges](#recommended-throttling-interval-ranges) |
 
 ### Precedence and Configuration File
 
@@ -641,7 +641,7 @@ The following uncolored elements are not targets.
 
 ## Background Fetch (`GIT_FETCH=1`)
 
-Only when `GIT_FETCH=1`, `git fetch --quiet` is started in the background to bring `↓behind` closer to the latest. With `GIT_FETCH=0` (default), no fetch is done at all and the network is not accessed.
+Only when `GIT_FETCH=1` (default), `git fetch --quiet` is started in the background to bring `↓behind` closer to the latest. With `GIT_FETCH=0`, no fetch is done at all and the network is not accessed.
 
 - Rendering does not wait for the fetch to finish. The fetch result is reflected in `<ab>` of subsequent renders
 - It is not started if less than `GIT_FETCH_INTERVAL_SEC` seconds have passed since the last start. The interval is counted per `workspace.current_dir` (a different subdirectory or worktree of the same repository is counted separately)
@@ -651,10 +651,10 @@ Only when `GIT_FETCH=1`, `git fetch --quiet` is started in the background to bri
 
 ## PR Status (`PR_STATUS=1`)
 
-Only when `PR_STATUS=1`, the GitHub PR linked to the current branch is shown in `<pr>` of the branch column. The information is obtained by starting `gh api graphql` in the background, and rendering only reads the cache.
+Only when `PR_STATUS=1` (default), the GitHub PR linked to the current branch is shown in `<pr>` of the branch column. The information is obtained by starting `gh api graphql` in the background, and rendering only reads the cache.
 
-- With `PR_STATUS=0` (default), `gh` is never started and the network is not accessed
-- Even with `PR_STATUS=1`, `gh` is not started if `LAYOUT_LINE1` has no `branch`
+- With `PR_STATUS=0`, `gh` is never started and the network is not accessed
+- Even with `PR_STATUS=1`, `gh` is not started if `LAYOUT_LINE1` has no `branch` or `gh` is not in PATH
 - When the value is empty, neither `<pr>` nor the preceding space is output. The branch column itself remains
 - The environment variable `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is not checked. The fetch is performed even if it is set
 
