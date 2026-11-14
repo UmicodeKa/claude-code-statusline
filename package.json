@@ -21,7 +21,7 @@
     "fix": "run-s format lint:fix"
   },
   "devDependencies": {
-    "markdownlint-cli2": "^0.24.0",
+    "markdownlint-cli2": "^0.24.1",
     "npm-run-all2": "^9.0.4"
   }
 }
