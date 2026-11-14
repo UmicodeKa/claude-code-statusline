@@ -78,7 +78,7 @@ git config commit.template .gitmessage
 
 | Command | What it does |
 | --- | --- |
-| `npm test` | Runs, in order, the regression tests (`tests/regression.sh`), the background fetch behavior tests (`tests/git-fetch-behavior.sh`), the PR status display retrieval behavior tests (`tests/pr-status-behavior.sh`), the rate history behavior tests (`tests/rate-history-behavior.sh`), the static parity check of both versions (`tests/script-parity.sh`), and the sync check of the Japanese and English documents (`tests/translation-parity.sh`) |
+| `npm test` | Runs, in order, the regression tests (`tests/regression.sh`), the background fetch behavior tests (`tests/git-fetch-behavior.sh`), the PR status display retrieval behavior tests (`tests/pr-status-behavior.sh`), the rate history behavior tests (`tests/rate-history-behavior.sh`), the color scheme auto-detection behavior tests (`tests/color-scheme-behavior.sh`), the isolation check of the test harness start environment (`tests/harness-isolation.sh`), the static parity check of both versions (`tests/script-parity.sh`), and the sync check of the Japanese and English documents (`tests/translation-parity.sh`) |
 | `npm run preview` | Shows the actual output of each fixture in the terminal with the ANSI colors intact (`tests/e2e-preview.sh`). `--macos` / `--linux` shows only one version (`bash tests/e2e-preview.sh --linux`) |
 | `npm run check` | Runs the Markdown format check and lint |
 | `npm run fix` | Runs the Markdown formatting and the automatic lint fixes |

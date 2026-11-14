@@ -13,11 +13,12 @@ macOS 版 (`statusline-macos.sh`) と Linux 版 (`statusline-linux.sh`) が同�
 | `pr-status-behavior.sh` | `npm run test:pr` | PR の状態表示のバックグラウンド取得の挙動と、`--jq` による変換を検証する |
 | `rate-history-behavior.sh` | `npm run test:history` | rate 履歴ファイルの書き込み (初回の埋め込み、間引き、保存件数) と、間引き間隔の丸めを検証する |
 | `color-scheme-behavior.sh` | `npm run test:color` | `COLOR_SCHEME=auto` が Claude Code の `theme` などから dark / light を決めることと、判定のキャッシュを検証する |
+| `harness-isolation.sh` | `npm run test:isolation` | 敵対的な環境で各ハーネスを走らせ、statusline の起動環境が隔離されていること (本物の `git` / `gh` に届かない、開発者の環境変数が混ざらない) を確かめる |
 | `e2e-preview.sh` | `npm run preview` | 実際の ANSI 色付き出力を端末に流し、目視で確認する |
 | `script-parity.sh` | `npm run test:parity` | 両スクリプトの共通ブロックの一致と、必要な記述が残っていることを静的に確かめる |
 | `translation-parity.sh` | `npm run test:translation` | 日本語のドキュメントと英語版 (`*.en.md`) の構造が食い違っていないことを静的に確かめる |
 
-`npm test` は `test:regression`、`test:fetch`、`test:pr`、`test:history`、`test:color`、`test:parity`、`test:translation` を順に実行します。`e2e-preview.sh` は合否を判定しないため `npm test` には含まれません。
+`npm test` は `test:regression`、`test:fetch`、`test:pr`、`test:history`、`test:color`、`test:isolation`、`test:parity`、`test:translation` を順に実行します。`e2e-preview.sh` は合否を判定しないため `npm test` には含まれません。
 
 ### regression.sh
 
@@ -221,7 +222,7 @@ PATH の先頭に `jq` と `defaults` のスタブを置き、呼び出しを記
 - `highlight/`: マーカーが無いケースでは空で渡します (conf → 既定値。既定は `branch`)。conf の `HIGHLIGHT` を確かめるケース (`166-highlight-config` など) は `config-file/` を使い、env が conf に勝つことは両方のマーカーを置いて確かめます。前後の空白やタブも含めて 1 行目をそのまま渡します (`165-highlight-tokens`)。
 - `pr-cache/`: 1 行目をキャッシュの 1 行として書きます。`printf %b` で展開するのでタブは `\t`、ESC は `\033` と書けます。`fetched_at` は現在時刻に依存するため、`@NOW@` (現在時刻) と `@STALE@` (現在時刻 - 4000 秒) を仕込む直前に置き換えます。1 行目が空ならキャッシュを置きません。どの場合も新しいマーカーを置くため、描画は取得を起動せず、仕込んだキャッシュがそのまま読まれます
 - `hyperlink-off/`: マーカーが無いケースでは `FORCE_HYPERLINK` を空で渡し、開発者のシェルの値が混ざらないようにしています
-- `pr-status-on/`: マーカーが無いケースでは `CLAUDE_STATUSLINE_PR_STATUS` を `0` で渡します (本体の既定は `1` で、渡さないと fake gh が呼ばれるため)。PR は fake gh が受け、`pr-cache/` で仕込んだキャッシュを branch 列に出すケースで使います
+- `pr-status-on/`: マーカーが無いケースでは `CLAUDE_STATUSLINE_PR_STATUS` が `sl_run` の既定の `0` になります (本体の既定は `1` で、渡さないと fake gh が呼ばれるため)。PR は fake gh が受け、`pr-cache/` で仕込んだキャッシュを branch 列に出すケースで使います
 
 `lib/` の中身は次のとおりです。
 
@@ -229,6 +230,7 @@ PATH の先頭に `jq` と `defaults` のスタブを置き、呼び出しを記
 | --- | --- |
 | `lib/escape-ansi.sh` | ESC を `\e` に、BEL を `\a` に置き換える (`perl` を使用) |
 | `lib/config-file.sh` | `config_for_case` で conf のパスを解決する。マーカーが無ければ存在しないパス (`NO_CONFIG`) を返す |
+| `lib/statusline-env.sh` | `sl_run` で statusline を起動する。`env -i` で継承した環境を捨て、既定値と呼び出し側の `VAR=value` だけを渡す。conf が `GIT_FETCH` / `PR_STATUS` を指定するときに env を空にする判定もここにある |
 | `lib/layout.sh` | `layout_for_case` でレイアウト文字列を解決する |
 | `lib/highlight.sh` | `highlight_for_case` でハイライトの指定を解決する |
 | `lib/find-debian-bash.sh` | Linux 版を実行できる bash を探す。CI 用の必須化チェックも持つ |
@@ -338,20 +340,30 @@ PR の状態表示の子プロセスが呼ぶ `gh api graphql ... --jq <式>` �
 
 ## 実行環境の隔離
 
-ケースの結果が開発者の環境に左右されないよう、ハーネスは全ケース共通で次の前置きを付けて statusline を起動します。
+ケースの結果が開発者の環境に左右されず、実際の `git fetch` や `gh` も動かないよう、すべてのハーネスは statusline を `lib/statusline-env.sh` の `sl_run` で起動します。
+`sl_run` は `env -i` で継承した環境を捨て、許可した変数だけを渡します (許可リスト方式)。渡し忘れた変数は未設定になるため、本体に環境変数が増えても、開発者のシェルの値が黙って混ざることはありません。
 
+- 既定で渡す変数
+  - `PATH`: `--path` で足したディレクトリ、fake git、fake gh、外側の `PATH` の順に並べます。`jq` / `perl` / `flock` などの実コマンドは外側の `PATH` から使います。
+  - `HOME` / `CLAUDE_CONFIG_DIR`: 存在しないパス。conf と `settings.json` の既定の場所が開発者の実ファイルを指さず、`COLOR_SCHEME=auto` は `theme` なし = dark になります。
+  - `CLAUDE_STATUSLINE_CONFIG`: 存在しないパス (conf 無し)。開発者の `~/.claude/statusline.conf` を読むことはありません。`config-file/` にマーカーがあるケースは `config_for_case` (`lib/config-file.sh`) の結果を渡します。
+  - `CLAUDE_STATUSLINE_GIT_FETCH` / `CLAUDE_STATUSLINE_PR_STATUS`: `0`。本体の既定はどちらも `1` で、渡さないと実際に `git fetch` や `gh` が起動されるためです。
+  - `TZ`: `UTC`。
+  - `LANG` / `LC_*` / `TMPDIR` は渡しません。本体が冒頭で `LC_ALL=C.UTF-8` にし、`TMPDIR` は使わないためです。
+- 上書き: `sl_run` の引数 (`--` より前の `VAR=value`) で渡し、その 1 回の起動だけに効きます。グローバルな状態を持たないので、あるケースの上書き (例: `STATUSLINE_TEST_GH_SLEEP=20`) が後のケースに残りません。
+  同じ名前は後のものが勝つため、ハーネス固有のラッパー (`pr-status-behavior.sh` の `run_sl` など) は既定値を先に、呼び出し側の値を後に並べます。
+  テスト専用の変数 (`STATUSLINE_TEST_*`、`color-scheme-behavior.sh` のスタブ用の `STUB_*` / `REAL_JQ`) も明示的に渡します。渡し忘れは黙って本物に落ちず、ケースの失敗として表に出ます。
+- `PATH` の差し替え: `PATH=` は `sl_run` がエラーにします。丸ごと書くと shim を書き落とせるためです。ディレクトリの追加は `--path` で渡します。
+  外側の `PATH` を含めない `PATH` が要るケース (`pr-status-behavior.sh` の `no-gh`) だけ、`--replace-path` で明示的に差し替えます。
+- conf と env: env は conf に勝つため、最終的な `CLAUDE_STATUSLINE_CONFIG` の conf が `GIT_FETCH` / `PR_STATUS` を代入しているときは、`sl_run` がそれらの env を空にして conf に決めさせます。
+  判定は全引数を並べた後に `sl_run` の 1 か所だけで行うので、conf の指定は `regression.sh` のマーカー (`git-fetch-on/` / `pr-status-on/`) の値にも、呼び出し時の `CLAUDE_STATUSLINE_CONFIG` の差し替えにも勝ちます。
+  既定で動くことは、`git-fetch-behavior.sh` と `pr-status-behavior.sh` の `default-on` が conf 無しで空の値 (`CLAUDE_STATUSLINE_PR_STATUS=` など) を明示的に渡して確かめます。
+- マーカーの無い `CLAUDE_STATUSLINE_*`: `regression.sh` と `e2e-preview.sh` は空文字で渡します。本体は空を未設定と同じに扱うため、conf → 既定値の順にフォールバックします。既定値を直接渡すと conf の値が常に環境変数に負け、conf の検証ができなくなるためです。
 - 履歴ディレクトリ: `regression.sh` / `git-fetch-behavior.sh` / `pr-status-behavior.sh` / `e2e-preview.sh` のいずれも、ケースごとに `mktemp -d` で作った一時ディレクトリを `CLAUDE_STATUSLINE_HISTORY_DIR` に渡し、終了時に削除します。本番の `/tmp/claude-statusline-<uid>/` には触れません。実 uid で作られたディレクトリなので本体の所有者チェックを通り、初回起動時の履歴書き込みも実際に動きます。
-- 設定ファイル: `CLAUDE_STATUSLINE_CONFIG` は、`config-file/` にマーカーがあるケースを除き、存在しないパスに固定します。開発者の `~/.claude/statusline.conf` を読むことはありません。すべてのハーネスが `lib/config-file.sh` を通してこの規則に従います。
-- `CLAUDE_STATUSLINE_*` の環境変数: マーカーが無いときは空文字で渡します。本体は空を未設定と同じに扱うため、conf → 既定値の順にフォールバックします。既定値を直接渡すと conf の値が常に環境変数に負け、conf の検証ができなくなるためです。`CLAUDE_STATUSLINE_COLOR_SCHEME` も空で渡し、開発者のシェルの値が混ざらないようにしています。
-  - `CLAUDE_STATUSLINE_GIT_FETCH` と `CLAUDE_STATUSLINE_PR_STATUS` は例外で、マーカーが無いときは `0` を渡します。本体の既定がどちらも `1` で、空で渡すと開発者の環境で実際に `git fetch` や `gh` が動くためです。
-    ただし、`config-file/` の conf がその項目を指定するケースは空で渡し、conf に決めさせます (env は conf に勝つため)。既定で動くことは `git-fetch-behavior.sh` と `pr-status-behavior.sh` の `default-on` が確かめます。
-  - `CLAUDE_STATUSLINE_HIGHLIGHT` は `regression.sh` / `pr-status-behavior.sh` / `e2e-preview.sh` のすべてで必ず渡します。渡さないと、ハイライトを export している開発者の手元だけで、branch などを含むケースが落ちます。
 - 短縮名の変数: `regression.sh` は `SHOW_MODEL_NAME` や `LAYOUT_LINE1` などの短縮名 11 個を、全ケースで既定値と異なる値にして渡します (`HIGHLIGHT` は全トークンを指定した値)。本体は conf を読む前にこれらを `unset` するため、出力には影響しません。この `unset` が消えると全ケースが失敗するので、その回帰ガードを兼ねています。
-- `CLAUDE_CONFIG_DIR` / `COLORFGBG`: `COLOR_SCHEME` の既定値は `auto` で、開発者の実際の `~/.claude/settings.json` の `theme` や端末の背景色を読みます。
-  `regression.sh` / `git-fetch-behavior.sh` / `pr-status-behavior.sh` / `rate-history-behavior.sh` / `e2e-preview.sh`
-  は、起動時に `CLAUDE_CONFIG_DIR` を存在しないディレクトリ (`theme` なし = dark) に向け、`COLORFGBG` を空にします。`color-scheme-behavior.sh` はケースごとの一時ディレクトリを使い、`HOME` も一時ディレクトリに向けます。
-- git / gh: 前述の fake git と fake gh を `PATH` の先頭に置きます。
-- `FORCE_HYPERLINK`: `regression.sh` と `e2e-preview.sh` は、`hyperlink-off/` にマーカーがあるケースを除き空で渡します。
+- `e2e-preview.sh`: `git-fetch-on/` のマーカーを読まず、`GIT_FETCH` は常に `sl_run` の既定の `0` です。
+- 止め忘れの検出: `harness-isolation.sh` は、呼ばれたら記録して失敗する `git` / `gh` のスタブを外側の `PATH` の先頭に置き、本体が読む環境変数 (`CLAUDE_STATUSLINE_*` / `FORCE_HYPERLINK` / `COLORFGBG` / `CLAUDE_CONFIG_DIR` / `HOME`) を敵対的な値で export した環境で、合否を返す各ハーネスを走らせます。
+  全件 pass することと、スタブへの呼び出しが 0 件であることを確かめます。`sl_run` を経由しない起動は外側の `PATH` のスタブに当たるか、敵対的な値で出力が変わって失敗します。`sl_run` 自体の約束 (既定値、`PATH=` の拒否、上書きが残らないこと、conf が勝つこと) も同じスクリプトで確かめます。
 
 ## 実行環境と skip
 

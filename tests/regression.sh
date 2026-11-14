@@ -12,11 +12,6 @@
 
 set -euo pipefail
 
-# COLOR_SCHEME の既定値は auto で、開発者の実際の settings.json の theme や端末の背景色 (COLORFGBG) を読む。
-# 結果が環境に依存しないよう、存在しない設定ディレクトリを指し (theme なし = dark)、COLORFGBG を空にする。
-export CLAUDE_CONFIG_DIR="/nonexistent-claude-config-dir"
-export COLORFGBG=""
-
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$TESTS_DIR/.." && pwd)"
 FIXTURES_DIR="$TESTS_DIR/fixtures"
@@ -54,8 +49,8 @@ HYPERLINK_OFF_DIR="$TESTS_DIR/hyperlink-off"
 # pr-status-on/<case> があればそのケースで CLAUDE_STATUSLINE_PR_STATUS=1 を渡す (PR の状態を表示する)。
 PR_STATUS_ON_DIR="$TESTS_DIR/pr-status-on"
 
-# shellcheck source=lib/config-file.sh
-source "$TESTS_DIR/lib/config-file.sh"
+# shellcheck source=lib/statusline-env.sh
+source "$TESTS_DIR/lib/statusline-env.sh"
 # shellcheck source=lib/layout.sh
 source "$TESTS_DIR/lib/layout.sh"
 # shellcheck source=lib/highlight.sh
@@ -69,13 +64,11 @@ source "$TESTS_DIR/lib/find-debian-bash.sh"
 # shellcheck source=lib/is-macos-host.sh
 source "$TESTS_DIR/lib/is-macos-host.sh"
 
-# branch 取得経路は lib/git-shim/git (fake git) で検証する。statusline 実行時に
-# PATH 先頭へこの dir を差し込み、本物の git を覆い隠す。fixture の current_dir に
+# branch 取得経路は lib/git-shim/git (fake git) で検証する。sl_run (lib/statusline-env.sh) が
+# PATH 先頭へ shim を差し込み、本物の git を覆い隠す。fixture の current_dir に
 # 埋めた #branch=<name> / #detached の規約を fake git が読んでブランチ名を返す。
-GIT_SHIM_DIR="$TESTS_DIR/lib/git-shim"
 # PR の状態表示の取得は lib/gh-shim/gh (fake gh) が受ける。既定では何もせずに失敗するので、
 # 取得が起動されても実ネットワークには出ず、仕込んだキャッシュも書き換えない。
-GH_SHIM_DIR="$TESTS_DIR/lib/gh-shim"
 
 MACOS_SCRIPT="$REPO_DIR/statusline-macos.sh"
 DEBIAN_SCRIPT="$REPO_DIR/statusline-linux.sh"
@@ -311,8 +304,9 @@ run_case() {
   fi
 
   # 起動時の共通前置きについて:
-  # - CLAUDE_STATUSLINE_COLOR_SCHEME="" は開発者の shell の env が conf に勝って
-  #   ケースが環境依存になるのを防ぐ (他の CLAUDE_STATUSLINE_* も下記マーカー経由で必ず渡す)。
+  # - 起動環境は sl_run (lib/statusline-env.sh) が許可リスト方式で組む。開発者の shell の
+  #   CLAUDE_STATUSLINE_* などは届かない。conf (config-file マーカー) が GIT_FETCH / PR_STATUS を
+  #   指定するケースは、sl_run がそれらの env を空にして conf に決めさせる (下記マーカーより conf が勝つ)。
   # - 短縮名 (SHOW_MODEL_NAME=0 / LAYOUT_LINE1 等) を全ケースで既定値と異なる値で渡す。本体は conf 読み込み前に
   #   これらを unset するので出力に影響しない。unset を消すと全ケースが落ちる回帰ガード。
   #
@@ -344,9 +338,6 @@ run_case() {
   # config-file/<case> があればそれを設定ファイルとして読ませる (無ければ conf 無し)。
   local config
   config="$(config_for_case "$case_name")"
-  # conf が GIT_FETCH / PR_STATUS を指定するケースは、env を空にして conf に決めさせる (env は conf に勝つため)。
-  if conf_sets "$config" GIT_FETCH; then git_fetch=""; fi
-  if conf_sets "$config" PR_STATUS; then pr_status=""; fi
 
   # layout/<case> があればレイアウト文字列を渡す (無ければ空 = conf → 既定値)。
   local case_layout_line1 case_layout_line2
@@ -361,7 +352,7 @@ run_case() {
   # 別変数に取り出してアサーション側で扱えるようにする。pipefail 配下でも
   # rc にはパイプライン全体の終了コード (右端を含む最右の非ゼロ) が入る。
   #
-  # PATH 先頭に git-shim を差し込み、statusline 本体の git 呼び出しを fake git
+  # sl_run が PATH 先頭に git-shim を差し込み、statusline 本体の git 呼び出しを fake git
   # に差し替える。fixture の current_dir に埋めた #branch=... 規約が反映される。
   local output output_raw rc=0
   # $( ... ) は末尾の改行を**全て**除去するため、「1 行目の後に余分な改行だけを出す」
@@ -374,9 +365,9 @@ run_case() {
   # そのアサーションが黙って空振り pass する。終了コードは rc_line 経由で別途拾う。
   output_raw=$(
     {
-      CLAUDE_STATUSLINE_HISTORY_DIR="$hist_override" TZ=UTC \
+      sl_run \
+      CLAUDE_STATUSLINE_HISTORY_DIR="$hist_override" \
       CLAUDE_STATUSLINE_CONFIG="$config" \
-      CLAUDE_STATUSLINE_COLOR_SCHEME="" \
       SHOW_MODEL_NAME=0 COLOR_SCHEME=light GIT_FETCH=0 PR_STATUS=0 SHOW_CWD=0 \
       RATE_CHART_LEN=3 POLL_INTERVAL_SEC=0 GIT_FETCH_INTERVAL_SEC=0 \
       LAYOUT_LINE1="session" LAYOUT_LINE2="rate|model_ctx" \
@@ -389,8 +380,7 @@ run_case() {
       CLAUDE_STATUSLINE_LAYOUT_LINE2="$case_layout_line2" \
       CLAUDE_STATUSLINE_HIGHLIGHT="$case_highlight" \
       FORCE_HYPERLINK="$force_hyperlink" \
-      PATH="$GIT_SHIM_DIR:$GH_SHIM_DIR:$PATH" \
-        "$bash_bin" "$script" < "$fixture" 2>&1 | escape_ansi
+      -- "$bash_bin" "$script" < "$fixture" 2>&1 | escape_ansi
     }
     printf 'X%s' "$?"
   )
