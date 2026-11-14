@@ -355,6 +355,7 @@ PR の状態表示の子プロセスが呼ぶ `gh api graphql ... --jq <式>` �
   テスト専用の変数 (`STATUSLINE_TEST_*`、`color-scheme-behavior.sh` のスタブ用の `STUB_*` / `REAL_JQ`) も明示的に渡します。渡し忘れは黙って本物に落ちず、ケースの失敗として表に出ます。
 - `PATH` の差し替え: `PATH=` は `sl_run` がエラーにします。丸ごと書くと shim を書き落とせるためです。ディレクトリの追加は `--path` で渡します。
   外側の `PATH` を含めない `PATH` が要るケース (`pr-status-behavior.sh` の `no-gh`) だけ、`--replace-path` で明示的に差し替えます。
+  `--replace-path` と `--path` の併用、空の `--replace-path` も、追加分が黙って捨てられたり外側の `PATH` に戻ったりするため拒否します。
 - conf と env: env は conf に勝つため、最終的な `CLAUDE_STATUSLINE_CONFIG` の conf が `GIT_FETCH` / `PR_STATUS` を代入しているときは、`sl_run` がそれらの env を空にして conf に決めさせます。
   判定は全引数を並べた後に `sl_run` の 1 か所だけで行うので、conf の指定は `regression.sh` のマーカー (`git-fetch-on/` / `pr-status-on/`) の値にも、呼び出し時の `CLAUDE_STATUSLINE_CONFIG` の差し替えにも勝ちます。
   既定で動くことは、`git-fetch-behavior.sh` と `pr-status-behavior.sh` の `default-on` が conf 無しで空の値 (`CLAUDE_STATUSLINE_PR_STATUS=` など) を明示的に渡して確かめます。
@@ -362,8 +363,10 @@ PR の状態表示の子プロセスが呼ぶ `gh api graphql ... --jq <式>` �
 - 履歴ディレクトリ: `regression.sh` / `git-fetch-behavior.sh` / `pr-status-behavior.sh` / `e2e-preview.sh` のいずれも、ケースごとに `mktemp -d` で作った一時ディレクトリを `CLAUDE_STATUSLINE_HISTORY_DIR` に渡し、終了時に削除します。本番の `/tmp/claude-statusline-<uid>/` には触れません。実 uid で作られたディレクトリなので本体の所有者チェックを通り、初回起動時の履歴書き込みも実際に動きます。
 - 短縮名の変数: `regression.sh` は `SHOW_MODEL_NAME` や `LAYOUT_LINE1` などの短縮名 11 個を、全ケースで既定値と異なる値にして渡します (`HIGHLIGHT` は全トークンを指定した値)。本体は conf を読む前にこれらを `unset` するため、出力には影響しません。この `unset` が消えると全ケースが失敗するので、その回帰ガードを兼ねています。
 - `e2e-preview.sh`: `git-fetch-on/` のマーカーを読まず、`GIT_FETCH` は常に `sl_run` の既定の `0` です。
-- 止め忘れの検出: `harness-isolation.sh` は、呼ばれたら記録して失敗する `git` / `gh` のスタブを外側の `PATH` の先頭に置き、本体が読む環境変数 (`CLAUDE_STATUSLINE_*` / `FORCE_HYPERLINK` / `COLORFGBG` / `CLAUDE_CONFIG_DIR` / `HOME`) を敵対的な値で export した環境で、合否を返す各ハーネスを走らせます。
-  全件 pass することと、スタブへの呼び出しが 0 件であることを確かめます。`sl_run` を経由しない起動は外側の `PATH` のスタブに当たるか、敵対的な値で出力が変わって失敗します。`sl_run` 自体の約束 (既定値、`PATH=` の拒否、上書きが残らないこと、conf が勝つこと) も同じスクリプトで確かめます。
+- 止め忘れの検出: `harness-isolation.sh` は、呼ばれたら記録して失敗する `git` / `gh` のスタブを外側の `PATH` の先頭に置き、本体が読む環境変数 (`CLAUDE_STATUSLINE_*` / `FORCE_HYPERLINK` / `COLORFGBG` / `CLAUDE_CONFIG_DIR` / `HOME` / `TZ`) を敵対的な値で export した環境で、合否を返す各ハーネスを走らせます。
+  全件 pass することと、スタブへの呼び出しが 0 件であることを確かめます。全ハーネスの終了後にも少し待ち、遅れて届いた呼び出しが無いことを確かめます。`sl_run` 自体の約束 (既定値、`PATH=` の拒否、上書きが残らないこと、conf が勝つこと) も同じスクリプトで確かめます。
+  `sl_run` を経由しない起動は、入力が git の経路に入れば外側の `PATH` のスタブに当たり、出力を比べるハーネスなら敵対的な値で出力が変わって失敗します。
+  どちらにも当たらない起動 (入力に cwd が無く出力も見ない `rate-history-behavior.sh` など) は検出できません。そうした起動は本物の `git` / `gh` に届かず、結果も環境変数に左右されません。
 
 ## 実行環境と skip
 

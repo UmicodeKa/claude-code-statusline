@@ -187,15 +187,15 @@ print_case() {
   # hyperlink-off マーカーがあれば OSC 8 のリンクを出さない (無ければ空 = リンクあり)。
   local force_hyperlink=""
   if [ -f "$HYPERLINK_OFF_DIR/${case_name}" ]; then force_hyperlink="0"; fi
-  # pr-status-on マーカーがあれば PR の状態を表示する (無ければ sl_run の既定の 0 = 無効)。
-  local pr_status="0"
-  if [ -f "$PR_STATUS_ON_DIR/${case_name}" ]; then pr_status="1"; fi
+  # pr-status-on マーカーがあれば PR の状態を表示する (無ければ何も渡さず、sl_run の既定の 0 = 無効に任せる)。
+  local -a marker_env=()
+  if [ -f "$PR_STATUS_ON_DIR/${case_name}" ]; then marker_env+=(CLAUDE_STATUSLINE_PR_STATUS=1); fi
   # sl_run が PATH 先頭に git-shim / gh-shim を差し込み、statusline 本体の git / gh 呼び出しを fake に差し替える。
   sl_run \
     CLAUDE_STATUSLINE_HISTORY_DIR="$hist_dir" \
     CLAUDE_STATUSLINE_CONFIG="$config" \
     CLAUDE_STATUSLINE_SHOW_MODEL_NAME="$show_model_name" \
-    CLAUDE_STATUSLINE_PR_STATUS="$pr_status" \
+    ${marker_env[@]+"${marker_env[@]}"} \
     CLAUDE_STATUSLINE_SHOW_CWD="$show_cwd" \
     CLAUDE_STATUSLINE_LAYOUT_LINE1="$case_layout_line1" \
     CLAUDE_STATUSLINE_LAYOUT_LINE2="$case_layout_line2" CLAUDE_STATUSLINE_HIGHLIGHT="$case_highlight" \

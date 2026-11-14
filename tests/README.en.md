@@ -388,6 +388,7 @@ A variable that is forgotten ends up unset, so even when the main script gains a
   Test-only variables (`STATUSLINE_TEST_*`, and `STUB_*` / `REAL_JQ` for the stubs in `color-scheme-behavior.sh`) are also passed explicitly. A forgotten one does not silently fall back to the real thing; it shows up as a failing case.
 - Replacing `PATH`: `sl_run` rejects `PATH=` with an error, because writing the whole value makes it possible to drop the shims. Directories are added with `--path`.
   Only a case that needs a `PATH` without the outer `PATH` (`no-gh` in `pr-status-behavior.sh`) replaces it explicitly with `--replace-path`.
+  Combining `--replace-path` with `--path`, and an empty `--replace-path`, are also rejected, because they would silently drop the added directories or fall back to the outer `PATH`.
 - Conf and env: env takes precedence over conf, so when the conf at the final `CLAUDE_STATUSLINE_CONFIG` assigns `GIT_FETCH` / `PR_STATUS`, `sl_run` empties those env values and lets the conf decide.
   The check runs in one place only, inside `sl_run`, after all arguments are lined up, so the conf setting beats both the marker values in `regression.sh` (`git-fetch-on/` / `pr-status-on/`) and a `CLAUDE_STATUSLINE_CONFIG` swapped in at call time.
   That they work by default is verified by `default-on` in `git-fetch-behavior.sh` and `pr-status-behavior.sh`, which pass an empty value (such as `CLAUDE_STATUSLINE_PR_STATUS=`) explicitly with no conf.
@@ -399,10 +400,13 @@ A variable that is forgotten ends up unset, so even when the main script gains a
   The main script `unset`s these before reading the conf, so they do not affect the output. If that `unset` disappears, every case fails, so this also serves as a regression guard for it.
 - `e2e-preview.sh`: It does not read the `git-fetch-on/` markers, and `GIT_FETCH` is always the `sl_run` default of `0`.
 - Detecting missed isolation: `harness-isolation.sh` places `git` / `gh` stubs that record the call and fail at the front of the outer `PATH`.
-  It exports the environment variables the main script reads (`CLAUDE_STATUSLINE_*` / `FORCE_HYPERLINK` / `COLORFGBG` / `CLAUDE_CONFIG_DIR` / `HOME`) with hostile values,
+  It exports the environment variables the main script reads (`CLAUDE_STATUSLINE_*` / `FORCE_HYPERLINK` / `COLORFGBG` / `CLAUDE_CONFIG_DIR` / `HOME` / `TZ`) with hostile values,
   and runs each harness that reports pass or fail in that environment. It checks that every case passes and that the stubs were called 0 times.
-  A start that bypasses `sl_run` either hits the stubs on the outer `PATH` or fails because the hostile values change the output.
+  After all harnesses finish it waits a little longer and checks that no call arrived late.
   The same script also checks the contract of `sl_run` itself (defaults, rejecting `PATH=`, overrides not remaining, and the conf winning).
+  A start that bypasses `sl_run` hits the stubs on the outer `PATH` when the input reaches the git path, and in a harness that compares output it fails because the hostile values change the output.
+  A start that does neither (such as `rate-history-behavior.sh`, whose input has no cwd and whose output is not checked) is not detected.
+  Such a start never reaches the real `git` / `gh`, and its result does not depend on environment variables.
 
 ## Execution Environment and Skips
 

@@ -26,7 +26,7 @@
 # - 上書きはその 1 回の起動だけに効く (グローバルな状態を持たない)。同じ名前を複数回渡すと、
 #   env と同じく後のものが勝つ。ハーネス固有のラッパーは既定値を先に、呼び出し側の値を後に並べる。
 # - PATH= は渡せない (shim を書き落とすため)。ディレクトリの追加は --path、外側の PATH を含めない
-#   PATH が要るときだけ --replace-path で丸ごと差し替える。
+#   PATH が要るときだけ --replace-path で丸ごと差し替える。--replace-path の空の値と --path との併用は拒否する。
 # - conf が GIT_FETCH / PR_STATUS を代入しているときは、それらの env を空にして conf に決めさせる
 #   (env は conf に勝つため)。判定は全引数を並べた後、最終的な CLAUDE_STATUSLINE_CONFIG に対して行うので、
 #   conf の指定は既定値にも呼び出し側の値にも勝つ。
@@ -51,7 +51,8 @@ sl_run() {
         shift 2
         ;;
       --replace-path)
-        [ "$#" -ge 2 ] || { printf 'sl_run: --replace-path needs a value\n' >&2; return 2; }
+        # 空の値は「外側の PATH に戻る」と区別できないため拒否する。
+        [ "$#" -ge 2 ] && [ -n "$2" ] || { printf 'sl_run: --replace-path needs a non-empty value\n' >&2; return 2; }
         replace_path=$2
         shift 2
         ;;
@@ -79,6 +80,11 @@ sl_run() {
     return 2
   fi
   shift
+  # --replace-path は PATH を丸ごと決めるので、--path と併用すると追加分が黙って捨てられる。併用は拒否する。
+  if [ -n "$replace_path" ] && [ -n "$extra_path" ]; then
+    printf 'sl_run: --path and --replace-path cannot be combined\n' >&2
+    return 2
+  fi
 
   local path=${replace_path:-"${extra_path}$GIT_SHIM_DIR:$GH_SHIM_DIR:$PATH"}
   local -a env_args=(

@@ -5,20 +5,24 @@
 # 許可した変数だけを渡す (許可リスト方式)。本スクリプトは、敵対的な環境で次を確かめる:
 #
 #   sl_run:*         : sl_run 自体の約束 (既定値、継承した変数を捨てる、PATH の組み方、PATH= の拒否、
-#                      上書きが次の起動に残らない、conf の GIT_FETCH / PR_STATUS が env に勝つ)
+#                      --path と --replace-path の併用や空の --replace-path の拒否、上書きが次の起動に残らない、
+#                      conf の GIT_FETCH / PR_STATUS が env に勝つ)
 #   pass:*           : 各ハーネスが全件 pass する
 #   no-real-git-gh:* : 各ハーネスの実行中、statusline が本物の git / gh に届かない
+#   no-real-git-gh:late : 全ハーネスの終了後に遅れて届いた呼び出しも無い
 #
 # 敵対的な環境は次のように作る:
 #
 #   1. 呼ばれたら引数を記録して失敗する git / gh のスタブを、外側の PATH の先頭に置く。
-#   2. 本体が読む環境変数 (CLAUDE_STATUSLINE_* / FORCE_HYPERLINK / COLORFGBG / CLAUDE_CONFIG_DIR / HOME) を
+#   2. 本体が読む環境変数 (CLAUDE_STATUSLINE_* / FORCE_HYPERLINK / COLORFGBG / CLAUDE_CONFIG_DIR / HOME / TZ) を
 #      敵対的な値で export する (fetch と PR の取得を有効にし、レイアウトや配色を変え、実在する conf を指す)。
 #   3. その環境で各ハーネスを実行し、全件 pass することと、スタブへの呼び出しが 0 件であることを確かめる。
 #
 # sl_run を経由した起動は fake git / fake gh (lib/git-shim, lib/gh-shim) がスタブより前に来るので、
-# 記録は残らない。sl_run を経由しない直接起動は外側の PATH をそのまま使うのでスタブに当たり、
-# 敵対的な環境変数も混ざるので出力の比較でも落ちる。
+# 記録は残らない。sl_run を経由しない直接起動は、入力が git の経路に入れば外側の PATH のスタブに当たり、
+# 出力を比べるハーネスなら敵対的な環境変数で出力が変わって落ちる。
+# どちらにも当たらない直接起動 (入力に cwd が無く、出力も見ない rate-history-behavior.sh のようなハーネス) は
+# 検出できない。そうした起動は本物の git / gh にも届かず、結果も環境変数に左右されないので、実害は出ない。
 # e2e-preview.sh は目視用で pass / fail を返さないため対象外。
 
 set -euo pipefail
@@ -37,7 +41,10 @@ HARNESSES=(
 )
 
 # バックグラウンドの子プロセス (fetch / PR の取得) がスタブに届くまで待つ秒数。
+# 各ハーネスの後は SETTLE_SEC、全ハーネスの後は LATE_SEC 待つ。記録は消さずに追記させ、
+# ハーネスごとの増分で判定するので、待ちきれずに次のハーネスの間に届いた呼び出しも late か次の判定で拾う。
 SETTLE_SEC=1
+LATE_SEC=3
 
 red()   { printf '\033[31m%s\033[0m' "$*"; }
 green() { printf '\033[32m%s\033[0m' "$*"; }
@@ -72,6 +79,7 @@ export HOME="$HOSTILE_HOME"
 export CLAUDE_CONFIG_DIR="$HOSTILE_CFG"
 export COLORFGBG="0;15"
 export FORCE_HYPERLINK=0
+export TZ=Asia/Tokyo
 export CLAUDE_STATUSLINE_CONFIG="$HOSTILE_CONF"
 export CLAUDE_STATUSLINE_HISTORY_DIR="$HOSTILE_HIST"
 export CLAUDE_STATUSLINE_COLOR_SCHEME=light
@@ -121,6 +129,18 @@ expect_env() {
   fi
 }
 
+# sl_run が引数 $2... を拒否する (終了コード 2 で、コマンドを起動しない) ことを確かめる。
+expect_rejected() {
+  local name=$1 rc=0
+  shift
+  sl_run "$@" -- true 2>/dev/null || rc=$?
+  if [ "$rc" -eq 2 ]; then
+    pass_case "$name"
+  else
+    fail_case "$name" "sl_run accepted: $* (exit $rc)"
+  fi
+}
+
 # sl_run 自体の約束を確かめる (敵対的な環境の下で実行する)。
 check_sl_run() {
   local out
@@ -142,13 +162,9 @@ check_sl_run() {
   out=$(sl_env --replace-path "/only:$PATH")
   expect_env "sl_run:replace-path" "$out" PATH "/only:$PATH"
 
-  local rc=0
-  sl_run PATH=/x -- true 2>/dev/null || rc=$?
-  if [ "$rc" -eq 2 ]; then
-    pass_case "sl_run:rejects-path"
-  else
-    fail_case "sl_run:rejects-path" "PATH= was accepted (exit $rc)"
-  fi
+  expect_rejected "sl_run:rejects-path" PATH=/x
+  expect_rejected "sl_run:rejects-path-with-replace-path" --path /extra --replace-path "/only:$PATH"
+  expect_rejected "sl_run:rejects-empty-replace-path" --replace-path ""
 
   out=$(sl_env CLAUDE_STATUSLINE_PR_STATUS=1 STATUSLINE_TEST_GH_SLEEP=20)
   expect_env "sl_run:override" "$out" CLAUDE_STATUSLINE_PR_STATUS 1
@@ -163,15 +179,28 @@ check_sl_run() {
   expect_env "sl_run:conf-blanks-git-fetch" "$out" CLAUDE_STATUSLINE_GIT_FETCH ""
 }
 
+call_count() { wc -l < "$CALLS" | tr -d ' '; }
+
+# 記録の $2 行目より後に、スタブへの呼び出しが増えていないことを確かめる。
+check_new_calls() {
+  local name=$1 seen=$2 now
+  now=$(call_count)
+  if [ "$now" -eq "$seen" ]; then
+    pass_case "$name"
+  else
+    fail_case "$name" "statusline reached the real git / gh $((now - seen)) time(s) (started without sl_run?):
+$(tail -n "+$((seen + 1))" "$CALLS" | head -n 5)"
+  fi
+}
+
 main() {
   printf 'test harness isolation tests\n\n'
 
   check_sl_run
 
-  local harness out rc calls
+  local harness out rc seen=0
   for harness in "${HARNESSES[@]}"; do
     out="$TMP_ROOT/${harness%.sh}.out"
-    : > "$CALLS"
     rc=0
     bash "$TESTS_DIR/$harness" > "$out" 2>&1 || rc=$?
     sleep "$SETTLE_SEC"
@@ -183,14 +212,12 @@ main() {
 $(tail -n 20 "$out")"
     fi
 
-    if [ ! -s "$CALLS" ]; then
-      pass_case "no-real-git-gh:$harness"
-    else
-      calls=$(wc -l < "$CALLS" | tr -d ' ')
-      fail_case "no-real-git-gh:$harness" "statusline reached the real git / gh ${calls} time(s) (started without sl_run?):
-$(head -n 5 "$CALLS")"
-    fi
+    check_new_calls "no-real-git-gh:$harness" "$seen"
+    seen=$(call_count)
   done
+
+  sleep "$LATE_SEC"
+  check_new_calls "no-real-git-gh:late" "$seen"
 
   printf '\n'
   if [ "$failed" -eq 0 ]; then

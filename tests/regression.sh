@@ -319,9 +319,11 @@ run_case() {
   local show_model_name=""
   if [ -f "$SHOW_MODEL_OFF_DIR/${case_name}" ]; then show_model_name="0"; fi
 
-  # git-fetch-on/<case> があればバックグラウンド fetch を有効化する (マーカーが無ければ 0 = 無効。本体の既定は 1 なので 0 を渡す)。
-  local git_fetch="0"
-  if [ -f "$GIT_FETCH_ON_DIR/${case_name}" ]; then git_fetch="1"; fi
+  # git-fetch-on/<case> / pr-status-on/<case> があればバックグラウンド fetch / PR の状態表示を有効化する。
+  # マーカーが無ければ何も渡さず、sl_run の既定 (0 = 無効) に任せる (既定値をここで重ねて持たない)。
+  local -a marker_env=()
+  if [ -f "$GIT_FETCH_ON_DIR/${case_name}" ]; then marker_env+=(CLAUDE_STATUSLINE_GIT_FETCH=1); fi
+  if [ -f "$PR_STATUS_ON_DIR/${case_name}" ]; then marker_env+=(CLAUDE_STATUSLINE_PR_STATUS=1); fi
 
   # show-cwd-off/<case> があれば directory 列を非表示にする (既定は 1 = 表示)。
   local show_cwd=""
@@ -330,10 +332,6 @@ run_case() {
   # hyperlink-off/<case> があれば OSC 8 のリンクを出さない (既定は空 = リンクあり)。
   local force_hyperlink=""
   if [ -f "$HYPERLINK_OFF_DIR/${case_name}" ]; then force_hyperlink="0"; fi
-
-  # pr-status-on/<case> があれば PR の状態表示を有効化する (マーカーが無ければ 0 = 無効。本体の既定は 1 なので 0 を渡す)。
-  local pr_status="0"
-  if [ -f "$PR_STATUS_ON_DIR/${case_name}" ]; then pr_status="1"; fi
 
   # config-file/<case> があればそれを設定ファイルとして読ませる (無ければ conf 無し)。
   local config
@@ -373,8 +371,7 @@ run_case() {
       LAYOUT_LINE1="session" LAYOUT_LINE2="rate|model_ctx" \
       HIGHLIGHT="directory|branch|commit|session|model|ctx_chart|rate_chart|rate_reset|weekly_chart|weekly_reset|pr_comments|pr_number" \
       CLAUDE_STATUSLINE_SHOW_MODEL_NAME="$show_model_name" \
-      CLAUDE_STATUSLINE_GIT_FETCH="$git_fetch" \
-      CLAUDE_STATUSLINE_PR_STATUS="$pr_status" \
+      ${marker_env[@]+"${marker_env[@]}"} \
       CLAUDE_STATUSLINE_SHOW_CWD="$show_cwd" \
       CLAUDE_STATUSLINE_LAYOUT_LINE1="$case_layout_line1" \
       CLAUDE_STATUSLINE_LAYOUT_LINE2="$case_layout_line2" \
