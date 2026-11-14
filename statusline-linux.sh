@@ -58,17 +58,18 @@ SHOW_MODEL_NAME="${CLAUDE_STATUSLINE_SHOW_MODEL_NAME:-${SHOW_MODEL_NAME:-1}}"
 # env CLAUDE_STATUSLINE_COLOR_SCHEME=light でも上書き可。
 COLOR_SCHEME="${CLAUDE_STATUSLINE_COLOR_SCHEME:-${COLOR_SCHEME:-auto}}"
 
-# バックグラウンド git fetch のオプトイン設定。既定 0=無効 (従来動作を完全維持)。
+# バックグラウンド git fetch のオプトアウト設定。既定 1=有効、0 で無効にする。
 # 1 のとき、描画経路とは分離した投げっぱなし子プロセスで git fetch を実行し、
 # ↓behind を自動最新化する。描画自体はローカル完結のまま (ネットワーク I/O を持ち込まない)。
 # env CLAUDE_STATUSLINE_GIT_FETCH でも上書き可。
-GIT_FETCH="${CLAUDE_STATUSLINE_GIT_FETCH:-${GIT_FETCH:-0}}"
+GIT_FETCH="${CLAUDE_STATUSLINE_GIT_FETCH:-${GIT_FETCH:-1}}"
 
-# PR の状態表示のオプトイン設定。既定 0=無効。
+# PR の状態表示のオプトアウト設定。既定 1=有効、0 で無効にする。
 # 1 のとき、branch 列の末尾 (ab の右) に、現在のブランチに紐付く GitHub の PR の状態を半角スペース区切りで出す。
-# 取得は gh で行い、描画経路とは分離した投げっぱなし子プロセスに任せる (gh のインストールと gh auth login が必要)。
+# 取得は gh で行い、描画経路とは分離した投げっぱなし子プロセスに任せる (gh のインストールと gh auth login が必要。
+# gh が無い、または未ログインなら PR の状態は出ず、statusline の描画には影響しない)。
 # env CLAUDE_STATUSLINE_PR_STATUS でも上書き可。
-PR_STATUS="${CLAUDE_STATUSLINE_PR_STATUS:-${PR_STATUS:-0}}"
+PR_STATUS="${CLAUDE_STATUSLINE_PR_STATUS:-${PR_STATUS:-1}}"
 
 # 1 行目のカレントディレクトリ表示の ON/OFF。既定 1=表示。
 # 0 にすると directory 列だけが消え、2 行構成 (branch 列は 1 行目に残る) は維持する。
@@ -195,7 +196,7 @@ clamp_int RATE_CHART_LEN 12 "$RATE_CHART_LEN_MIN" "$RATE_CHART_LEN_MAX"
 # 丸めた後の RATE_CHART_LEN を使うので、RATE_CHART_LEN の clamp より後に置く (順序を入れ替えない)。
 POLL_INTERVAL_MAX_SEC=$((RATE_WINDOW_SEC / RATE_CHART_LEN))
 clamp_int POLL_INTERVAL_SEC 300 "$POLL_INTERVAL_MIN_SEC" "$POLL_INTERVAL_MAX_SEC"
-clamp_int GIT_FETCH_INTERVAL_SEC 900 "$GIT_FETCH_INTERVAL_MIN_SEC" "$GIT_FETCH_INTERVAL_MAX_SEC"
+clamp_int GIT_FETCH_INTERVAL_SEC 180 "$GIT_FETCH_INTERVAL_MIN_SEC" "$GIT_FETCH_INTERVAL_MAX_SEC"
 # --- 間引き定数ここまで ---
 
 # --- 履歴ディレクトリ ---

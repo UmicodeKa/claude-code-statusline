@@ -266,7 +266,7 @@ head のブランチ名とオーナーを push 先 (`@{push}`) から決める�
 
 `MERGED` / `CLOSED` を選ぶのは `headRefOid` がローカルの HEAD と一致するときだけです。マージ済みの PR と同じ名前のブランチを使い回して新しいコミットを積んだときに、古い PR を表示しないためです。
 
-`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` は見ません。Claude Code 標準の PR バッジを消すためにこの変数を設定した人でも、PR の状態表示は使えるようにするためです。`PR_STATUS=1` にすること自体が明示的なオプトインになっています。
+`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` は見ません。Claude Code 標準の PR バッジを消すためにこの変数を設定した人でも、PR の状態表示は使えるようにするためです。`PR_STATUS` は既定で有効なので、通信を止めたい人は、この変数ではなく `PR_STATUS=0` と `GIT_FETCH=0` で止めます。
 
 ### stdin の `pr` の変化による取得の前倒し
 
@@ -439,10 +439,10 @@ conf はシェルスクリプトとして読み込みます。JSON や YAML に�
 ### `maybe_git_fetch` の入口ガード
 
 - 箇所: `maybe_git_fetch` 冒頭の `[ "$GIT_FETCH" = "1" ] || return` と、repo / branch / detached / `HISTORY_DIR` の確認
-- 何をしているか: 既定の `GIT_FETCH=0` では何もせずに戻る。detached、および upstream の無いブランチでは fetch を投げない
-- 外すと何が起きるか: オプトインしていない利用者の環境でネットワークアクセスが発生する
-- 描画コスト: `GIT_FETCH=1` のときは、間引きで fetch を投げない通常経路でも描画ごとに `cksum` / `date` / `stat` の 3 fork が増える。`GIT_FETCH=0` (既定) では入口で return するため増えない
-- 守っているテスト: `60-ab-ahead` (`fetch_marker: absent`)、`67-git-fetch-ahead` (`present`)、`68-git-fetch-detached` / `69-git-fetch-no-upstream` (`absent`)
+- 何をしているか: `GIT_FETCH=0` では何もせずに戻る。detached、および upstream の無いブランチでは fetch を投げない
+- 外すと何が起きるか: `GIT_FETCH=0` にした (オプトアウトした) 利用者の環境でもネットワークアクセスが発生する
+- 描画コスト: `GIT_FETCH=1` のときは、間引きで fetch を投げない通常経路でも描画ごとに `cksum` / `date` / `stat` の 3 fork が増える。`GIT_FETCH=0` では入口で return するため増えない
+- 守っているテスト: `tests/git-fetch-behavior.sh` の `default-on` (既定で fetch する) と `opt-out-conf` (conf の `GIT_FETCH=0` で fetch しない)、`60-ab-ahead` (`fetch_marker: absent`)、`67-git-fetch-ahead` (`present`)、`68-git-fetch-detached` / `69-git-fetch-no-upstream` (`absent`)
 
 ### fetch 子プロセスの fd 付け替え
 
@@ -672,7 +672,17 @@ directory 列は `workspace.current_dir` の basename から取ります。次�
 
 ### 描画経路での同期 fetch
 
-`↓behind` を最新にするために描画のたびに fetch する方法は採りませんでした。ネットワーク待ちで描画が止まるためです。必要な場合は `GIT_FETCH=1` でオプトインし、別プロセスで投げっぱなしにした fetch の結果を次回以降の描画で反映します。
+`↓behind` を最新にするために描画のたびに fetch する方法は採りませんでした。ネットワーク待ちで描画が止まるためです。代わりに、別プロセスで投げっぱなしにした fetch の結果を次回以降の描画で反映します。この fetch は `GIT_FETCH=1` (既定) で動き、`GIT_FETCH=0` で止められます。
+
+### 取得系の機能を既定で無効にする案
+
+`GIT_FETCH` と `PR_STATUS` を既定で無効にし、使う人だけが `1` にする形 (オプトイン) は、既定を `1` にする形 (オプトアウト) に改めました。`↓behind` の最新化も PR の状態も、有効にしないと存在に気づかれず、設定ファイルを書く人にしか届かなかったためです。
+
+既定で有効にしても、描画は待たされません。どちらも描画経路とは別のバックグラウンドの子プロセスで動き、`gh` が無い、または未認証のときは何も表示せず失敗します。代わりに、何も設定していない利用者の環境でもネットワークアクセス (`git fetch` と GitHub API への問い合わせ) が起きます。これを避けたい人は `GIT_FETCH=0` / `PR_STATUS=0` で止めます。
+
+間引きの既定 `GIT_FETCH_INTERVAL_SEC` も、`↓behind` が遅れすぎないように 900 秒から 180 秒にしました。下限 (60 秒) と上限 (1800 秒) は変えていません。
+
+設定ファイルを持たない利用者は、更新するだけで新しい既定になります。既存の設定ファイルに `GIT_FETCH=0` / `PR_STATUS=0` と書いてある人は、その値が優先されるため挙動は変わりません。
 
 ### fetch の間引きの単位
 
@@ -680,7 +690,7 @@ directory 列は `workspace.current_dir` の basename から取ります。次�
 
 ### PR の状態を独立したレイアウトのトークンにする
 
-PR の状態を `LAYOUT_LINE1` の独立したトークンにする案は採りませんでした。PR はブランチに紐付く情報なので、branch 列の中 (ab の右) に半角スペースで区切って置き、有効化は `GIT_FETCH` と同じ形のフラグ `PR_STATUS` で行います。`gh` を起動するのは `PR_STATUS=1` で branch 列を組み立てるときだけなので、branch をレイアウトから外せば `gh` も起動しません。
+PR の状態を `LAYOUT_LINE1` の独立したトークンにする案は採りませんでした。PR はブランチに紐付く情報なので、branch 列の中 (ab の右) に半角スペースで区切って置き、有効と無効の切り替えは `GIT_FETCH` と同じ形のフラグ `PR_STATUS` で行います。`gh` を起動するのは `PR_STATUS=1` で branch 列を組み立てるときだけなので、branch をレイアウトから外せば `gh` も起動しません。
 
 ### stdin の `pr` フィールド
 

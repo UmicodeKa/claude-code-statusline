@@ -183,7 +183,7 @@ print_case() {
   if [ -f "$SHOW_CWD_OFF_DIR/${case_name}" ]; then show_cwd="0"; fi
   # config-file マーカーがあればそれを設定ファイルとして読ませる。無ければ存在しない
   # パスに固定し、開発者の実 ~/.claude/statusline.conf がプレビューへ漏れ込むのを防ぐ。
-  # COLOR_SCHEME / GIT_FETCH も空で渡し、開発者の shell の env が conf に勝つのを防ぐ。
+  # COLOR_SCHEME は空で渡し、開発者の shell の env が conf に勝つのを防ぐ。GIT_FETCH / PR_STATUS は本体の既定が 1 なので、conf が指定しないケースは 0 を渡す。
   local config
   config="$(config_for_case "$case_name")"
   # layout マーカーがあればそのレイアウト文字列で表示する (無ければ空 = 既定レイアウト)。
@@ -195,14 +195,17 @@ print_case() {
   # hyperlink-off マーカーがあれば OSC 8 のリンクを出さない (無ければ空 = リンクあり)。
   local force_hyperlink=""
   if [ -f "$HYPERLINK_OFF_DIR/${case_name}" ]; then force_hyperlink="0"; fi
-  # pr-status-on マーカーがあれば PR の状態を表示する (無ければ空 = 無効)。
-  local pr_status=""
+  # pr-status-on マーカーがあれば PR の状態を表示する (無ければ 0 = 無効。本体の既定は 1 なので 0 を渡す)。
+  local pr_status="0"
   if [ -f "$PR_STATUS_ON_DIR/${case_name}" ]; then pr_status="1"; fi
+  local git_fetch="0"
+  if conf_sets "$config" GIT_FETCH; then git_fetch=""; fi
+  if conf_sets "$config" PR_STATUS; then pr_status=""; fi
   # PATH 先頭に git-shim / gh-shim を差し込み、statusline 本体の git / gh 呼び出しを fake に差し替える。
   CLAUDE_STATUSLINE_HISTORY_DIR="$hist_dir" TZ=UTC \
     CLAUDE_STATUSLINE_CONFIG="$config" \
     CLAUDE_STATUSLINE_SHOW_MODEL_NAME="$show_model_name" \
-    CLAUDE_STATUSLINE_COLOR_SCHEME="" CLAUDE_STATUSLINE_GIT_FETCH="" CLAUDE_STATUSLINE_PR_STATUS="$pr_status" \
+    CLAUDE_STATUSLINE_COLOR_SCHEME="" CLAUDE_STATUSLINE_GIT_FETCH="$git_fetch" CLAUDE_STATUSLINE_PR_STATUS="$pr_status" \
     CLAUDE_STATUSLINE_SHOW_CWD="$show_cwd" \
     CLAUDE_STATUSLINE_LAYOUT_LINE1="$case_layout_line1" \
     CLAUDE_STATUSLINE_LAYOUT_LINE2="$case_layout_line2" CLAUDE_STATUSLINE_HIGHLIGHT="$case_highlight" \

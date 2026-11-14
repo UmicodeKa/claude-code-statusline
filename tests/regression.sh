@@ -33,7 +33,7 @@ DISABLE_HISTORY_DIR="$TESTS_DIR/disable-history"
 SHOW_MODEL_OFF_DIR="$TESTS_DIR/show-model-off"
 # git-fetch-on/<case> があればそのケースで CLAUDE_STATUSLINE_GIT_FETCH=1 を渡し、
 # バックグラウンド fetch 有効時も描画出力が不変であることを検証する。マーカーが無ければ
-# 既定の 0 (無効)。fetch 自体は fake git の no-op なので実ネットワークには出ない。
+# 明示の 0 (無効。本体の既定は 1 なので env で 0 を渡す)。fetch 自体は fake git の no-op なので実ネットワークには出ない。
 GIT_FETCH_ON_DIR="$TESTS_DIR/git-fetch-on"
 # show-cwd-off/<case> があればそのケースで CLAUDE_STATUSLINE_SHOW_CWD=0 を渡し、
 # 1 行目の directory 列だけが消えること (2 行構成そのものは維持) を検証する。
@@ -325,8 +325,8 @@ run_case() {
   local show_model_name=""
   if [ -f "$SHOW_MODEL_OFF_DIR/${case_name}" ]; then show_model_name="0"; fi
 
-  # git-fetch-on/<case> があればバックグラウンド fetch を有効化する (既定は 0 = 無効)。
-  local git_fetch=""
+  # git-fetch-on/<case> があればバックグラウンド fetch を有効化する (マーカーが無ければ 0 = 無効。本体の既定は 1 なので 0 を渡す)。
+  local git_fetch="0"
   if [ -f "$GIT_FETCH_ON_DIR/${case_name}" ]; then git_fetch="1"; fi
 
   # show-cwd-off/<case> があれば directory 列を非表示にする (既定は 1 = 表示)。
@@ -337,13 +337,16 @@ run_case() {
   local force_hyperlink=""
   if [ -f "$HYPERLINK_OFF_DIR/${case_name}" ]; then force_hyperlink="0"; fi
 
-  # pr-status-on/<case> があれば PR の状態表示を有効化する (既定は 0 = 無効)。
-  local pr_status=""
+  # pr-status-on/<case> があれば PR の状態表示を有効化する (マーカーが無ければ 0 = 無効。本体の既定は 1 なので 0 を渡す)。
+  local pr_status="0"
   if [ -f "$PR_STATUS_ON_DIR/${case_name}" ]; then pr_status="1"; fi
 
   # config-file/<case> があればそれを設定ファイルとして読ませる (無ければ conf 無し)。
   local config
   config="$(config_for_case "$case_name")"
+  # conf が GIT_FETCH / PR_STATUS を指定するケースは、env を空にして conf に決めさせる (env は conf に勝つため)。
+  if conf_sets "$config" GIT_FETCH; then git_fetch=""; fi
+  if conf_sets "$config" PR_STATUS; then pr_status=""; fi
 
   # layout/<case> があればレイアウト文字列を渡す (無ければ空 = conf → 既定値)。
   local case_layout_line1 case_layout_line2

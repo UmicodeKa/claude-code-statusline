@@ -103,7 +103,7 @@ run_sl() {
   shift 2
   env CLAUDE_STATUSLINE_HISTORY_DIR="$hist" TZ=UTC \
     CLAUDE_STATUSLINE_CONFIG="$NO_CONFIG" \
-    CLAUDE_STATUSLINE_COLOR_SCHEME="" CLAUDE_STATUSLINE_GIT_FETCH="" \
+    CLAUDE_STATUSLINE_COLOR_SCHEME="" CLAUDE_STATUSLINE_GIT_FETCH=0 \
     CLAUDE_STATUSLINE_PR_STATUS=1 CLAUDE_STATUSLINE_LAYOUT_LINE1="branch" CLAUDE_STATUSLINE_LAYOUT_LINE2="" \
     CLAUDE_STATUSLINE_HIGHLIGHT="" FORCE_HYPERLINK=0 \
     STATUSLINE_TEST_GH_SENTINEL="$sentinel" \
@@ -180,6 +180,40 @@ case_not_invoked_when_disabled() {
   else
     fail_case "not-invoked-when-disabled [$label]" \
       "無効なのに gh が $(sentinel_count) 回呼ばれた、または pr-* が作られた"
+  fi
+}
+
+# --- default-on: env も conf も無い (既定) と gh が起動される (オプトアウト形式) ---
+# PR_STATUS の既定が 0 に戻ると、何も設定していない利用者に PR の状態が出なくなる。
+# env を空 (未指定と同じ) にして既定値の経路を通す。
+case_default_on() {
+  local bash_bin=$1 script=$2 label=$3
+  setup_case "branch=main;ab=0,0"
+  trap 'cleanup_case; trap - RETURN' RETURN
+
+  run_sl "$bash_bin" "$script" CLAUDE_STATUSLINE_PR_STATUS= >/dev/null
+  if wait_until 5 '[ -s "$(cache_path main)" ]'; then
+    pass_case "default-on [$label]"
+  else
+    fail_case "default-on [$label]" \
+      "env も conf も無いのに gh が起動されない (gh 呼び出し $(sentinel_count) 回)。PR_STATUS の既定が 1 でなくなっている"
+  fi
+}
+
+# --- opt-out-conf: conf に PR_STATUS=0 を書くと gh を起動せず、ファイルも作らない ---
+case_opt_out_conf() {
+  local bash_bin=$1 script=$2 label=$3
+  setup_case "branch=main;ab=0,0"
+  trap 'cleanup_case; rm "${hist}.conf" 2>/dev/null || true; trap - RETURN' RETURN
+
+  printf 'PR_STATUS=0\n' > "${hist}.conf"
+  run_sl "$bash_bin" "$script" CLAUDE_STATUSLINE_PR_STATUS= CLAUDE_STATUSLINE_CONFIG="${hist}.conf" >/dev/null
+  sleep 0.5
+  if [ "$(sentinel_count)" = "0" ] && ! compgen -G "$hist/pr-*" >/dev/null; then
+    pass_case "opt-out-conf [$label]"
+  else
+    fail_case "opt-out-conf [$label]" \
+      "conf に PR_STATUS=0 を書いたのに gh が $(sentinel_count) 回呼ばれた、または pr-* が作られた"
   fi
 }
 
@@ -1174,7 +1208,9 @@ run_all_cases() {
   local url12="https://github.com/my-org/my-project/pull/12"
   case_invoked                    "$bash_bin" "$script" "$label"
   case_not_invoked_when_disabled  "$bash_bin" "$script" "$label"
-  case_non_blocking               "$bash_bin" "$script" "$label"
+  case_default_on                 "$bash_bin" "$script" "$label"
+  case_opt_out_conf               "$bash_bin" "$script" "$label"
+  case_non_blocking              "$bash_bin" "$script" "$label"
   case_throttle                   "$bash_bin" "$script" "$label"
   case_single_flight              "$bash_bin" "$script" "$label"
   case_stale_inflight             "$bash_bin" "$script" "$label"

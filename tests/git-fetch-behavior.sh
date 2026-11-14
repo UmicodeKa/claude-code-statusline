@@ -12,6 +12,9 @@
 #   4. lock-released : fetch 完走までロックが保持されない (marker -> unlock -> spawn の順序)
 #   5. marker-unwritable : マーカーを書けないときは fetch を投げない (間引き無効化の防止)
 #   6. clamp-zero-interval : GIT_FETCH_INTERVAL_SEC=0 でも clamp が下限 60 へ丸めて間引きが効く
+#   7. default-on    : env も conf も無いとき (既定) fetch が実際に投げられる (オプトアウト形式)
+#   8. opt-out-conf  : conf に GIT_FETCH=0 を書くと fetch を投げない
+#   9. default-interval : 既定の間引き間隔は 180 秒 (170 秒前のマーカーなら投げず、190 秒前なら投げる)
 #
 # 実ネットワークには一切出ない (PATH 先頭の fake git が fetch を受ける)。
 
@@ -36,6 +39,8 @@ DEBIAN_SCRIPT="$REPO_DIR/statusline-linux.sh"
 source "$TESTS_DIR/lib/find-debian-bash.sh"
 # shellcheck source=lib/config-file.sh
 source "$TESTS_DIR/lib/config-file.sh"
+# shellcheck source=lib/age-file.sh
+source "$TESTS_DIR/lib/age-file.sh"
 # shellcheck source=lib/is-macos-host.sh
 source "$TESTS_DIR/lib/is-macos-host.sh"
 DEBIAN_BASH="$(find_debian_bash)"
@@ -65,15 +70,29 @@ fail_case() {
 # statusline を 1 回実行する。stdout は捨てる (本テストは描画内容を見ない)。
 # 引数: $1 bash 実行ファイル / $2 スクリプト / $3 履歴 dir / $4 sentinel / $5 fetch の sleep 秒
 #       $6 設定ファイル (省略時は存在しないパス = conf 無し)
+#       $7 CLAUDE_STATUSLINE_GIT_FETCH に渡す値 (省略時は 1。空文字なら env 未指定と同じで、conf → 既定値に従う)
 run_statusline() {
-  local bash_bin=$1 script=$2 hist=$3 sentinel=$4 sleep_sec=$5 config=${6:-$NO_CONFIG}
+  local bash_bin=$1 script=$2 hist=$3 sentinel=$4 sleep_sec=$5 config=${6:-$NO_CONFIG} fetch_env=${7-1}
   CLAUDE_STATUSLINE_HISTORY_DIR="$hist" TZ=UTC \
   CLAUDE_STATUSLINE_CONFIG="$config" \
-  CLAUDE_STATUSLINE_GIT_FETCH=1 \
+  CLAUDE_STATUSLINE_GIT_FETCH="$fetch_env" CLAUDE_STATUSLINE_PR_STATUS=0 \
   STATUSLINE_TEST_FETCH_SLEEP="$sleep_sec" \
   STATUSLINE_TEST_FETCH_SENTINEL="$sentinel" \
   PATH="$GIT_SHIM_DIR:$PATH" \
     "$bash_bin" "$script" < "$FIXTURE" >/dev/null 2>&1
+}
+
+# sentinel が $2 行以上になるまで最大 $3 秒待つ。到達したら 0、時間切れなら 1。
+wait_for_count() {
+  local sentinel=$1 want=$2 timeout_sec=$3
+  local attempts=$((timeout_sec * 10))
+  local i=0
+  while [ "$i" -lt "$attempts" ]; do
+    [ "$(wc -l < "$sentinel" | tr -d ' ')" -ge "$want" ] && return 0
+    sleep 0.1
+    i=$((i + 1))
+  done
+  return 1
 }
 
 # sentinel に最低 1 行書かれるまで最大 $2 秒待つ。書かれたら 0、時間切れなら 1。
@@ -139,7 +158,7 @@ case_non_blocking() {
   output=$(
     CLAUDE_STATUSLINE_HISTORY_DIR="$hist" TZ=UTC \
     CLAUDE_STATUSLINE_CONFIG="$NO_CONFIG" \
-    CLAUDE_STATUSLINE_GIT_FETCH=1 \
+    CLAUDE_STATUSLINE_GIT_FETCH=1 CLAUDE_STATUSLINE_PR_STATUS=0 \
     STATUSLINE_TEST_FETCH_SLEEP="$SLOW_FETCH_SEC" \
     STATUSLINE_TEST_FETCH_SENTINEL="$sentinel" \
     PATH="$GIT_SHIM_DIR:$PATH" \
@@ -161,7 +180,7 @@ case_non_blocking() {
 }
 
 # --- 3. 間引き ---
-# GIT_FETCH_INTERVAL_SEC (900) 未満の連続呼び出しでは 2 回目の fetch を投げないこと。
+# GIT_FETCH_INTERVAL_SEC (180) 未満の連続呼び出しでは 2 回目の fetch を投げないこと。
 case_throttle() {
   local bash_bin=$1 script=$2 label=$3
   local hist sentinel count
@@ -309,15 +328,105 @@ case_clamp_zero_interval() {
   fi
 }
 
+# --- 7. 既定 (env も conf も無い) で fetch が投げられる ---
+# GIT_FETCH の既定は 1 (オプトアウト形式)。既定が 0 に戻ると、何も設定していない利用者の
+# ↓behind が自動で最新化されなくなる。env を空 (未指定と同じ) にして、既定値の経路を通す。
+case_default_on() {
+  local bash_bin=$1 script=$2 label=$3
+  local hist sentinel
+  hist="$(mktemp -d -t claude-statusline-fetch.XXXXXX)"
+  sentinel="${hist}.sentinel"
+  : > "$sentinel"
+  # shellcheck disable=SC2064
+  trap "rm -r '$hist' 2>/dev/null || true; rm '$sentinel' 2>/dev/null || true" RETURN
+
+  run_statusline "$bash_bin" "$script" "$hist" "$sentinel" 0 "$NO_CONFIG" ""
+  if wait_for_sentinel "$sentinel" 3; then
+    pass_case "default-on [$label]"
+  else
+    fail_case "default-on [$label]" \
+      "env も conf も無いのに fetch が飛ばない。GIT_FETCH の既定が 1 でなくなっている"
+  fi
+}
+
+# --- 8. conf の GIT_FETCH=0 でオプトアウトできる ---
+case_opt_out_conf() {
+  local bash_bin=$1 script=$2 label=$3
+  local hist sentinel config count
+  hist="$(mktemp -d -t claude-statusline-fetch.XXXXXX)"
+  sentinel="${hist}.sentinel"
+  config="${hist}.conf"
+  : > "$sentinel"
+  printf 'GIT_FETCH=0\n' > "$config"
+  # shellcheck disable=SC2064
+  trap "rm -r '$hist' 2>/dev/null || true; rm '$sentinel' '$config' 2>/dev/null || true" RETURN
+
+  run_statusline "$bash_bin" "$script" "$hist" "$sentinel" 0 "$config" ""
+  sleep 0.5
+
+  count=$(wc -l < "$sentinel" | tr -d ' ')
+  if [ "$count" = "0" ]; then
+    pass_case "opt-out-conf [$label]"
+  else
+    fail_case "opt-out-conf [$label]" \
+      "conf に GIT_FETCH=0 を書いたのに fetch が ${count} 回飛んだ (期待 0 回)"
+  fi
+}
+
+# --- 9. 既定の間引き間隔は 180 秒 ---
+# conf に GIT_FETCH_INTERVAL_SEC が無いとき、間引きの基点 (マーカー) から 180 秒未満なら投げず、
+# 180 秒を過ぎたら投げる。マーカーの mtime をずらして境界の両側を確かめる。
+case_default_interval() {
+  local bash_bin=$1 script=$2 label=$3
+  local hist sentinel key marker count
+  hist="$(mktemp -d -t claude-statusline-fetch.XXXXXX)"
+  sentinel="${hist}.sentinel"
+  : > "$sentinel"
+  # shellcheck disable=SC2064
+  trap "rm -r '$hist' 2>/dev/null || true; rm '$sentinel' 2>/dev/null || true" RETURN
+
+  run_statusline "$bash_bin" "$script" "$hist" "$sentinel" 0
+  if ! wait_for_sentinel "$sentinel" 3; then
+    fail_case "default-interval [$label]" "1 回目の fetch が飛んでいない (前提が崩れている)"
+    return
+  fi
+
+  key=$(jq -r '.workspace.current_dir // ""' < "$FIXTURE" | tr -d '\n' | cksum)
+  key=${key%% *}
+  marker="${hist}/fetch-${key}"
+
+  age_file "$marker" 170
+  run_statusline "$bash_bin" "$script" "$hist" "$sentinel" 0
+  sleep 0.5
+  count=$(wc -l < "$sentinel" | tr -d ' ')
+  if [ "$count" != "1" ]; then
+    fail_case "default-interval [$label]" \
+      "マーカーが 170 秒前なのに fetch が飛んだ (合計 ${count} 回)。既定の間隔が 180 秒より短い"
+    return
+  fi
+
+  age_file "$marker" 190
+  run_statusline "$bash_bin" "$script" "$hist" "$sentinel" 0
+  if wait_for_count "$sentinel" 2 3; then
+    pass_case "default-interval [$label]"
+  else
+    fail_case "default-interval [$label]" \
+      "マーカーが 190 秒前なのに fetch が飛ばない。既定の間隔が 180 秒より長い"
+  fi
+}
+
 run_all_cases() {
   local bash_bin=$1 script=$2 label=$3 lock_kind=$4
-  total=$((total + 6))
+  total=$((total + 9))
   case_fetch_invoked       "$bash_bin" "$script" "$label"
   case_non_blocking        "$bash_bin" "$script" "$label"
   case_throttle            "$bash_bin" "$script" "$label"
   case_lock_released       "$bash_bin" "$script" "$label" "$lock_kind"
   case_marker_unwritable   "$bash_bin" "$script" "$label"
   case_clamp_zero_interval "$bash_bin" "$script" "$label"
+  case_default_on          "$bash_bin" "$script" "$label"
+  case_opt_out_conf        "$bash_bin" "$script" "$label"
+  case_default_interval    "$bash_bin" "$script" "$label"
 }
 
 # 環境チェック (両版共通の必須コマンドが揃っているか)。
