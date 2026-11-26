@@ -34,6 +34,7 @@ This repository has two scripts: the macOS version (`statusline-macos.sh`) and t
 - bash and `jq` (needed to run the scripts and the tests)
 - `git`
 - Node.js and npm
+- ShellCheck 0.9.0 or later (needed by `npm run check`; on macOS `brew install shellcheck`, on Debian / Ubuntu `sudo apt-get install shellcheck`)
 
 Node.js is used only for Markdown linting (`markdownlint-cli2`) and formatting, and for running npm scripts in parallel and in sequence (`npm-run-all2`). The statusline scripts themselves do not depend on Node.js.
 
@@ -80,7 +81,7 @@ git config commit.template .gitmessage
 | --- | --- |
 | `npm test` | Runs, in order, the regression tests (`tests/regression.sh`), the background fetch behavior tests (`tests/git-fetch-behavior.sh`), the PR status display retrieval behavior tests (`tests/pr-status-behavior.sh`), the rate history behavior tests (`tests/rate-history-behavior.sh`), the color scheme auto-detection behavior tests (`tests/color-scheme-behavior.sh`), the isolation check of the test harness start environment (`tests/harness-isolation.sh`), the static parity check of both versions (`tests/script-parity.sh`), and the sync check of the Japanese and English documents (`tests/translation-parity.sh`) |
 | `npm run preview` | Shows the actual output of each fixture in the terminal with the ANSI colors intact (`tests/e2e-preview.sh`). `--macos` / `--linux` shows only one version (`bash tests/e2e-preview.sh --linux`) |
-| `npm run check` | Runs the Markdown format check and lint |
+| `npm run check` | Runs the Markdown format check and lint, and ShellCheck on the shell scripts (`scripts/lint-shell.sh`) |
 | `npm run fix` | Runs the Markdown formatting and the automatic lint fixes |
 
 For the structure of the tests and how to add fixtures, see [tests/README.en.md](../tests/README.en.md).
@@ -97,7 +98,7 @@ For the structure of the tests and how to add fixtures, see [tests/README.en.md]
    The comments in `statusline.conf` are bilingual and have no automatic check, so when you change a comment, update both the Japanese and the English lines.
 6. Verify with the following three.
    - `npm test` passes completely
-   - `npm run check` passes (if there are errors, `npm run fix` fixes most of them)
+   - `npm run check` passes (`npm run fix` fixes most Markdown errors; ShellCheck findings are fixed by hand)
    - Visually check the actual display, including colors, with `npm run preview`
 
 ### Verifying on macOS and Linux
@@ -117,6 +118,19 @@ The test harness skips the cases for the script that cannot run in the current e
 The conversion rules are in `scripts/format-markdown.mjs`.
 
 You do not need to fix notation inconsistencies by hand. If you notice one, run `npm run fix`.
+
+## Static Analysis of Shell Scripts (ShellCheck)
+
+`npm run check` (`npm run lint:sh`) runs ShellCheck, through `scripts/lint-shell.sh`, on the shell scripts tracked by git. If `shellcheck` is not found, it shows how to install it and fails.
+
+- The targets are the `*.sh` files, the test shims (`tests/lib/*-shim/*`), and the git hooks (`.githooks/*`), listed with `git ls-files`. A new script that matches these patterns is included without any extra step.
+  `statusline.conf` is excluded: it is a template containing only plain assignments, so every line would be reported as an unused variable (SC2034).
+- The `.shellcheckrc` at the repository root resolves `# shellcheck source=...` relative to the directory of the file (`source-path=SCRIPTDIR`), and follows `source` targets to check them too (`external-sources=true`).
+  ShellCheck looks for this file by walking up from the directory of the file being checked, so editor extensions check with the same settings.
+- Findings are fixed as a rule. Only when fixing one would change the behavior, or would add a fork to the rendering path of the statusline scripts, suppress it per line, as in `# shellcheck disable=SC2086 # <reason>`, with the reason on the same line.
+  Global suppression in `.shellcheckrc` is not used.
+- The ShellCheck version is not pinned. CI uses the one from Ubuntu's apt, and local machines use one from Homebrew or elsewhere, so a newer local version may report more findings. Fixing those findings makes both pass.
+  `scripts/lint-shell.sh` prints the version first, so compare it when the results differ.
 
 ## Writing a Pull Request
 
