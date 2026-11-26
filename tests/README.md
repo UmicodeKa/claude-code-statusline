@@ -123,6 +123,7 @@ PR の状態表示の取得も投げっぱなしの非同期処理のため、fa
 | `older-window-input` | `resets_at` が R−18000 の入力は、そのまま描き、`rate-now` も履歴も書き換えない |
 | `future-reset-recovers` | `rate-now` の `resets_at` が窓の長さより先 (`9999999999`) なら、入力で置き換える |
 | `missing-reset` | `resets_at` の欠落した入力は、そのまま描き、`rate-now` も履歴も書き換えない |
+| `missing-reset-expired-now` | `rate-now` の `resets_at` が過去 (窓が終わっている) なら、`resets_at` の欠落した入力も履歴に書く。`rate-now` は書き換えない |
 | `missing-reset-no-now` | `rate-now` が無ければ、`resets_at` の欠落した入力も履歴に書く。`rate-now` は作らない |
 | `corrupt-now:*` | 読めない `rate-now` (小数、`a b`、CRLF、値の過不足、空、算術式で評価される値) でも、標準エラーに何も出さずに描き、入力で置き換える |
 | `history-records-adopted` | 間隔を過ぎた描画で、入力 77 ではなく採用値 30 を履歴に追記する |

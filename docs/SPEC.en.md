@@ -506,13 +506,16 @@ Let the input remaining amount be v, its `resets_at` be r, and the values in `ra
 | Condition | Adopted value | `rate-now` | Append to history |
 | --- | --- | --- | --- |
 | `rate-now` is missing or unreadable | v | Write `v r` (not written if r is 0) | Yes |
-| r is 0 (missing) and `rate-now` is readable | v | Unchanged | No |
+| r is 0 (missing), `rate-now` is readable, and fr > now | v | Unchanged | No |
+| r is 0 (missing), `rate-now` is readable, and fr ≤ now (the window has ended) | v | Unchanged | Yes |
 | \|r − fr\| < 9000 (same window) | min(v, fv) | Rewritten to `v fr` only when v < fv (`resets_at` stays fr) | Yes |
 | r ≥ fr + 9000 (new window) | v | Replaced with `v r` | Yes |
 | r ≤ fr − 9000 and fr ≤ now + 18000 | v | Unchanged | No |
 | r ≤ fr − 9000 and fr > now + 18000 | v | Replaced with `v r` | Yes |
 
 - An input whose `resets_at` is missing, or that belongs to a window older than the stored one, cannot be compared (or is old), so it is used only for that session's display and is written neither to the shared history nor to `rate-now`
+- Even for an input with a missing `resets_at`, the history is written if the window in `rate-now` has already ended. This keeps a `rate-now` from an ended window from blocking history appends forever when only inputs with a missing
+  `resets_at` keep arriving
 - The last row handles a `resets_at` in `rate-now` that points further ahead of the current time than one window length (a corrupted value or clock skew). Replacing it makes later inputs comparable again
 - `rate-now` is read and written inside the same lock as the history. Rewrites replace the file through a temp file and `mv`
 - When `HISTORY_DIR` is invalid, the input remaining amount is used as-is
@@ -522,7 +525,8 @@ Limitations:
 
 - When usage drops without `resets_at` changing, such as when a limit reset is used, the lower remaining amount stays on display until the end of the window
 - `rate-now` does not distinguish accounts. If sessions for different accounts are open at the same time and their `resets_at` differ by less than 9000 seconds, they are treated as the same window, and the pane for the account with more remaining also
-  shows the lower amount (the shared history `rate` does not distinguish accounts either)
+  shows the lower amount (the shared history `rate` does not distinguish accounts either). If the difference is 9000 seconds or more, the account with the later window holds `rate-now`, and the other account's inputs are treated as
+  an "older window". That pane shows its own remaining amount, but it is not written to the shared history, and the left side of the chart holds the values of the account with the later window
 - weekly is out of scope. Each pane shows the value from its own session's last API response
 
 ### Recommended Throttling Interval Ranges

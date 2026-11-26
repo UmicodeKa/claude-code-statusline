@@ -237,10 +237,11 @@ The decision table is in [SPEC's Rate Limit History](SPEC.en.md#remaining-amount
   after the previous window's, so as long as the tolerance is smaller than the window length they cannot be confused. The judgment would not change even if the window were 4 hours long
 - When rewriting within the same window, `resets_at` keeps the stored value. Overwriting it with the input's value would let drift accumulate and slowly move the base point of the tolerance
 - An input with a missing `resets_at`, and an input from a window older than the stored one, are used only for that pane's display and are not written to the shared history. Writing them would let an idle session take a slot with that
-  value, bringing the original symptom back
+  value, bringing the original symptom back. However, an input with a missing `resets_at` is written to history if the window in `rate-now` has already ended, because otherwise a `rate-now` from an ended window would keep blocking
+  history appends while only inputs with a missing `resets_at` arrive
 - If the stored `resets_at` points further ahead of the current time than one window length, it is treated as a corrupted value and replaced. Without replacing it, every later input would hit "older window", and the countermeasure would
-  stay ineffective without ever recovering. `date +%s` is called once only for this judgment. The end of the window is not compared with the current time on every render, because once a value from the next window arrives it replaces the
-  stored one as a "new window", and normal renders avoid starting an extra `date`
+  stay ineffective without ever recovering. `date +%s` is called once only for this judgment and for the missing-`resets_at` judgment above. The end of the window is not compared with the current time on every render, because once
+  a value from the next window arrives it replaces the stored one as a "new window", and normal renders avoid starting an extra `date`
 - `rate_now_resolve` is called from inside the `history_push` lock, and the lock is taken only once ([Handling `rate-now` and the History Under One Lock](#handling-rate-now-and-the-history-under-one-lock))
 - Reading uses only the built-in `read`. `rate-now` is rewritten only each time the remaining amount drops by 1% and when the window changes, so most renders add no forks
 - Values are used only when they match `[[ $x =~ ^[0-9]+$ ]]` ([Validating `rate-now` Values Before Arithmetic](#validating-rate-now-values-before-arithmetic))
@@ -726,11 +727,12 @@ Using the same order in both versions confines the implementation difference to 
 ### Not Writing Uncomparable rate Inputs to History
 
 - Location: the two `rate_record=0` spots in `rate_now_resolve` (missing `resets_at`, and a window older than the stored one)
-- What it does: an input that cannot be compared, or one from an older window, is used only for that pane's display, and neither `rate-now` nor the history is written. Only when the stored value points further ahead of the current time
-  than one window length is it replaced
+- What it does: while `rate-now` is readable, an input that cannot be compared, or one from an older window, is used only for that pane's display, and neither `rate-now` nor the history is written. Only when the stored value points
+  further ahead of the current time than one window length is it replaced. Even an input with a missing `resets_at` is written to history if the window in `rate-now` has already ended (it is also written when `rate-now` is missing or
+  unreadable)
 - What happens if removed: idle sessions take history slots with those values, and the symptom of the chart recovering remains. Without replacing a stored value that points ahead, every later input is treated as an older window, and neither
-  `rate-now` nor the history is updated again
-- Tests that guard it: `missing-reset` / `older-window-input` / `future-reset-recovers` / `missing-reset-no-now` in `tests/rate-history-behavior.sh`
+  `rate-now` nor the history is updated again. Without checking whether the window has ended, a `rate-now` from an ended window keeps blocking history appends while only inputs with a missing `resets_at` arrive
+- Tests that guard it: `missing-reset` / `missing-reset-expired-now` / `older-window-input` / `future-reset-recovers` / `missing-reset-no-now` in `tests/rate-history-behavior.sh`
 
 ### Validating `rate-now` Values Before Arithmetic
 

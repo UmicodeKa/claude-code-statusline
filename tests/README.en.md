@@ -135,6 +135,7 @@ The mtime is shifted with `lib/age-file.sh`. The cases are as follows, each run 
 | `older-window-input` | An input with `resets_at` R−18000 is drawn as-is, and neither `rate-now` nor the history is rewritten |
 | `future-reset-recovers` | If the `resets_at` in `rate-now` is further ahead than one window length (`9999999999`), it is replaced with the input |
 | `missing-reset` | An input with a missing `resets_at` is drawn as-is, and neither `rate-now` nor the history is rewritten |
+| `missing-reset-expired-now` | If the `resets_at` in `rate-now` is in the past (the window has ended), an input with a missing `resets_at` is still written to history. `rate-now` is not rewritten |
 | `missing-reset-no-now` | Without `rate-now`, an input with a missing `resets_at` is still written to history. `rate-now` is not created |
 | `corrupt-now:*` | An unreadable `rate-now` (a decimal, `a b`, CRLF, too few or too many values, empty, a value evaluated by arithmetic) is drawn without anything on stderr and replaced with the input |
 | `history-records-adopted` | A render after the interval appends the adopted value 30, not the input 77, to history |

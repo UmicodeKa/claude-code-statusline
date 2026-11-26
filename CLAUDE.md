@@ -68,7 +68,7 @@ statusline 本体 (`statusline-*.sh`) は、一般的なシェルスクリプト
 - 設定ファイルの読み込み位置は、内部定数と clamp ブロックより前。後ろに移すと conf の不正値が丸められず、内部定数も conf で書き換えられるようになる。([詳細](docs/DESIGN.md#設定ファイルの読み込みブロック))
 - clamp の順序は `RATE_CHART_LEN` → `POLL_INTERVAL_MAX_SEC` の計算 → `POLL_INTERVAL_SEC`。`POLL_INTERVAL_SEC` の上限は丸めた後のチャート長から決まるため、入れ替えると丸める前の値で上限を求めてしまう。([詳細](docs/DESIGN.md#間引き間隔の-clamp))
 - rate の `rate-now` の読み書き (`rate_now_resolve`) は `history_push` のロックの中から呼び、履歴の追記と 1 つのロックで行う。ロックを分けると取り合いの待ちが 2 回分になり、ロックの外で決めた採用値で、ほかのセッションが書いた低い値を上書きしうる。追記するのは入力ではなく採用値。([詳細](docs/DESIGN.md#rate-now-と履歴を-1-つのロックで扱う))
-- `resets_at` が欠落した入力と保存値より古い窓の入力は、`rate-now` にも履歴にも書かない (`rate_record=0`)。書くと待機中のセッションの古い残量が履歴の枠を取り、チャートが戻る。`rate-now` の値は `^[0-9]+$` で検査してから算術式に渡す。([詳細](docs/DESIGN.md#比べられない-rate-の入力を履歴に書かない))
+- `rate-now` が読めるとき、`resets_at` が欠落した入力と保存値より古い窓の入力は、`rate-now` にも履歴にも書かない (`rate_record=0`)。書くと待機中のセッションの古い残量が履歴の枠を取り、チャートが戻る。例外は、`rate-now` が無い･読めないときと、欠落した入力で `rate-now` の窓が既に終わっているときで、どちらも履歴には書く。`rate-now` の値は `^[0-9]+$` で検査してから算術式に渡す。([詳細](docs/DESIGN.md#比べられない-rate-の入力を履歴に書かない))
 - `HISTORY_DIR` の安全性チェック (symlink、所有 uid、mode 700): 外すと `/tmp` 上で他ユーザーが用意したディレクトリやリンクに書き込みうる。([詳細](docs/DESIGN.md#履歴ディレクトリの安全性チェック))
 - `COLOR_SCHEME=auto` の判定 (`resolve_color_scheme`) を描画のたびに `jq` で行わない。OS の外観 (`defaults`) は端末のテーマと一致するとは限らないので見ない。判定結果を `${HISTORY_DIR}/color-scheme` に置き、`[[ cache -nt src ]]` がすべてのファイルで真のときだけ使う。
   `src -nt cache` に逆にすると同じ秒の変更を取りこぼす。読む前に作った一時ファイルの mtime を印にし、読んだファイルが印より厳密に古いときだけ書く。外すと、読んでからキャッシュを書くまでに秒をまたいだ変更を取りこぼす。

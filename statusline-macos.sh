@@ -531,8 +531,8 @@ set_remaining() {
 # 決めた採用値を後から書くと、その間にほかのセッションが書いた低い値を古い値で上書きしうる。
 # 値は ^[0-9]+$ に合うときだけ使い、合わない rate-now は読めないものとして扱う。検査の前に算術式に
 # 渡さない (値によっては算術式の中で評価されるため)。先頭の 0 は 10# で 10 進数に直す。
-# 読むのは組み込みの read だけで、fork するのは rate-now を書き換えるとき (mktemp と mv) と、
-# 保存値より古い窓の入力が来たとき (date) だけ。
+# 読むのは組み込みの read だけで、fork するのは rate-now を書き換えるとき (mktemp と mv) と、resets_at の欠落した
+# 入力または保存値より古い窓の入力が来たとき (date) だけ。
 rate_now_resolve() {
   local _rn_file=$1 _rn_v=$2 _rn_r=$3
   local _rn_fv='' _rn_fr='' _rn_extra='' _rn_write='' _rn_now _rn_tmp
@@ -549,7 +549,12 @@ rate_now_resolve() {
     [ "$_rn_r" -gt 0 ] && _rn_write="$_rn_v $_rn_r"
   elif [ "$_rn_r" -eq 0 ]; then
     # resets_at が欠落: 比べようがないので自分の表示にだけ使い、共通の履歴にも rate-now にも書かない。
-    rate_record=0
+    # ただし rate-now の窓が既に終わっていれば、rate-now が無いときと同じく履歴には書く (rate-now は書かない)。
+    # 欠落した入力だけが続くと、終わった窓の rate-now が履歴の追記を止め続けるため。現在時刻はこの分岐でだけ取る。
+    _rn_now=$(date +%s)
+    if ! [[ $_rn_now =~ ^[0-9]+$ ]] || [ $((10#$_rn_fr)) -gt "$_rn_now" ]; then
+      rate_record=0
+    fi
   else
     _rn_fv=$((10#$_rn_fv))
     _rn_fr=$((10#$_rn_fr))

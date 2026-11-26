@@ -24,6 +24,7 @@
 #   older-window-input         : 保存値より古い窓の入力は表示にだけ使い、rate-now も履歴も書かない
 #   future-reset-recovers      : rate-now の resets_at が窓の長さより先なら置き換える
 #   missing-reset              : resets_at の欠落した入力は表示にだけ使い、rate-now も履歴も書かない
+#   missing-reset-expired-now  : rate-now の窓が終わっていれば、resets_at の欠落した入力も履歴に書く
 #   missing-reset-no-now       : rate-now が無ければ resets_at の欠落した入力も履歴に書く (rate-now は作らない)
 #   corrupt-now                : 読めない rate-now (小数、CRLF、値の過不足、算術式で評価される値) でも
 #                                描画を崩さず、入力で置き換える
@@ -442,6 +443,25 @@ case_missing_reset() {
   fi
 }
 
+# --- missing-reset-expired-now: rate-now の窓が終わっていれば、resets_at の欠落した入力も履歴に書く ---
+# 欠落した入力だけが続いたときに、終わった窓の rate-now が履歴の追記を止め続けないことを確かめる。
+case_missing_reset_expired_now() {
+  local bash_bin=$1 script=$2 label=$3 past
+  setup_case ""
+  trap 'cleanup_case; trap - RETURN' RETURN
+  past=$(( $(date +%s) - 60 ))
+
+  printf '%s %s\n' "$LOW" "$past" > "$(now_file)"
+  seed_history "$STORAGE_LEN" 500
+  render "$bash_bin" "$script" "$HIGH" ""
+  if [ "$(line_count)" = "$STORAGE_LEN" ] && [ "$(last_line)" = "$HIGH" ] && [ "$(now_content)" = "$LOW $past" ] && [ -z "$err" ]; then
+    pass_case "missing-reset-expired-now [$label]"
+  else
+    fail_case "missing-reset-expired-now [$label]" \
+      "履歴の末尾が $(last_line) (期待 ${HIGH})、rate-now が '$(now_content)' (期待 '$LOW $past')、標準エラー '$err'"
+  fi
+}
+
 # --- missing-reset-no-now: rate-now が無ければ、resets_at の欠落した入力も履歴に書く (rate-now は作らない) ---
 case_missing_reset_no_now() {
   local bash_bin=$1 script=$2 label=$3
@@ -574,6 +594,7 @@ run_all_cases() {
   case_older_window_input         "$bash_bin" "$script" "$label"
   case_future_reset_recovers      "$bash_bin" "$script" "$label"
   case_missing_reset              "$bash_bin" "$script" "$label"
+  case_missing_reset_expired_now  "$bash_bin" "$script" "$label"
   case_missing_reset_no_now       "$bash_bin" "$script" "$label"
   case_corrupt_now                "$bash_bin" "$script" "$label"
   case_history_records_adopted    "$bash_bin" "$script" "$label"
