@@ -425,6 +425,18 @@ check names in `tests/script-parity.sh`, and static-check names in `tests/regres
 - What happens if removed: when a value such as a session name starts with `-n` / `-e` or contains backslashes, `echo` interprets it as an option or escape and the value is lost
 - Tests that guard it: `14-session-name-dash-n`, and `static:no-echo` in `tests/script-parity.sh`
 
+### Not Using `set -e`
+
+- Location: both versions as a whole (no `set -e` / `set -u` / `set -o pipefail` at the top)
+- What it does: commands that can fail are absorbed individually with `|| ...` or default values, so the statusline keeps rendering whatever fields it could obtain. Guard clauses take the form `[ ... ] || return` and return
+  non-zero even when they simply do nothing (`maybe_git_fetch` returns non-zero at its entry when `GIT_FETCH=0`). Unset variables are treated as empty (`clamp_int` dereferences the variable indirectly with `${!1}`, and a
+  setting found in neither env nor conf is treated as empty and clamped to its default)
+- What happens if removed: with `set -e`, a single failure in the middle of rendering, such as calling `git` outside a git repository or `jq` returning nothing, or a guard clause returning non-zero, ends the whole render and
+  the statusline goes blank. With `set -u`, rendering ends the same way as soon as it references a field missing from stdin or an unset setting. Tests (`tests/*.sh`), conversely, use `set -euo pipefail` to stop on unexpected
+  failures immediately
+- Tests that guard it: most fixture cases in `tests/regression.sh` (adding `set -e` or `set -u` makes rendering end early in almost every case, so the output no longer matches and the case fails). Adding only
+  `set -o pipefail` is not detected by the tests
+
 ### The Config File Loading Block
 
 - Location: the "load user config file" block at the top
@@ -941,6 +953,7 @@ Changing or removing the following items is not detected by the current tests. C
 - Pushing second-line tokens even when empty
 - The cap from `UNTRACKED_DIFF_LIMIT`
 - The `./` prefix on the config file path
+- Not having added `set -o pipefail`
 - Locale pinning (the presence of the line is checked by `tests/script-parity.sh`. Output comparison depends on the runtime locale)
 - That `gh` and git auth prompts really do not appear in the PR status child process (the presence of the lines is checked by `tests/script-parity.sh`)
 - That the PR status underline (SGR 4), strikethrough (SGR 9), and OSC 8 links are actually rendered in the real Claude Code statusline (this depends on the terminal and Claude Code's rendering, so check visually)

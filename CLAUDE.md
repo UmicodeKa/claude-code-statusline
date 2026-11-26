@@ -39,6 +39,16 @@ Claude Code の statusline を描画するシェルスクリプトです。macOS
 
 CI は Linux 版のみを実行します。macOS 版の変更はローカルの `npm test` で確認してください。回帰テストは実行できる側のスクリプトだけを検証するため、両版のドリフトは `npm test` に含まれる `tests/script-parity.sh` (OS 非依存、CI でも実行) で検出します。
 
+## コードの書き方の原則
+
+statusline 本体 (`statusline-*.sh`) は、一般的なシェルスクリプトの書き方と次の点で異なります。テスト (`tests/`) とスクリプト (`scripts/`) は対象外です。
+
+- 描画は statusline の更新のたびに走るため、｢fork (外部コマンドの起動と `$(...)`) を増やさない｣｢異常があっても表示は続ける｣を、読みやすさより優先する。ネットワーク I/O については下の｢変更時に特に注意が要る箇所｣を参照。([詳細](docs/DESIGN.md#全体の構成))
+- `set -e` / `set -u` / `set -o pipefail` を使わない。1 つのコマンドの失敗で描画全体が止まる。テスト (`tests/*.sh`) は `set -euo pipefail` を使う。([詳細](docs/DESIGN.md#set--e-を使わない))
+- 新しく足す関数や、ループの中で繰り返し呼ぶ関数の結果は `$(...)` で受けず、`printf -v` で呼び出し側の変数に書くか、グローバル変数 (`token_value`、`hl_out` など) で返す。既存の `$(_fg ...)` (色定義ブロック、起動時に 1 回) と `$(truncate_branch ...)` / `$(truncate_label ...)` (列ごとに 1 回) はこの形のまま残す。([詳細](docs/DESIGN.md#スパークと残量の計算を-fork-せずに行う))
+- 描画経路での文字列の加工は、`sed` / `awk` / `cut` などの外部コマンドではなく、パラメータ展開 (`${var##*/}`、`${var:0:N}` など) で行う。
+- 両版に共通のコードは、macOS の `/bin/bash` 3.2 で動く書き方にする。連想配列 (`declare -A`)、`mapfile` / `readarray`、`${var,,}` / `${var^^}`、負の添字 (`${arr[-1]}`)、`local -n` は使わない。named fd (`exec {fd}>...`) は Linux 版のロック処理でだけ使う。([詳細](docs/DESIGN.md#macos-版と-linux-版の差分))
+
 ## 変更時に特に注意が要る箇所
 
 背景と守っているテストは [docs/DESIGN.md](docs/DESIGN.md) にまとめています。
