@@ -428,11 +428,12 @@ check names in `tests/script-parity.sh`, and static-check names in `tests/regres
 ### Not Using `set -e`
 
 - Location: both versions as a whole (no `set -e` / `set -u` / `set -o pipefail` at the top)
-- What it does: commands that can fail are absorbed individually with `|| ...` or default values, so the statusline keeps rendering whatever fields it could obtain. Guard clauses take the form `[ ... ] || return` and return
+- What it does: commands that can fail are absorbed individually with `|| ...` or default values, so the statusline keeps rendering whatever fields it could obtain. Guard clauses of the form `[ ... ] || return` return
   non-zero even when they simply do nothing (`maybe_git_fetch` returns non-zero at its entry when `GIT_FETCH=0`). Unset variables are treated as empty (`clamp_int` dereferences the variable indirectly with `${!1}`, and a
   setting found in neither env nor conf is treated as empty and clamped to its default)
 - What happens if removed: with `set -e`, a single failure in the middle of rendering, such as calling `git` outside a git repository or `jq` returning nothing, or a guard clause returning non-zero, ends the whole render and
-  the statusline goes blank. With `set -u`, rendering ends the same way as soon as it references a field missing from stdin or an unset setting. Tests (`tests/*.sh`), conversely, use `set -euo pipefail` to stop on unexpected
+  the statusline goes blank. With `set -u`, rendering ends the same way as soon as it references a field missing from stdin or an unset setting. `set -o pipefail` alone does not stop
+  rendering, but a failure in an earlier stage of a pipeline (such as a failing `git`) makes the whole pipeline non-zero, so `||` fallbacks to default values start to fire unintentionally. Tests (`tests/*.sh`), conversely, use `set -euo pipefail` to stop on unexpected
   failures immediately
 - Tests that guard it: most fixture cases in `tests/regression.sh` (adding `set -e` or `set -u` makes rendering end early in almost every case, so the output no longer matches and the case fails). Adding only
   `set -o pipefail` is not detected by the tests
