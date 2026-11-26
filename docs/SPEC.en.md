@@ -223,6 +223,7 @@ While rendering continues, this covers about one hour of progress (history is re
 | Over 40% (uncolored) | `<chart> HH:MM` | `<chart>` |
 | 40% or less (colored) | `<chart> NN% - HH:MM` | `<chart> NN%` |
 
+- The remaining amount (the rightmost chart character, `NN%`, and the color) uses the lowest remaining amount observed by all sessions in the same window (the adopted value) ([Remaining Amount Across Sessions](#remaining-amount-across-sessions))
 - The number `NN%` is shown only when a color is applied
 - The separator between the number and the time is ` - ` (space, hyphen, space). Parentheses `()` are not used
 - When a color is applied, everything from `<chart>` to the end is painted together in the remaining-capacity color
@@ -232,7 +233,7 @@ While rendering continues, this covers about one hour of progress (history is re
 
 Chart:
 
-- The rightmost character is **always the spark of the current remaining capacity**. It reflects the latest value on every render, independent of the sampling interval
+- The rightmost character is **always the spark of the current remaining capacity** (the adopted value). It reflects the latest value on every render, independent of the sampling interval
 - The `RATE_CHART_LEN − 1` characters on the left show the progression from the [Rate Limit History](#rate-limit-history)
 - When the history has fewer than `RATE_CHART_LEN` entries, the left side is padded with `·` (U+00B7)
 - Even when history cannot be saved (`HISTORY_DIR` is invalid), one character for the current value is output to the right of `RATE_CHART_LEN − 1` `·` characters (with the default length, `···········▁ 10% - 22:13`)
@@ -477,16 +478,52 @@ Only the remaining rate limit is kept in history (ctx is not).
 | `RATE_CHART_LEN` | `12` | Number of chart characters (number of entries used for display) | Yes, in conf (2–20) |
 | `RATE_CHART_LEN_MAX` | `20` | Number of entries kept in the history file (upper bound of `RATE_CHART_LEN`) | No (ignored if written in conf) |
 | `POLL_INTERVAL_SEC` | `300` | Minimum interval for appending to history (seconds) | Yes, in conf (60–18000 ÷ `RATE_CHART_LEN`) |
-| `LOCK_TIMEOUT_SEC` | `2` | Upper limit for waiting on the history file lock (seconds) | No |
+| `LOCK_TIMEOUT_SEC` | `2` | Upper limit for waiting on the lock for the history file and `rate-now` (seconds) | No |
 
 - History is stored in a single file shared by all sessions (`<HISTORY_DIR>/rate`)
-- The first time, 20 entries (`RATE_CHART_LEN_MAX`) are filled with the current value. After that, one entry is appended if at least `POLL_INTERVAL_SEC` seconds have passed since the previous append, and only the last 20 are kept
+- The value written to history is the adopted value, not the input remaining amount ([Remaining Amount Across Sessions](#remaining-amount-across-sessions))
+- The first time, 20 entries (`RATE_CHART_LEN_MAX`) are filled with the adopted value. After that, one entry is appended if at least `POLL_INTERVAL_SEC` seconds have passed since the previous append, and only the last 20 are kept
 - The number of stored entries is 20 regardless of the display length, and the chart uses the last `RATE_CHART_LEN` entries.
   If the chart length is increased, the saved history is reflected in the display immediately (missing entries show as `·` and are filled in with each append).
   A history file with fewer entries than the stored count can also be used as-is
-- If the lock cannot be acquired within `LOCK_TIMEOUT_SEC` seconds, no append is done for that render (rendering continues)
+- If the lock cannot be acquired within `LOCK_TIMEOUT_SEC` seconds, neither the append nor the `rate-now` update is done for that render, and the input remaining amount is displayed as-is (rendering continues)
 - The default `HISTORY_DIR` is `/tmp/claude-statusline-<uid>/`. It can be changed with the env `CLAUDE_STATUSLINE_HISTORY_DIR` (not available in conf). The specified directory is created if missing and its permission is changed to 700
 - If `HISTORY_DIR` is a symlink, is not owned by the current uid, or does not have mode 700, the history feature is disabled and rendering continues
+
+### Remaining Amount Across Sessions
+
+`rate_limits.five_hour` on stdin is the value as of that session's last API response and does not reflect consumption by other sessions. An idle session keeps holding an old value (with more remaining).
+So, within the same window (the same `resets_at`), the remaining amount is assumed not to increase, and the lowest remaining amount observed by all sessions is kept in `<HISTORY_DIR>/rate-now`.
+The rightmost chart character, `NN%`, the color, and history appends use the adopted value decided from this value and the input.
+
+- `rate-now` holds a single line `<remaining> <resets_at>`: the lowest remaining amount observed by all sessions in that window, and that window's `resets_at`
+- The two values in `rate-now` are used only when both are non-negative integers (`^[0-9]+$`). An empty value, a decimal, CRLF, or too few or too many values make it unreadable, and the next write replaces it
+- The input `resets_at` is also used only when it is a non-negative integer; otherwise it is treated as missing (0)
+- Whether two inputs are in the same window is judged by the difference in `resets_at`. The tolerance is half the window length (9000 seconds), so a `resets_at` that drifts by a few seconds is still treated as the same window
+
+Let the input remaining amount be v, its `resets_at` be r, and the values in `rate-now` be fv / fr.
+
+| Condition | Adopted value | `rate-now` | Append to history |
+| --- | --- | --- | --- |
+| `rate-now` is missing or unreadable | v | Write `v r` (not written if r is 0) | Yes |
+| r is 0 (missing) and `rate-now` is readable | v | Unchanged | No |
+| \|r − fr\| < 9000 (same window) | min(v, fv) | Rewritten to `v fr` only when v < fv (`resets_at` stays fr) | Yes |
+| r ≥ fr + 9000 (new window) | v | Replaced with `v r` | Yes |
+| r ≤ fr − 9000 and fr ≤ now + 18000 | v | Unchanged | No |
+| r ≤ fr − 9000 and fr > now + 18000 | v | Replaced with `v r` | Yes |
+
+- An input whose `resets_at` is missing, or that belongs to a window older than the stored one, cannot be compared (or is old), so it is used only for that session's display and is written neither to the shared history nor to `rate-now`
+- The last row handles a `resets_at` in `rate-now` that points further ahead of the current time than one window length (a corrupted value or clock skew). Replacing it makes later inputs comparable again
+- `rate-now` is read and written inside the same lock as the history. Rewrites replace the file through a temp file and `mv`
+- When `HISTORY_DIR` is invalid, the input remaining amount is used as-is
+- When the remaining amount is not a non-negative integer (for example, usage above 100), no comparison is made, and the input remaining amount is appended to history
+
+Limitations:
+
+- When usage drops without `resets_at` changing, such as when a limit reset is used, the lower remaining amount stays on display until the end of the window
+- `rate-now` does not distinguish accounts. If sessions for different accounts are open at the same time and their `resets_at` differ by less than 9000 seconds, they are treated as the same window, and the pane for the account with more remaining also
+  shows the lower amount (the shared history `rate` does not distinguish accounts either)
+- weekly is out of scope. Each pane shows the value from its own session's last API response
 
 ### Recommended Throttling Interval Ranges
 

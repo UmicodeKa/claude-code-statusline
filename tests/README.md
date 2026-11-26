@@ -11,7 +11,7 @@ macOS 版 (`statusline-macos.sh`) と Linux 版 (`statusline-linux.sh`) が同�
 | `regression.sh` | `npm run test:regression` | fixture を両スクリプトに流し、出力を assertion と突き合わせる |
 | `git-fetch-behavior.sh` | `npm run test:fetch` | `GIT_FETCH=1` のバックグラウンド fetch の挙動を検証する |
 | `pr-status-behavior.sh` | `npm run test:pr` | PR の状態表示のバックグラウンド取得の挙動と、`--jq` による変換を検証する |
-| `rate-history-behavior.sh` | `npm run test:history` | rate 履歴ファイルの書き込み (初回の埋め込み、間引き、保存件数) と、間引き間隔の丸めを検証する |
+| `rate-history-behavior.sh` | `npm run test:history` | rate 履歴ファイルの書き込み (初回の埋め込み、間引き、保存件数)、間引き間隔の丸め、`rate-now` による採用値の決定を検証する |
 | `color-scheme-behavior.sh` | `npm run test:color` | `COLOR_SCHEME=auto` が Claude Code の `theme` などから dark / light を決めることと、判定のキャッシュを検証する |
 | `harness-isolation.sh` | `npm run test:isolation` | 敵対的な環境で各ハーネスを走らせ、statusline の起動環境が隔離されていること (本物の `git` / `gh` に届かない、開発者の環境変数が混ざらない) を確かめる |
 | `e2e-preview.sh` | `npm run preview` | 実際の ANSI 色付き出力を端末に流し、目視で確認する |
@@ -115,8 +115,24 @@ PR の状態表示の取得も投げっぱなしの非同期処理のため、fa
 | `poll-max-default:*` | conf の `POLL_INTERVAL_SEC=99999` で、1400 秒前には追記せず、1600 秒前には追記する (既定のチャート長 12 での上限 1500) |
 | `poll-clamp-zero` | conf の `POLL_INTERVAL_SEC=0` で、30 秒前の履歴に追記しない (下限 60) |
 | `poll-invalid-default:*` | conf の `POLL_INTERVAL_SEC=abc` で、250 秒前には追記せず、350 秒前には追記する (既定 300) |
+| `stale-higher-ignored` | `rate-now` が `30 R` のとき、同じ窓の入力 77 は 30 で描き、`rate-now` を変えない |
+| `lower-updates-now` | `rate-now` が `77 R` のとき、同じ窓の入力 30 で `rate-now` を `30 R` に書き換える |
+| `jitter-same-window` | `resets_at` が 60 秒ずれた入力 (R+60) も同じ窓として扱い、30 で描く |
+| `jitter-lower-keeps-reset` | 同じ窓で書き換えるとき、`rate-now` の `resets_at` は R のまま残す |
+| `new-window-accepts-higher` | `resets_at` が R+18000 の入力 95 は新しい窓として 95 で描き、`rate-now` を置き換える |
+| `older-window-input` | `resets_at` が R−18000 の入力は、そのまま描き、`rate-now` も履歴も書き換えない |
+| `future-reset-recovers` | `rate-now` の `resets_at` が窓の長さより先 (`9999999999`) なら、入力で置き換える |
+| `missing-reset` | `resets_at` の欠落した入力は、そのまま描き、`rate-now` も履歴も書き換えない |
+| `missing-reset-no-now` | `rate-now` が無ければ、`resets_at` の欠落した入力も履歴に書く。`rate-now` は作らない |
+| `corrupt-now:*` | 読めない `rate-now` (小数、`a b`、CRLF、値の過不足、空、算術式で評価される値) でも、標準エラーに何も出さずに描き、入力で置き換える |
+| `history-records-adopted` | 間隔を過ぎた描画で、入力 77 ではなく採用値 30 を履歴に追記する |
+| `no-extra-commands` | `rate-now` を書き換えない描画では、外部コマンドの起動が基準の描画と同じ回数のまま |
 
 conf は一時ファイルに書いて渡します。`RATE_CHART_LEN` と `POLL_INTERVAL_SEC` には env の上書き口が無いため、開発者のシェルの環境変数で結果は変わりません。
+
+- `rate-now` を使うケースの R は、現在から 1 時間後の epoch です。期待する出力は、採用値を入力にした描画を別の履歴ディレクトリで作り、出力全体 (チャート、`NN%`、色、時刻) を比べます。残量の多い値 (77) と少ない値 (30) は、色と `NN%` が付くかどうかでも見分けられます
+- `corrupt-now:*` の算術式で評価される値は `x[$(touch ...)]` の形で、ファイルが作られないことも確かめます
+- `no-extra-commands` は、`pr-status-behavior.sh` の `early-no-extra-commands` と同じラッパーで外部コマンドを数えます。基準は、使用率が 100 を超えて残量が整数にならず、`rate-now` を読まずに追記の判定へ進む描画です。ロックを取るコマンド (macOS 版の `mkdir`、Linux 版の `flock`) も数えます
 
 ### color-scheme-behavior.sh
 
@@ -157,6 +173,7 @@ PATH の先頭に `jq` と `defaults` のスタブを置き、呼び出しを記
 | `block:pr-constants` | PR の状態表示の内部定数が両版で一致する |
 | `block:pr-common` | PR の状態表示の共通部分 (クエリ、`--jq`、キャッシュの読み書き、子プロセスの起動と本体、描画) が両版で一致する |
 | `block:spark` | スパークと残量の計算 (`spark_of` / `round_int` / `set_remaining`) が両版で一致する |
+| `block:rate-now` | `rate-now` と比べた採用値の決定 (`rate_now_resolve`) が両版で一致する。`history_push` のロックの中から呼ぶが、ロックには依存しない |
 | `block:history-chart` | 履歴ファイルの読み出し (`history_chart`) が両版で一致する。ロックの取り方が違う `history_push` は対象外 |
 | `block:paint` | 色付け、ハイライト、トリム、git の集計 (`paint` / `highlight` / `*_color` / `truncate_label` / `truncate_branch` / `git_diff_stat` / `git_ahead_behind`) が両版で一致する |
 | `block:format-layout` | rate / ctx の整形とレイアウトの組み立て (`format_limit` / `format_ctx` / `layout_token` / `split_tokens` / `build_layout` / `join_by`) が両版で一致する |
@@ -168,6 +185,7 @@ PATH の先頭に `jq` と `defaults` のスタブを置き、呼び出しを記
 | `static:pr-gh-env:*` | `pr_spawn_refresh` に `GH_PROMPT_DISABLED=1` / `GH_NO_UPDATE_NOTIFIER=1` / `GH_NO_EXTENSION_UPDATE_NOTIFIER=1` と、`unset GH_REPO GH_FORCE_TTY CLICOLOR_FORCE` が残っている |
 | `static:pr-fd-redirect` | `pr_spawn_refresh` に `>/dev/null 2>&1 </dev/null` が残っている |
 | `static:pr-early:*` | `maybe_pr_refresh` が、取得の前倒しの判定 (`pr_refresh_wanted`) と、ロックの中の確かめ直しと書き込み (`pr_refresh_claim`) を呼んでいる |
+| `static:rate-now:in-lock` | `history_push` が、ロックの中で `rate_now_resolve` を呼んでいる |
 | `static:no-echo` | コメント以外の行で `echo` を使っていない |
 
 - `block:*` は、開始マーカーのコメント行 (行頭一致) から終了マーカー行の手前までを取り出して比較します。マーカーのコメントを書き換えるとブロックを取り出せず、失敗になります。`block:stdin-read` だけは、直前のコメントが両版で違うため、最初の `read` の行を開始マーカーにしています。

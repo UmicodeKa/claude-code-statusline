@@ -110,9 +110,12 @@ main() {
   # 子プロセスの起動と本体・描画は両版で同じ。branch 列の組み立てから呼ばれるので format-layout の比較も守る。
   check_block pr-constants '# PR の状態表示の再取得間隔' '# --- PR の状態表示の内部定数ここまで ---'
   check_block pr-common '# --- PR の状態表示 ---' '# maybe_pr_refresh:'
-  # スパークと残量の計算 (spark_of / round_int / set_remaining) と、履歴ファイルの読み出し (history_chart)。
-  # 間にある history_push はロックの取り方が違うので対象にしない。
-  check_block spark '# spark_of <変数名> <0-100 の値>' '# 履歴ファイルに値を append'
+  # スパークと残量の計算 (spark_of / round_int / set_remaining)、rate-now と比べた採用値の決定
+  # (rate_now_resolve)、履歴ファイルの読み出し (history_chart)。
+  # 間にある history_push はロックの取り方が違うので対象にしない。rate_now_resolve はそのロックの中から
+  # 呼ぶが、ロックに依存しないので比べる。片方の版だけで窓の判定が変わると、ペインごとに採用値がずれる。
+  check_block spark '# spark_of <変数名> <0-100 の値>' '# rate_now_resolve <rate-now のパス>'
+  check_block rate-now '# rate_now_resolve <rate-now のパス>' '# 履歴ファイルに値を append'
   check_block history-chart '# 履歴ファイルから各値を spark' '# 色付けは 3 段構成'
   # 色付け・トリム・git の集計と、rate/ctx の整形からレイアウトの組み立てまで。
   # 出力を決める関数のうち OS 依存の無いもの (truncate_branch / layout_token など) をここで守る。
@@ -154,6 +157,10 @@ main() {
   check_static pr-early:wanted "$pr_refresh" 'pr_refresh_wanted "$marker" "$now" "$seen" "$sig" || return'
   # shellcheck disable=SC2016 # 本体に含まれるはずのコードの固定文字列で、展開しない
   check_static pr-early:claim "$pr_refresh" 'if ! pr_refresh_claim "$marker" "$now" "$seen" "$sig" "$inflight"; then'
+  # rate-now の読み書きと履歴の追記は、history_push の 1 つのロックの中で行う。片方の版だけが
+  # 呼ばなくなると、その版のペインでは待機中のセッションの古い残量が履歴と表示に戻る。
+  # shellcheck disable=SC2016 # 本体に含まれるはずのコードの固定文字列で、展開しない
+  check_static rate-now:in-lock '/^history_push() {/,/^}/p' 'rate_now_resolve "$3" "$value" "$4"'
   check_no_echo
 
   printf '\n'

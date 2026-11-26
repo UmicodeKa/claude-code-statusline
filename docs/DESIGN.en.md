@@ -27,7 +27,7 @@ The macOS version (`statusline-macos.sh`) and the Linux version (`statusline-lin
 5. Define the color scheme (`COLOR_*`)
 6. Check the required commands and set up the history directory safely
 7. Read the input JSON with a single `jq` call and collect the `HIGHLIGHT` tokens into `hl_set` for matching
-8. Update the rate history, build the chart, and compute the single-character weekly spark
+8. Decide the adopted rate value, update the rate history, and build the chart. Compute the single-character weekly spark
 9. Get the git branch and ahead/behind (when `GIT_FETCH=1`, the background fetch is launched here)
 10. Color each field, assemble line 1 and line 2 according to the layout, and print them (only when building the branch column with `PR_STATUS=1`, read the PR cache and, if needed, launch a background fetch. The commit hash and changed-line
     counts are fetched only when building the commit column)
@@ -52,9 +52,11 @@ The two versions differ only in platform-dependent parts.
 The macOS version avoids `flock` because it is not installed on macOS by default and fails silently where it is missing. Instead it takes the lock with `mkdir`, whose atomicity POSIX guarantees, and treats a lock directory older than
 `LOCK_TIMEOUT_SEC` × 5 seconds (10 seconds by default) as stale and deletes it. The Linux `flock` is released automatically when the process exits, so it has no stale handling.
 
-All other blocks (config loading, customization settings, clamping, color scheme detection, color scheme, the constants and shared parts of the PR status display, spark and remaining-value computation, history reading, coloring and formatting,
-layout assembly, and the render part of main) are kept character-for-character identical in both versions. In the history code, the only difference is `history_push`, which takes the lock. In the PR status display, the only difference is `maybe_pr_refresh`,
-which takes the lock. `tests/script-parity.sh` extracts these blocks and compares them.
+All other blocks (config loading, customization settings, clamping, color scheme detection, color scheme, the constants and shared parts of the PR status display, spark and remaining-value computation, deciding the adopted rate value
+(`rate_now_resolve`), history reading, coloring and formatting, layout assembly, and the render part of main) are kept character-for-character identical in both versions.
+
+In the history code, the only difference is `history_push`, which takes the lock (`rate_now_resolve`, called from inside that lock, does not depend on the lock and is identical in both versions). In the PR status display, the only
+difference is `maybe_pr_refresh`, which takes the lock. `tests/script-parity.sh` extracts these blocks and compares them.
 
 ## Implementation Mechanisms
 
@@ -182,6 +184,7 @@ The processing that paints uncolored elements with `COLOR_text` is collected in 
 The rate chart is `RATE_CHART_LEN` characters long (default 12): the left `RATE_CHART_LEN − 1` characters are history, and the rightmost character is the current value.
 
 - `rate_chart` is first initialized with `history_chart /dev/null` (history-less padding: `RATE_CHART_LEN` copies of `·`), and overwritten with the actual history only when `HISTORY_DIR` is valid
+- After `history_push`, `rate_remaining` is replaced with the adopted value (`rate_adopted`). The rightmost character, `NN%`, and the color are drawn from this value ([Keeping Stale Remaining Values from Other Sessions Out](#keeping-stale-remaining-values-from-other-sessions-out))
 - Then, if the remaining amount (`rate_remaining`) exists, the rightmost character is replaced with the current value from `spark_of`. Thanks to the base, `rate_chart` is never empty, so the only branch condition is whether `rate_remaining`
   exists
 - History appends are throttled by `POLL_INTERVAL_SEC` (default 300 seconds), so without the replacement the rightmost character would keep an old value even right after a reset
@@ -214,6 +217,33 @@ The spark character (`spark_of`), the usage rounding (`round_int`), the remainin
   break
 - Multiple statuslines may write at the same time, so appends happen inside a lock. The lock wait is at most `LOCK_TIMEOUT_SEC` (2 seconds); if the lock cannot be taken, that append is skipped. The statusline is called frequently, so the
   next call picks it up
+- Inside the same lock, `rate-now` is read and the adopted value and whether to append are decided. What gets appended is the adopted value, not the input remaining amount ([Keeping Stale Remaining Values from Other Sessions Out](#keeping-stale-remaining-values-from-other-sessions-out))
+
+### Keeping Stale Remaining Values from Other Sessions Out
+
+`rate_limits.five_hour` on stdin is the value as of that session's last API response. An idle session keeps rendering at the `refreshInterval` interval, so it keeps showing an old value (with more remaining).
+History throttling is judged only from the file's mtime, so the first session that renders after `POLL_INTERVAL_SEC` has passed takes that slot. Without a countermeasure, the following happens.
+
+- An idle session's old value takes a slot, and the chart recovers at a point other than a reset
+- The lower value from the working session is not recorded, and the chart does not go down. This is more likely with more idle sessions and a shorter `refreshInterval`
+- The rightmost character and `NN%` use each pane's own session value, so the display differs between panes
+
+So, relying on the assumption that the remaining amount does not increase within the same window, the lowest remaining amount observed by all sessions is kept in `${HISTORY_DIR}/rate-now` (a single line `<remaining> <resets_at>`).
+The decision table is in [SPEC's Rate Limit History](SPEC.en.md#remaining-amount-across-sessions).
+
+- `rate-now` is kept separate from `rate` because the mtime of `rate` is the base point for throttling. Rewriting `rate` on every latest value would break the throttle interval. The history format (lines holding only the remaining amount)
+  does not change. `rate-now` alone is enough to judge the window
+- Whether two inputs are in the same window is judged by `resets_at`, with `RATE_WINDOW_SEC / 2` (9000 seconds) as the tolerance. `resets_at` can drift by a few seconds. The next window's `resets_at` comes at least one window length
+  after the previous window's, so as long as the tolerance is smaller than the window length they cannot be confused. The judgment would not change even if the window were 4 hours long
+- When rewriting within the same window, `resets_at` keeps the stored value. Overwriting it with the input's value would let drift accumulate and slowly move the base point of the tolerance
+- An input with a missing `resets_at`, and an input from a window older than the stored one, are used only for that pane's display and are not written to the shared history. Writing them would let an idle session take a slot with that
+  value, bringing the original symptom back
+- If the stored `resets_at` points further ahead of the current time than one window length, it is treated as a corrupted value and replaced. Without replacing it, every later input would hit "older window", and the countermeasure would
+  stay ineffective without ever recovering. `date +%s` is called once only for this judgment. The end of the window is not compared with the current time on every render, because once a value from the next window arrives it replaces the
+  stored one as a "new window", and normal renders avoid starting an extra `date`
+- `rate_now_resolve` is called from inside the `history_push` lock, and the lock is taken only once ([Handling `rate-now` and the History Under One Lock](#handling-rate-now-and-the-history-under-one-lock))
+- Reading uses only the built-in `read`. `rate-now` is rewritten only each time the remaining amount drops by 1% and when the window changes, so most renders add no forks
+- Values are used only when they match `[[ $x =~ ^[0-9]+$ ]]` ([Validating `rate-now` Values Before Arithmetic](#validating-rate-now-values-before-arithmetic))
 
 ### weekly (Weekly Limit)
 
@@ -681,7 +711,35 @@ Using the same order in both versions confines the implementation difference to 
 - What it does: see [rate Chart Base and the Rightmost Current Value](#rate-chart-base-and-the-rightmost-current-value)
 - What happens if removed: without the replacement, the rightmost character is also a throttled old value, and the remaining amount right after a reset is not reflected. Moving the base initialization after the `HISTORY_DIR` branch, or
   removing it, leaves `rate_chart` empty when history is disabled, and the rightmost character is not drawn
-- Tests that guard it: `47-rate-rightmost-live` / `126-rate-chart-len-seed-pad` (seed old history), `48-rate-rightmost-no-history` / `127-rate-chart-len-no-history` (disable history)
+- Tests that guard it: `47-rate-rightmost-live` / `126-rate-chart-len-seed-pad` (seed old history), `48-rate-rightmost-no-history` / `127-rate-chart-len-no-history` (disable history). That the rightmost character is the adopted
+  value is covered by `stale-higher-ignored` / `jitter-same-window` in `tests/rate-history-behavior.sh`
+
+### Handling `rate-now` and the History Under One Lock
+
+- Location: `rate_now_resolve "$3" "$value" "$4"` in `history_push` (right after the lock is taken)
+- What it does: reading and writing `rate-now`, deciding the adopted value, and appending to history all happen inside the single lock that `history_push` takes. What gets appended is the adopted value
+- What happens if removed: splitting the lock makes a contended render wait twice (up to `LOCK_TIMEOUT_SEC` × 2 = 4 seconds), making it more likely that Claude Code cancels it. Writing an adopted value decided outside the lock later can
+  overwrite a lower value that another session wrote in the meantime with an old one. Appending the input instead of the adopted value brings idle sessions' values back into the history
+- Tests that guard it: `static:rate-now:in-lock` (the call stays in `history_push` in both versions), and `history-records-adopted` and `no-extra-commands` (which also counts the lock commands) in `tests/rate-history-behavior.sh`. Races under
+  concurrent execution are not tested
+
+### Not Writing Uncomparable rate Inputs to History
+
+- Location: the two `rate_record=0` spots in `rate_now_resolve` (missing `resets_at`, and a window older than the stored one)
+- What it does: an input that cannot be compared, or one from an older window, is used only for that pane's display, and neither `rate-now` nor the history is written. Only when the stored value points further ahead of the current time
+  than one window length is it replaced
+- What happens if removed: idle sessions take history slots with those values, and the symptom of the chart recovering remains. Without replacing a stored value that points ahead, every later input is treated as an older window, and neither
+  `rate-now` nor the history is updated again
+- Tests that guard it: `missing-reset` / `older-window-input` / `future-reset-recovers` / `missing-reset-no-now` in `tests/rate-history-behavior.sh`
+
+### Validating `rate-now` Values Before Arithmetic
+
+- Location: `[[ ... =~ ^[0-9]+$ ]]` in `rate_now_resolve`
+- What it does: the two values in `rate-now` and the input `resets_at` are used only when they are non-negative integers. A `rate-now` that does not match is treated as unreadable and replaced with the input. Values reach arithmetic only
+  after the check, and a leading 0 is converted to decimal with `10#`
+- What happens if removed: passing values to `$(( ))` or `[[ -lt ]]` before the check lets a value like `x[$(cmd)]` be evaluated inside the arithmetic expression and run a command. Decimal or CRLF values print errors to stderr and break
+  the decision
+- Tests that guard it: `corrupt-now:*` in `tests/rate-history-behavior.sh` (with a value containing command substitution, it also checks that no file is created)
 
 ### Color Definition Blocks Must Match in Both Versions
 
@@ -897,6 +955,19 @@ checks beyond the fetch limit would be dropped.
   length determines the upper bound of `POLL_INTERVAL_SEC`, so it gets no env override for the same reason. Adding env and deriving the upper bound only from values that env does not affect would also break the correspondence between chart
   length and upper bound, leaving the bound without rationale
 
+### Handling Remaining Amounts Across Sessions
+
+- Splitting history per session (`session_id`): each pane would draw only its own old values, which does not fit the nature of rate as an account-level value
+- Trusting the value from the session that wrote last: stdin does not tell which session's value is newer
+- Rewriting the last line of `rate` to hold the latest value: the mtime is the base point for throttling, so every rewrite delays the next append
+- Giving each history line a `resets_at`: `rate-now` is enough to judge the window, and nothing would read it. Changing the format means that after rolling back to an old version, `history_chart` passes two-column lines to `spark_of`,
+  starting `awk` for every line
+- Using separate locks for updating `rate-now` and appending to history: see [Handling `rate-now` and the History Under One Lock](#handling-rate-now-and-the-history-under-one-lock)
+- Splitting `rate-now` per `CLAUDE_CONFIG_DIR`: a config directory does not map one-to-one to an account, and values can mix between accounts on the Claude Code side as well, so they cannot be separated reliably
+- Accepting a drop in usage within the same window as an exception (such as when a limit reset is used): it cannot be told apart from an idle session's old value. As long as `resets_at` does not change, the lower remaining amount
+  stays on display, and this is written in SPEC as a limitation
+- Fetching the latest value with `/usage` or similar: this goes against keeping network I/O out of the render path. Fetching from many sessions can run into rate limits
+
 ### weekly Display
 
 - Show weekly only when written: this introduces a per-token exception in `build_layout`, and users whose `LAYOUT_LINE2="model_ctx|rate"` was copied from the distributed template would not get the new column. weekly follows the line 2 rule
@@ -962,3 +1033,7 @@ Changing or removing the following items is not detected by the current tests. C
 - That the `--jq` expressions work in the gojq built into `gh` (the fake gh evaluates with jq, so using a function that exists only in jq would not be detected)
 - That no subshell without an external command (a `$(...)` with only built-ins) has been added to the early-fetch check (`early-no-extra-commands` counts only external command launches)
 - When Claude Code actually changes the stdin `pr`, and that a change reruns the statusline (this depends on the implementation of Claude Code itself)
+- That `resets_at` in `rate_limits.five_hour` stays nearly constant within a window, and that usage does not go down within a window (the premise of the minimum in `rate-now`; this depends on the behavior of Claude Code and the
+  server)
+- That when multiple statuslines rewrite `rate-now` and the history at the same time, a lower value is not overwritten by an old one (that this happens inside the lock is checked by `static:rate-now:in-lock`; races under concurrent
+  execution are not reproduced)
