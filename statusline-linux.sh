@@ -1766,11 +1766,12 @@ model_text="✻"
 if [ "$SHOW_MODEL_NAME" = "1" ]; then
   model_text="✻ $(truncate_label 13 "$model_str")"
 fi
-# shellcheck disable=SC2154,SC2086 # model_effect は model_color が printf -v で書く。"static <ansi>" を effect と引数に分けるため意図して単語分割する
+# shellcheck disable=SC2154 # model_effect は直前の model_color が printf -v で書く
 if [ "$model_effect" = static ]; then
   highlight model "$model_text"
   model_field=$hl_out
 else
+  # shellcheck disable=SC2086 # "static <ansi>" を paint の effect と引数に分けるため、意図して単語分割する
   model_field=$(paint "$model_text" $model_effect)
 fi
 
