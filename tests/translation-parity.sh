@@ -63,6 +63,7 @@ count_table_rows() {
 # 日本語の文字 (UTF-8 の先頭バイトが 0xE3〜0xEF) と、翻訳で名前が変わるプレースホルダ (<...>) を
 # 含まないコードスパンを重複なしで出す。
 code_spans() {
+  # shellcheck disable=SC2016 # バッククォートはコードスパンに一致させる正規表現の文字で、コマンド置換ではない
   strip_code_blocks "$1" \
     | LC_ALL=C grep -o '`[^`]*`' \
     | LC_ALL=C grep -v -e "$(printf '[\343-\357]')" -e '<' \

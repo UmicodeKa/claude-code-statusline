@@ -37,9 +37,6 @@ DEBIAN_BASH="$(find_debian_bash)"
 RUN_MACOS=0
 is_macos_host && RUN_MACOS=1
 
-# fake git の既定のローカル HEAD (lib/git-shim/git の head 規約の既定値)。
-LOCAL_HEAD_DEFAULT=0123456789abcdef0123456789abcdef01234567
-
 # 遅い gh の待ち時間 (秒) と描画の所要時間の上限 (秒)。git-fetch-behavior.sh と同じ考え方。
 SLOW_GH_SEC=5
 MAX_RENDER_SEC=3
@@ -106,13 +103,13 @@ run_sl() {
     -- "$bash_bin" "$script" < "$input" 2>&1 | escape_ansi
 }
 
-# 条件 ($@ を eval) が真になるまで最大 $1 秒待つ。真になれば 0、時間切れなら 1。
+# 条件 ($2 以降をつないだ文字列を eval) が真になるまで最大 $1 秒待つ。真になれば 0、時間切れなら 1。
 wait_until() {
   local timeout_sec=$1
   shift
   local attempts=$((timeout_sec * 10)) i=0
   while [ "$i" -lt "$attempts" ]; do
-    eval "$@" && return 0
+    eval "$*" && return 0
     sleep 0.1
     i=$((i + 1))
   done
@@ -123,6 +120,7 @@ sentinel_count() { wc -l < "$sentinel" | tr -d ' '; }
 
 # main ブランチの取得が終わる (キャッシュがあり、.inflight が消える) まで最大 5 秒待つ。
 wait_fetch_done() {
+  # shellcheck disable=SC2016 # 条件の文字列は wait_until が eval するときに展開する
   wait_until 5 '[ -s "$(cache_path main)" ] && ! compgen -G "$hist/pr-*.inflight" >/dev/null'
 }
 
@@ -145,6 +143,7 @@ case_invoked() {
   trap 'cleanup_case; trap - RETURN' RETURN
 
   run_sl "$bash_bin" "$script" >/dev/null
+  # shellcheck disable=SC2016 # 条件の文字列は wait_until が eval するときに展開する
   if ! wait_until 5 '[ -s "$(cache_path main)" ]'; then
     fail_case "invoked [$label]" "キャッシュが書かれなかった (gh 呼び出し $(sentinel_count) 回)"
     return
@@ -185,6 +184,7 @@ case_default_on() {
   trap 'cleanup_case; trap - RETURN' RETURN
 
   run_sl "$bash_bin" "$script" CLAUDE_STATUSLINE_PR_STATUS= >/dev/null
+  # shellcheck disable=SC2016 # 条件の文字列は wait_until が eval するときに展開する
   if wait_until 5 '[ -s "$(cache_path main)" ]'; then
     pass_case "default-on [$label]"
   else
@@ -283,6 +283,7 @@ case_stale_inflight() {
   mkdir "$inflight"
   age_file "$inflight" 120
   run_sl "$bash_bin" "$script" >/dev/null
+  # shellcheck disable=SC2016 # 条件の文字列は wait_until が eval するときに展開する
   if wait_until 5 '[ -s "$(cache_path main)" ] && [ ! -d "$inflight" ]'; then
     pass_case "stale-inflight [$label]"
   else
@@ -301,10 +302,12 @@ case_timeout() {
   inflight="$(cache_path main).inflight"
   run_sl "$bash_bin" "$script" CLAUDE_STATUSLINE_TEST_PR_TIMEOUT_SEC=1 \
     STATUSLINE_TEST_GH_SLEEP=20 >/dev/null
+  # shellcheck disable=SC2016 # 条件の文字列は wait_until が eval するときに展開する
   if ! wait_until 3 '[ "$(sentinel_count)" = "1" ]'; then
     fail_case "timeout [$label]" "gh が起動されなかった (前提が崩れている)"
     return
   fi
+  # shellcheck disable=SC2016 # 条件の文字列は wait_until が eval するときに展開する
   if wait_until 5 '[ ! -d "$inflight" ]' && [ ! -e "$(cache_path main)" ]; then
     pass_case "timeout [$label]"
   else
@@ -321,11 +324,13 @@ case_no_overwrite_by_older() {
   local cache newer
   cache="$(cache_path main)"
   run_sl "$bash_bin" "$script" STATUSLINE_TEST_GH_SLEEP=3 >/dev/null
+  # shellcheck disable=SC2016 # 条件の文字列は wait_until が eval するときに展開する
   wait_until 3 '[ "$(sentinel_count)" = "1" ]' || true
   # gh の実行中に、後から始まった取得の結果が書かれた状態を作る。fetched_at は取得の開始より後で、
   # 取得の終了 (gh の 3 秒後) より前にする (現在より未来の fetched_at は上書きされる)。
   newer="$(( $(date +%s) + 1 ))"
   printf '%s\t34\tmerged\t\t\t0\t1\thttps://github.com/my-org/my-project/pull/34\n' "$newer" > "$cache"
+  # shellcheck disable=SC2016 # 条件の文字列は wait_until が eval するときに展開する
   if ! wait_until 5 '! compgen -G "$hist/pr-*.inflight" >/dev/null'; then
     fail_case "no-overwrite-by-older [$label]" "取得が終わらない (前提が崩れている)"
     return
@@ -359,6 +364,7 @@ case_branch_switch() {
       return
       ;;
   esac
+  # shellcheck disable=SC2016 # 条件の文字列は wait_until が eval するときに展開する
   if wait_until 5 '[ -s "$(cache_path feature/other)" ]' \
      && [ "$(sentinel_count)" = "2" ] && [ "$(tail -n 1 "$sentinel" | cut -d' ' -f1)" = "head=feature/other" ]; then
     pass_case "branch-switch [$label]"
@@ -374,6 +380,7 @@ case_push_branch_name() {
   for form in https scp ssh; do
     setup_case "branch=fix;ab=0,0;push=origin~feature~fix;owner=Me;urlform=$form"
     run_sl "$bash_bin" "$script" >/dev/null
+    # shellcheck disable=SC2016 # 条件の文字列は wait_until が eval するときに展開する
     if ! wait_until 5 '[ "$(sentinel_count)" = "1" ]'; then
       cleanup_case
       fail_case "push-branch-name [$label]" "gh が起動されなかった (urlform=$form)"
@@ -421,6 +428,7 @@ case_gh_failure_keeps_cache() {
     "$(( $(date +%s) - 100 ))" > "$cache"
   before=$(cat "$cache")
   run_sl "$bash_bin" "$script" STATUSLINE_TEST_GH_EXIT=1 >/dev/null
+  # shellcheck disable=SC2016 # 条件の文字列は wait_until が eval するときに展開する
   if ! wait_until 5 '[ "$(sentinel_count)" = "1" ] && ! compgen -G "$hist/pr-*.inflight" >/dev/null'; then
     fail_case "gh-failure-keeps-cache [$label]" "取得が起動されない、または終わらない (前提が崩れている)"
     return
@@ -443,6 +451,7 @@ case_env_sanitized() {
 
   run_sl "$bash_bin" "$script" GH_REPO=someone/else GH_FORCE_TTY=1 CLICOLOR_FORCE=1 \
     GH_TOKEN=test-token >/dev/null
+  # shellcheck disable=SC2016 # 条件の文字列は wait_until が eval するときに展開する
   if ! wait_until 5 '[ "$(sentinel_count)" = "1" ]'; then
     fail_case "env-sanitized [$label]" "gh が起動されなかった (前提が崩れている)"
     return
@@ -563,6 +572,7 @@ case_future_fetched_at() {
     fail_case "future-fetched-at [$label]" "未来の fetched_at のキャッシュを表示した: $out"
     return
   fi
+  # shellcheck disable=SC2016 # 条件の文字列は wait_until が eval するときに展開する
   if wait_until 5 '[ "$(cache_body "$cache")" = "12|open|approved|pass|2|1|https://github.com/my-org/my-project/pull/12" ]'; then
     pass_case "future-fetched-at [$label]"
   else
@@ -861,6 +871,7 @@ case_early_inflight_during_lock() {
   else
     flock "$cache.marker.lock" sleep 1.5 &
     holder=$!
+    # shellcheck disable=SC2016 # 条件の文字列は wait_until が eval するときに展開する
     wait_until 2 '[ -e "$cache.marker.lock" ]' || true
   fi
   run_sl "$bash_bin" "$script" >/dev/null &
@@ -1180,6 +1191,7 @@ run_jq_case() {
   trap 'cleanup_case; trap - RETURN' RETURN
 
   run_sl "$bash_bin" "$script" STATUSLINE_TEST_GH_RESPONSE="$RESPONSES_DIR/$response.json" >/dev/null
+  # shellcheck disable=SC2016 # 条件の文字列は wait_until が eval するときに展開する
   if ! wait_until 5 '[ -s "$(cache_path main)" ]'; then
     fail_case "$name [$label]" "キャッシュが書かれなかった"
     return

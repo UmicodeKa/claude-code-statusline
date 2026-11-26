@@ -77,6 +77,7 @@ setup_case() {
   fi
 }
 
+# shellcheck disable=SC2329 # 各ケースの RETURN の trap の文字列から呼ぶ
 cleanup_case() { rm -r "$case_dir" 2>/dev/null || true; }
 
 # 古い値を $1 行書いた履歴ファイルを作り、mtime を $2 秒前にする。

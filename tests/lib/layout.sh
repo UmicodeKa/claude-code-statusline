@@ -9,6 +9,7 @@
 
 LAYOUT_LIB_TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# shellcheck disable=SC2034 # case_layout_line1 / case_layout_line2 は呼び出し側 (regression.sh / e2e-preview.sh) が読む
 layout_for_case() {
   local path="$LAYOUT_LIB_TESTS_DIR/layout/$1"
   case_layout_line1=""

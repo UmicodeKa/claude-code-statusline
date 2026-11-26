@@ -73,6 +73,7 @@ find_debian_bash() {
   for candidate in bash /opt/homebrew/bin/bash /usr/local/bin/bash; do
     full_path="$(command -v "$candidate" 2>/dev/null || true)"
     [ -z "$full_path" ] && continue
+    # shellcheck disable=SC2016 # 判定式は起動した bash の中で展開する
     if "$full_path" -c '
       [ "${BASH_VERSINFO[0]}" -gt 4 ] \
         || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -ge 1 ]; }

@@ -144,12 +144,15 @@ main() {
   check_static pr-gh-env:GH_NO_UPDATE_NOTIFIER "$pr_spawn" 'GH_NO_UPDATE_NOTIFIER=1'
   check_static pr-gh-env:GH_NO_EXTENSION_UPDATE_NOTIFIER "$pr_spawn" 'GH_NO_EXTENSION_UPDATE_NOTIFIER=1'
   check_static pr-gh-env:unset "$pr_spawn" 'unset GH_REPO GH_FORCE_TTY CLICOLOR_FORCE'
+  # shellcheck disable=SC2016 # 本体に含まれるはずのコードの固定文字列で、展開しない
   check_static pr-fd-redirect "$pr_spawn" 'pr_refresh_child "$cwd" "$branch" "$cache" "$inflight" >/dev/null 2>&1 </dev/null &'
   # 取得の前倒し。判定と .seen / マーカーの書き込みは block:pr-common の関数にあり、比べる範囲の外の
   # maybe_pr_refresh はそれを呼ぶだけにする。片方の版だけが間隔の判定 (pr_refresh_due) に戻ると、
   # その版では前倒しが効かなくなる。
   local pr_refresh='/^maybe_pr_refresh() {/,/^}/p'
+  # shellcheck disable=SC2016 # 本体に含まれるはずのコードの固定文字列で、展開しない
   check_static pr-early:wanted "$pr_refresh" 'pr_refresh_wanted "$marker" "$now" "$seen" "$sig" || return'
+  # shellcheck disable=SC2016 # 本体に含まれるはずのコードの固定文字列で、展開しない
   check_static pr-early:claim "$pr_refresh" 'if ! pr_refresh_claim "$marker" "$now" "$seen" "$sig" "$inflight"; then'
   check_no_echo
 
