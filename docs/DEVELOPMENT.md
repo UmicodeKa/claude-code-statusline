@@ -30,7 +30,7 @@
 - bash と `jq` (スクリプトの実行とテストに必要)
 - `git`
 - Node.js と npm
-- ShellCheck 0.9.0 以上 (`npm run check` に必要。macOS は `brew install shellcheck`、Debian / Ubuntu は `sudo apt-get install shellcheck`)
+- ShellCheck 0.11.0 以上 (`npm run check` に必要。macOS は `brew install shellcheck`。Linux は apt の版が古いことがあるため、[GitHub Releases](https://github.com/koalaman/shellcheck/releases) のバイナリを入れる)
 
 Node.js は Markdown の lint (`markdownlint-cli2`) と整形、npm スクリプトの並列･直列実行 (`npm-run-all2`) のためだけに使います。statusline スクリプト本体は Node.js に依存しません。
 
@@ -112,12 +112,13 @@ git config commit.template .gitmessage
 
 ## シェルスクリプトの静的解析 (ShellCheck)
 
-`npm run check` (`npm run lint:sh`) は、`scripts/lint-shell.sh` を通して git で管理しているシェルスクリプトを ShellCheck にかけます。`shellcheck` が見つからないときは、インストール方法を表示して失敗します。
+`npm run check` (`npm run lint:sh`) は、`scripts/lint-shell.sh` を通してリポジトリのシェルスクリプトを ShellCheck にかけます。`shellcheck` が見つからないときは、インストール方法を表示して失敗します。
 
-- 対象は `git ls-files` で列挙する `*.sh`、テスト用の shim (`tests/lib/*-shim/*`)、git hooks (`.githooks/*`) です。新しいスクリプトは、これらのパターンに合えば何もしなくても対象に入ります。`statusline.conf` は単純代入だけの雛形で、全行が未使用の変数の指摘 (SC2034) になるため対象外です。
+- 対象は `git ls-files` で列挙する `*.sh`、テスト用の shim (`tests/lib/*-shim/*`)、git hooks (`.githooks/*`) です。まだ `git add` していないファイルも含み、`.gitignore` で除外したファイルは含みません。新しいスクリプトは、これらのパターンに合えば何もしなくても対象に入ります。`statusline.conf` は単純代入だけの雛形で、全行が未使用の変数の指摘 (SC2034) になるため対象外です。
 - リポジトリのルートの `.shellcheckrc` が、`# shellcheck source=...` をそのファイルのディレクトリからの相対パスとして解決し (`source-path=SCRIPTDIR`)、`source` 先も追って検査する (`external-sources=true`) ように設定します。ShellCheck は検査するファイルのディレクトリから上にたどってこのファイルを探すため、エディタの拡張機能からも同じ設定で検査されます。
 - 指摘は原則として直します。直すと挙動が変わる場合や、statusline 本体の描画経路の fork が増える場合に限り、`# shellcheck disable=SC2086 # <理由>` のように行単位で抑制し、同じ行に理由を書きます。`.shellcheckrc` での全体の抑制は使いません。
-- ShellCheck のバージョンは固定していません。CI は Ubuntu の apt のもの、手元は Homebrew などのものを使うため、手元のほうが新しく指摘が増えることがあります。その指摘は直せば両方で通ります。`scripts/lint-shell.sh` は最初にバージョンを表示するので、結果が食い違ったときはそれを比べます。
+- ShellCheck は 0.11.0 以上を使います。0.10 以前は、0.11.0 で出なくなった指摘 (`A && B || C` の B が test コマンドのときの SC2015 など) を出し、テストの抑制に使っている SC2329 を知りません。CI はリリースのバイナリの v0.11.0 を sha256 で検証して入れます (`.github/workflows/ci.yml`)。
+  手元と CI で版が違うと、結果が食い違うことがあります。`scripts/lint-shell.sh` は最初にバージョンを表示するので、それを比べ、CI の版を上げるか、両方で通るように直します。
 
 ## Pull Request の書き方
 
