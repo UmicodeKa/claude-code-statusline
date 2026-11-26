@@ -433,8 +433,8 @@ check names in `tests/script-parity.sh`, and static-check names in `tests/regres
   setting found in neither env nor conf is treated as empty and clamped to its default)
 - What happens if removed: with `set -e`, a single failure in the middle of rendering, such as calling `git` outside a git repository or `jq` returning nothing, or a guard clause returning non-zero, ends the whole render and
   the statusline goes blank. With `set -u`, rendering ends the same way as soon as it references a field missing from stdin or an unset setting. `set -o pipefail` alone does not stop
-  rendering, but a failure in an earlier stage of a pipeline (such as a failing `git`) makes the whole pipeline non-zero, so `||` fallbacks to default values start to fire unintentionally. Tests (`tests/*.sh`), conversely, use `set -euo pipefail` to stop on unexpected
-  failures immediately
+  rendering, but a failure in an earlier stage of a pipeline (such as a failing `git`) makes the whole pipeline non-zero, so `||` fallbacks to default values start to fire unintentionally. Tests (`tests/*.sh`), conversely,
+  use `set -euo pipefail` to stop on unexpected failures immediately
 - Tests that guard it: most fixture cases in `tests/regression.sh` (adding `set -e` or `set -u` makes rendering end early in almost every case, so the output no longer matches and the case fails). Adding only
   `set -o pipefail` is not detected by the tests
 
