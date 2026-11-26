@@ -985,6 +985,7 @@ maybe_git_fetch() {
 # totalCommentsCount は GitHub が数えたコメントの件数 (会話のコメント、コードの行へのコメント、
 # 本文付きのレビュー) で、PR 一覧の吹き出しの数字と同じ値。種類ごとの totalCount を足すと、
 # reviewThreads はスレッドの数なので返信を数えられない。
+# shellcheck disable=SC2016 # $owner などは GraphQL の変数で、シェルでは展開しない
 PR_QUERY='query($owner: String!, $repo: String!, $head: String!) {
   repository(owner: $owner, name: $repo) {
     owner { login }
@@ -1011,6 +1012,7 @@ PR_QUERY='query($owner: String!, $repo: String!, $head: String!) {
 #           null のときは latestReviews から決める
 #   ci: statusCheckRollup.state (PR 画面のチェック表示と同じ集約値) をそのまま使う
 #   comments: totalCommentsCount をそのまま使う。null は 0 とする
+# shellcheck disable=SC2016 # $r などは jq の変数で、シェルでは展開しない
 PR_JQ='.data.repository as $r
 | (($ENV.HEAD_OWNER // "") | if . == "" then ($r.owner.login // "") else . end | ascii_downcase) as $owner
 | [$r.pullRequests.nodes[] | select(((.headRepositoryOwner.login // "") | ascii_downcase) == $owner)] as $c
@@ -1087,6 +1089,7 @@ pr_cache_load() {
   case "${f[4]}" in pass|fail|pending) pr_ci=${f[4]} ;; esac
   pr_is_positive_int "${f[5]}" && pr_comments=${f[5]}
   [ "${f[6]}" = "1" ] && pr_head_matches=1
+  # shellcheck disable=SC2254 # url_bad は許可しない文字を含む URL に一致させる glob として展開する
   case "${f[7]}" in
     https://$url_bad) ;;
     https://?*) pr_url=${f[7]} ;;
@@ -1492,6 +1495,7 @@ format_limit() {
     else
       body="${chart} ${remaining}%"
     fi
+    # shellcheck disable=SC2086 # "static <ansi>" を paint の effect と引数に分けるため、意図して単語分割する
     paint "$body" $color_spec
   else
     # 無色のときはチャートと時刻を別々に塗る。時刻を通すと hl_out が上書きされるので、チャートの結果を先に移す。
@@ -1523,6 +1527,7 @@ format_ctx() {
   local color_spec
   ctx_color color_spec "$ctx_int"
   if [ "$color_spec" != static ]; then
+    # shellcheck disable=SC2086 # "static <ansi>" を paint の effect と引数に分けるため、意図して単語分割する
     paint "${spark} ${ctx_int}%" $color_spec
   else
     highlight ctx_chart "$spark"
@@ -1703,6 +1708,7 @@ fi
 # RATE_CHART_LEN-1 文字を正しく切り出せる (truncate_label と同じロケール前提)。
 if [ -n "$rate_remaining" ]; then
   spark_of rate_now_spark "$rate_remaining"
+  # shellcheck disable=SC2154 # rate_now_spark は直前の spark_of が printf -v で書く
   rate_chart="${rate_chart:0:$((RATE_CHART_LEN - 1))}${rate_now_spark}"
 fi
 
@@ -1746,7 +1752,9 @@ rate_str=$(format_limit "$rate_remaining" "$rate_reset" "$rate_chart" '%H:%M' ra
 # %a は LC_ALL=C.UTF-8 の下で評価されるため、利用者のロケールによらず英語の略称 (Sun..Sat) になる。
 # 使用率が欠落していれば spark_of が · を返し、format_limit が `· --` にする (列は残す)。
 set_remaining weekly_remaining "$weekly_pct"
+# shellcheck disable=SC2154 # weekly_remaining は直前の set_remaining が printf -v で書く
 spark_of weekly_spark "$weekly_remaining"
+# shellcheck disable=SC2154 # weekly_spark は直前の spark_of が printf -v で書く
 weekly_str=$(format_limit "$weekly_remaining" "$weekly_reset" "$weekly_spark" '%a' weekly)
 
 # ✻ (+ トリム後モデル名) をモデル色で塗る。色判定はトリム前の全長で行う。
@@ -1758,6 +1766,7 @@ model_text="✻"
 if [ "$SHOW_MODEL_NAME" = "1" ]; then
   model_text="✻ $(truncate_label 13 "$model_str")"
 fi
+# shellcheck disable=SC2154,SC2086 # model_effect は model_color が printf -v で書く。"static <ansi>" を effect と引数に分けるため意図して単語分割する
 if [ "$model_effect" = static ]; then
   highlight model "$model_text"
   model_field=$hl_out
@@ -1775,6 +1784,7 @@ fi
 # 連結は変数展開のみ。effort_field は $(...) で改行除去済みのため static 無色時の末尾改行は混入しない。
 if [ -n "$effort" ]; then
   effort_color effort_effect "$effort"
+  # shellcheck disable=SC2154,SC2086 # effort_effect は effort_color が printf -v で書く。"static <ansi>" を effect と引数に分けるため意図して単語分割する
   effort_field=$(paint "$effort" $effort_effect)
   if [ "$SHOW_MODEL_NAME" = "1" ]; then
     model_field="${model_field}∙${effort_field}"
