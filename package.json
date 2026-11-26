@@ -14,10 +14,11 @@
     "preview": "bash tests/e2e-preview.sh",
     "lint": "markdownlint-cli2 \"**/*.md\"",
     "lint:fix": "markdownlint-cli2 --fix \"**/*.md\"",
+    "lint:sh": "bash scripts/lint-shell.sh",
     "format:check": "node scripts/format-markdown.mjs --check",
     "format": "node scripts/format-markdown.mjs",
-    "check": "run-p --continue-on-error --aggregate-output --print-label format:check lint",
-    "check:ci": "run-s format:check lint",
+    "check": "run-p --continue-on-error --aggregate-output --print-label format:check lint lint:sh",
+    "check:ci": "run-s format:check lint lint:sh",
     "fix": "run-s format lint:fix"
   },
   "devDependencies": {

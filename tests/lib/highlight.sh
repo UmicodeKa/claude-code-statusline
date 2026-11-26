@@ -9,6 +9,7 @@
 
 HIGHLIGHT_LIB_TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# shellcheck disable=SC2034 # case_highlight は呼び出し側 (regression.sh / e2e-preview.sh) が読む
 highlight_for_case() {
   local path="$HIGHLIGHT_LIB_TESTS_DIR/highlight/$1"
   case_highlight=""

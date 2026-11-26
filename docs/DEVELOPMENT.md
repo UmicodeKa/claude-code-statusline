@@ -30,6 +30,7 @@
 - bash と `jq` (スクリプトの実行とテストに必要)
 - `git`
 - Node.js と npm
+- ShellCheck 0.11.0 以上 (`npm run check` に必要。macOS は `brew install shellcheck`。Linux は apt の版が古いことがあるため、[GitHub Releases](https://github.com/koalaman/shellcheck/releases) のバイナリを入れる)
 
 Node.js は Markdown の lint (`markdownlint-cli2`) と整形、npm スクリプトの並列･直列実行 (`npm-run-all2`) のためだけに使います。statusline スクリプト本体は Node.js に依存しません。
 
@@ -75,7 +76,7 @@ git config commit.template .gitmessage
 | --- | --- |
 | `npm test` | 回帰テスト (`tests/regression.sh`) 、バックグラウンド fetch の挙動テスト (`tests/git-fetch-behavior.sh`)、PR の状態表示の取得の挙動テスト (`tests/pr-status-behavior.sh`)、rate 履歴の挙動テスト (`tests/rate-history-behavior.sh`)、カラースキームの自動判定の挙動テスト (`tests/color-scheme-behavior.sh`)、テストハーネスの起動環境の隔離チェック (`tests/harness-isolation.sh`)、両版の静的一致チェック (`tests/script-parity.sh`)、日本語版と英語版のドキュメントの同期チェック (`tests/translation-parity.sh`) を順に実行 |
 | `npm run preview` | 各 fixture の実出力を ANSI 色付きのまま端末に表示 (`tests/e2e-preview.sh`)。`--macos` / `--linux` で片方だけ表示できる (`bash tests/e2e-preview.sh --linux`) |
-| `npm run check` | Markdown の整形チェックと lint を実行 |
+| `npm run check` | Markdown の整形チェックと lint、シェルスクリプトの ShellCheck (`scripts/lint-shell.sh`) を実行 |
 | `npm run fix` | Markdown の整形と lint の自動修正を実行 |
 
 テストの構成や fixture の追加方法は [tests/README.md](../tests/README.md) を参照してください。
@@ -90,7 +91,7 @@ git config commit.template .gitmessage
    `statusline.conf` のコメントは日英併記で、自動検出がないため、コメントを変えたら日本語と英語の両方の行を更新します。
 6. 次の 3 つで確認します。
    - `npm test` がすべて通る
-   - `npm run check` が通る (エラーがあれば `npm run fix` で直せるものが大半です)
+   - `npm run check` が通る (Markdown のエラーは `npm run fix` で直せるものが大半です。ShellCheck の指摘は手で直します)
    - `npm run preview` で、色を含む実際の表示を目で確認する
 
 ### macOS と Linux での確認
@@ -108,6 +109,16 @@ git config commit.template .gitmessage
 `npm run fix` は Markdown の句読点や括弧などの表記を統一します (半角の句読点を全角に、全角の括弧･英数字を半角に、といった変換)。変換規則は `scripts/format-markdown.mjs` にあります。
 
 表記ゆれを手で直す必要はありません。気になったら `npm run fix` を実行します。
+
+## シェルスクリプトの静的解析 (ShellCheck)
+
+`npm run check` (`npm run lint:sh`) は、`scripts/lint-shell.sh` を通してリポジトリのシェルスクリプトを ShellCheck にかけます。`shellcheck` が見つからないときは、インストール方法を表示して失敗します。
+
+- 対象は `git ls-files` で列挙する `*.sh`、テスト用の shim (`tests/lib/*-shim/*`)、git hooks (`.githooks/*`) です。まだ `git add` していないファイルも含み、`.gitignore` で除外したファイルは含みません。新しいスクリプトは、これらのパターンに合えば何もしなくても対象に入ります。`statusline.conf` は単純代入だけの雛形で、全行が未使用の変数の指摘 (SC2034) になるため対象外です。
+- リポジトリのルートの `.shellcheckrc` が、`# shellcheck source=...` をそのファイルのディレクトリからの相対パスとして解決し (`source-path=SCRIPTDIR`)、`source` 先も追って検査する (`external-sources=true`) ように設定します。ShellCheck は検査するファイルのディレクトリから上にたどってこのファイルを探すため、エディタの拡張機能からも同じ設定で検査されます。
+- 指摘は原則として直します。直すと挙動が変わる場合や、statusline 本体の描画経路の fork が増える場合に限り、`# shellcheck disable=SC2086 # <理由>` のように行単位で抑制し、同じ行に理由を書きます。`.shellcheckrc` での全体の抑制は使いません。
+- ShellCheck は 0.11.0 以上を使います。0.10 以前は、0.11.0 で出なくなった指摘 (`A && B || C` の B が test コマンドのときの SC2015 など) を出し、テストの抑制に使っている SC2329 を知りません。CI はリリースのバイナリの v0.11.0 を sha256 で検証して入れます (`.github/workflows/ci.yml`)。
+  手元と CI で版が違うと、結果が食い違うことがあります。`scripts/lint-shell.sh` は最初にバージョンを表示するので、それを比べ、CI の版を上げるか、両方で通るように直します。
 
 ## Pull Request の書き方
 

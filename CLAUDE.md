@@ -39,6 +39,18 @@ Claude Code の statusline を描画するシェルスクリプトです。macOS
 
 CI は Linux 版のみを実行します。macOS 版の変更はローカルの `npm test` で確認してください。回帰テストは実行できる側のスクリプトだけを検証するため、両版のドリフトは `npm test` に含まれる `tests/script-parity.sh` (OS 非依存、CI でも実行) で検出します。
 
+## コードの書き方の原則
+
+statusline 本体 (`statusline-*.sh`) は、一般的なシェルスクリプトの書き方と次の点で異なります。テスト (`tests/`) とスクリプト (`scripts/`) は対象外です。
+
+- 描画は statusline の更新のたびに走るため、｢fork (外部コマンドの起動と `$(...)`) を増やさない｣｢異常があっても表示は続ける｣を、読みやすさより優先する。ネットワーク I/O については下の｢変更時に特に注意が要る箇所｣を参照。([詳細](docs/DESIGN.md#全体の構成))
+- `set -e` / `set -u` を使わない。1 つのコマンドの失敗や未設定の変数の参照で描画全体が止まる。`set -o pipefail` も、パイプの終了ステータスが変わって `||` による既定値への切り替えが意図せず働くため使わない。テスト (`tests/*.sh`) は `set -euo pipefail` を使う。([詳細](docs/DESIGN.md#set--e-を使わない))
+- 新しく足す関数の結果は `$(...)` で受けず、`printf -v` で呼び出し側の変数に書くか、グローバル変数 (`token_value`、`hl_out` など) で返す。
+  `printf -v` で書く関数のローカル変数には関数ごとの接頭辞 (`_so_`、`_ci_` など) を付ける。bash の変数は動的スコープのため、呼び出し側と同じ名前だと関数自身のローカル変数に書いてしまう。既存の `$(...)` の呼び出し (`_fg`、`paint`、`truncate_branch` / `truncate_label`、`format_limit` など) は書き換えの対象にしない。([詳細](docs/DESIGN.md#スパークと残量の計算を-fork-せずに行う))
+- 描画経路に新しく足す文字列の加工は、`sed` / `awk` / `cut` などの外部コマンドではなく、パラメータ展開 (`${var##*/}`、`${var:0:N}` など) で行う。既存の `awk` (`git_diff_stat` の numstat の集計、`spark_of` の小数の計算) は、パラメータ展開で置き換えられないためそのまま残す。
+- 両版に共通のコードは、macOS の `/bin/bash` 3.2 で動く書き方にする。連想配列 (`declare -A`)、`mapfile` / `readarray`、`${var,,}` / `${var^^}`、負の添字 (`${arr[-1]}`)、`local -n`、`printf '%(...)T'`、`$EPOCHSECONDS` は使わない。
+  この一覧は網羅的ではないため、共通部分を変えたら macOS で `npm test` (macOS 版を `/bin/bash` で実行する) を通して確かめる。named fd (`exec {fd}>...`) は Linux 版のロック処理でだけ使う。([詳細](docs/DESIGN.md#macos-版と-linux-版の差分))
+
 ## 変更時に特に注意が要る箇所
 
 背景と守っているテストは [docs/DESIGN.md](docs/DESIGN.md) にまとめています。
@@ -82,5 +94,5 @@ CI は Linux 版のみを実行します。macOS 版の変更はローカルの 
 | --- | --- |
 | `npm test` | 回帰テスト (`tests/regression.sh`) 、fetch 挙動テスト (`tests/git-fetch-behavior.sh`)、PR 取得の挙動テスト (`tests/pr-status-behavior.sh`)、rate 履歴の挙動テスト (`tests/rate-history-behavior.sh`)、カラースキームの自動判定の挙動テスト (`tests/color-scheme-behavior.sh`)、テストハーネスの起動環境の隔離チェック (`tests/harness-isolation.sh`)、両版の静的一致チェック (`tests/script-parity.sh`)、日英ドキュメントの同期チェック (`tests/translation-parity.sh`) |
 | `npm run preview` | ANSI 色付きの実出力を端末に表示する (`tests/e2e-preview.sh`) |
-| `npm run check` | Markdown の整形チェックと markdownlint |
+| `npm run check` | Markdown の整形チェック、markdownlint、ShellCheck |
 | `npm run fix` | Markdown の整形と markdownlint の自動修正 |
