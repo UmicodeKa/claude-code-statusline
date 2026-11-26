@@ -14,6 +14,23 @@
 #   poll-clamp-zero            : POLL_INTERVAL_SEC=0 は下限 60 に丸められる
 #   poll-invalid-default       : POLL_INTERVAL_SEC=abc は既定 300 に戻る
 #
+# rate-now (全セッションで観測した最小の残量。1 行 `<残量> <resets_at>`) を使った採用値の決定:
+#
+#   stale-higher-ignored       : 同じ窓の残量の多い入力は、rate-now の少ない値で描き、rate-now を変えない
+#   lower-updates-now          : 同じ窓の残量の少ない入力で rate-now を書き換える
+#   jitter-same-window         : resets_at が 60 秒ずれても同じ窓として扱う
+#   jitter-lower-keeps-reset   : 同じ窓で書き換えるときは resets_at を保存値のまま残す
+#   new-window-accepts-higher  : resets_at が窓の長さぶん進んだら、残量の回復をすぐ表示する
+#   older-window-input         : 保存値より古い窓の入力は表示にだけ使い、rate-now も履歴も書かない
+#   future-reset-recovers      : rate-now の resets_at が窓の長さより先なら置き換える
+#   missing-reset              : resets_at の欠落した入力は表示にだけ使い、rate-now も履歴も書かない
+#   missing-reset-expired-now  : rate-now の窓が終わっていれば、resets_at の欠落した入力も履歴に書く
+#   missing-reset-no-now       : rate-now が無ければ resets_at の欠落した入力も履歴に書く (rate-now は作らない)
+#   corrupt-now                : 読めない rate-now (小数、CRLF、値の過不足、算術式で評価される値) でも
+#                                描画を崩さず、入力で置き換える
+#   history-records-adopted    : 履歴に追記するのは採用値
+#   no-extra-commands          : rate-now を書き換えない描画では、外部コマンドの起動が増えない
+#
 # conf は一時ファイルに書いて CLAUDE_STATUSLINE_CONFIG で渡し、開発者の ~/.claude/statusline.conf は
 # 読ませない。開発者のシェルの環境変数は sl_run (lib/statusline-env.sh) が捨てるので、結果は変わらない。
 
@@ -228,6 +245,337 @@ case_poll_invalid_default() {
   expect_append "poll-invalid-default:350s [$label]" appended "既定 300 を過ぎた 350 秒で追記しなかった"
 }
 
+# ===== rate-now (全セッションで観測した最小の残量) =====
+#
+# 待機中のセッションが持つ古い (残量が多い) 値でチャートと NN% が戻らないことを、rate-now と履歴の
+# 中身、描画の出力で確かめる。期待する出力は、採用値を入力にした描画を別の履歴ディレクトリで作って比べる
+# (チャート、NN%、色、時刻をまとめて比べられる)。残量の多い値と少ない値は、色と NN% が付くかで
+# 見分けられるよう、40% 超 (HIGH) と 40% 以下 (LOW) にする。
+HIGH=77
+LOW=30
+
+# 描画する。出力は out に、標準エラーは err に入れる。
+#   $1 bash / $2 script / $3 残量 / $4 resets_at (空なら JSON に含めない) / $5 履歴ディレクトリ (省略時は hist)
+#   $6 PATH に足すディレクトリ (省略可)
+render() {
+  local bash_bin=$1 script=$2 remaining=$3 reset=$4 dir=${5:-$hist} extra=${6:-} json errfile
+  # bash 3.2 の set -u は空の配列の展開をエラーにするので、要素があるときだけ展開する。
+  local -a path_opt=()
+  [ -n "$extra" ] && path_opt=(--path "$extra")
+  if [ -n "$reset" ]; then
+    json=$(printf '{"rate_limits":{"five_hour":{"used_percentage":%d,"resets_at":%s}}}' "$((100 - remaining))" "$reset")
+  else
+    json=$(printf '{"rate_limits":{"five_hour":{"used_percentage":%d}}}' "$((100 - remaining))")
+  fi
+  errfile="$case_dir/stderr"
+  out=$(printf '%s' "$json" | sl_run ${path_opt[@]+"${path_opt[@]}"} \
+    CLAUDE_STATUSLINE_HISTORY_DIR="$dir" \
+    CLAUDE_STATUSLINE_CONFIG="$config" \
+    -- "$bash_bin" "$script" 2>"$errfile") || true
+  err=$(cat "$errfile")
+}
+
+# 採用値を入力にした描画を、別の履歴ディレクトリで作って ref に入れる。
+#   $1 bash / $2 script / $3 残量 / $4 resets_at / $5 seed (none: 空の履歴 / old: 古い値 20 行を間隔内に置く)
+render_ref() {
+  local bash_bin=$1 script=$2 remaining=$3 reset=$4 seed=$5 ref_dir="$case_dir/ref" i
+  mkdir "$ref_dir"
+  chmod 700 "$ref_dir"
+  if [ "$seed" = old ]; then
+    for ((i = 0; i < STORAGE_LEN; i++)); do
+      printf '%s\n' "$OLD_VALUE"
+    done > "$ref_dir/rate"
+  fi
+  render "$bash_bin" "$script" "$remaining" "$reset" "$ref_dir"
+  ref=$out
+  rm -r "$ref_dir"
+}
+
+now_file() { printf '%s' "$hist/rate-now"; }
+now_content() { if [ -e "$(now_file)" ]; then cat "$(now_file)"; else printf '(none)'; fi; }
+
+# rate-now の中身、出力、標準エラーをまとめて確かめる。
+#   $1 ケース名 / $2 期待する rate-now ((none) は無いこと) / $3 期待する出力 / $4 失敗時の説明
+expect_now_and_output() {
+  local name=$1 want_now=$2 want_out=$3 detail=$4 got_now
+  got_now=$(now_content)
+  if [ -n "$err" ]; then
+    fail_case "$name" "${detail}: 標準エラーに出力があった: $err"
+  elif [ "$got_now" != "$want_now" ]; then
+    fail_case "$name" "${detail}: rate-now が '${got_now}' (期待 '${want_now}')"
+  elif [ "$out" != "$want_out" ]; then
+    fail_case "$name" "${detail}: 出力が '${out}' (期待 '${want_out}')"
+  else
+    pass_case "$name"
+  fi
+}
+
+# 入力の resets_at に使う将来の epoch。
+future_reset() { printf '%s' "$(( $(date +%s) + 3600 ))"; }
+
+# --- stale-higher-ignored: 同じ窓の残量の多い入力は、rate-now の少ない値で描く ---
+case_stale_higher_ignored() {
+  local bash_bin=$1 script=$2 label=$3 r
+  setup_case ""
+  trap 'cleanup_case; trap - RETURN' RETURN
+  r=$(future_reset)
+
+  printf '%s %s\n' "$LOW" "$r" > "$(now_file)"
+  render "$bash_bin" "$script" "$HIGH" "$r"
+  local got=$out got_err=$err
+  render_ref "$bash_bin" "$script" "$LOW" "$r" none
+  out=$got err=$got_err
+  expect_now_and_output "stale-higher-ignored [$label]" "$LOW $r" "$ref" "古い ${HIGH} で表示が戻った"
+}
+
+# --- lower-updates-now: 同じ窓の残量の少ない入力で rate-now を書き換える ---
+case_lower_updates_now() {
+  local bash_bin=$1 script=$2 label=$3 r
+  setup_case ""
+  trap 'cleanup_case; trap - RETURN' RETURN
+  r=$(future_reset)
+
+  printf '%s %s\n' "$HIGH" "$r" > "$(now_file)"
+  render "$bash_bin" "$script" "$LOW" "$r"
+  local got=$out got_err=$err
+  render_ref "$bash_bin" "$script" "$LOW" "$r" none
+  out=$got err=$got_err
+  expect_now_and_output "lower-updates-now [$label]" "$LOW $r" "$ref" "減った ${LOW} を記録しなかった"
+}
+
+# --- jitter-same-window: resets_at が 60 秒ずれても同じ窓として扱う ---
+case_jitter_same_window() {
+  local bash_bin=$1 script=$2 label=$3 r
+  setup_case ""
+  trap 'cleanup_case; trap - RETURN' RETURN
+  r=$(future_reset)
+
+  printf '%s %s\n' "$LOW" "$r" > "$(now_file)"
+  render "$bash_bin" "$script" "$HIGH" "$((r + 60))"
+  local got=$out got_err=$err
+  render_ref "$bash_bin" "$script" "$LOW" "$((r + 60))" none
+  out=$got err=$got_err
+  expect_now_and_output "jitter-same-window [$label]" "$LOW $r" "$ref" "60 秒ずれた入力を別の窓として扱った"
+}
+
+# --- jitter-lower-keeps-reset: 同じ窓で書き換えるときは resets_at を保存値のまま残す ---
+case_jitter_lower_keeps_reset() {
+  local bash_bin=$1 script=$2 label=$3 r
+  setup_case ""
+  trap 'cleanup_case; trap - RETURN' RETURN
+  r=$(future_reset)
+
+  printf '%s %s\n' "$HIGH" "$r" > "$(now_file)"
+  render "$bash_bin" "$script" "$LOW" "$((r + 60))"
+  local got=$out got_err=$err
+  render_ref "$bash_bin" "$script" "$LOW" "$((r + 60))" none
+  out=$got err=$got_err
+  expect_now_and_output "jitter-lower-keeps-reset [$label]" "$LOW $r" "$ref" "resets_at の基点が動いた"
+}
+
+# --- new-window-accepts-higher: resets_at が窓の長さぶん進んだら、回復をすぐ表示する ---
+case_new_window_accepts_higher() {
+  local bash_bin=$1 script=$2 label=$3 r
+  setup_case ""
+  trap 'cleanup_case; trap - RETURN' RETURN
+  r=$(future_reset)
+
+  printf '10 %s\n' "$r" > "$(now_file)"
+  render "$bash_bin" "$script" 95 "$((r + 18000))"
+  local got=$out got_err=$err
+  render_ref "$bash_bin" "$script" 95 "$((r + 18000))" none
+  out=$got err=$got_err
+  expect_now_and_output "new-window-accepts-higher [$label]" "95 $((r + 18000))" "$ref" "新しい窓の回復を表示しなかった"
+}
+
+# --- older-window-input: 保存値より古い窓の入力は自分の表示にだけ使い、rate-now も履歴も書かない ---
+case_older_window_input() {
+  local bash_bin=$1 script=$2 label=$3 r
+  setup_case ""
+  trap 'cleanup_case; trap - RETURN' RETURN
+  r=$(future_reset)
+
+  printf '%s %s\n' "$OLD_VALUE" "$r" > "$(now_file)"
+  seed_history "$STORAGE_LEN" 500
+  render "$bash_bin" "$script" "$NEW_REMAINING" "$((r - 18000))"
+  local got=$out got_err=$err
+  render_ref "$bash_bin" "$script" "$NEW_REMAINING" "$((r - 18000))" old
+  out=$got err=$got_err
+  if [ "$(line_count)" != "$STORAGE_LEN" ] || [ "$(last_line)" != "$OLD_VALUE" ]; then
+    fail_case "older-window-input [$label]" "古い窓の入力を履歴に書いた ($(line_count) 行、末尾 $(last_line))"
+  else
+    expect_now_and_output "older-window-input [$label]" "$OLD_VALUE $r" "$ref" "古い窓の入力の扱いが違う"
+  fi
+}
+
+# --- future-reset-recovers: rate-now の resets_at が窓の長さより先なら、壊れた値として置き換える ---
+case_future_reset_recovers() {
+  local bash_bin=$1 script=$2 label=$3 r
+  setup_case ""
+  trap 'cleanup_case; trap - RETURN' RETURN
+  r=$(future_reset)
+
+  printf '%s 9999999999\n' "$LOW" > "$(now_file)"
+  render "$bash_bin" "$script" "$HIGH" "$r"
+  local got=$out got_err=$err
+  render_ref "$bash_bin" "$script" "$HIGH" "$r" none
+  out=$got err=$got_err
+  expect_now_and_output "future-reset-recovers [$label]" "$HIGH $r" "$ref" "先の窓を指す rate-now から戻らなかった"
+}
+
+# --- missing-reset: resets_at の欠落した入力は自分の表示にだけ使い、rate-now も履歴も書かない ---
+case_missing_reset() {
+  local bash_bin=$1 script=$2 label=$3 r
+  setup_case ""
+  trap 'cleanup_case; trap - RETURN' RETURN
+  r=$(future_reset)
+
+  printf '%s %s\n' "$LOW" "$r" > "$(now_file)"
+  seed_history "$STORAGE_LEN" 500
+  render "$bash_bin" "$script" "$HIGH" ""
+  local got=$out got_err=$err
+  render_ref "$bash_bin" "$script" "$HIGH" "" old
+  out=$got err=$got_err
+  if [ "$(line_count)" != "$STORAGE_LEN" ] || [ "$(last_line)" != "$OLD_VALUE" ]; then
+    fail_case "missing-reset [$label]" "resets_at の欠落した入力を履歴に書いた ($(line_count) 行、末尾 $(last_line))"
+  else
+    expect_now_and_output "missing-reset [$label]" "$LOW $r" "$ref" "resets_at の欠落した入力の扱いが違う"
+  fi
+}
+
+# --- missing-reset-expired-now: rate-now の窓が終わっていれば、resets_at の欠落した入力も履歴に書く ---
+# 欠落した入力だけが続いたときに、終わった窓の rate-now が履歴の追記を止め続けないことを確かめる。
+case_missing_reset_expired_now() {
+  local bash_bin=$1 script=$2 label=$3 past
+  setup_case ""
+  trap 'cleanup_case; trap - RETURN' RETURN
+  past=$(( $(date +%s) - 60 ))
+
+  printf '%s %s\n' "$LOW" "$past" > "$(now_file)"
+  seed_history "$STORAGE_LEN" 500
+  render "$bash_bin" "$script" "$HIGH" ""
+  if [ "$(line_count)" = "$STORAGE_LEN" ] && [ "$(last_line)" = "$HIGH" ] && [ "$(now_content)" = "$LOW $past" ] && [ -z "$err" ]; then
+    pass_case "missing-reset-expired-now [$label]"
+  else
+    fail_case "missing-reset-expired-now [$label]" \
+      "履歴の末尾が $(last_line) (期待 ${HIGH})、rate-now が '$(now_content)' (期待 '$LOW $past')、標準エラー '$err'"
+  fi
+}
+
+# --- missing-reset-no-now: rate-now が無ければ、resets_at の欠落した入力も履歴に書く (rate-now は作らない) ---
+case_missing_reset_no_now() {
+  local bash_bin=$1 script=$2 label=$3
+  setup_case ""
+  trap 'cleanup_case; trap - RETURN' RETURN
+
+  render "$bash_bin" "$script" "$HIGH" ""
+  local got=$out got_err=$err
+  render_ref "$bash_bin" "$script" "$HIGH" "" none
+  out=$got err=$got_err
+  if [ "$(line_count)" != "$STORAGE_LEN" ] || [ "$(sort -u "$rate_file")" != "$HIGH" ]; then
+    fail_case "missing-reset-no-now [$label]" "履歴に ${HIGH} を ${STORAGE_LEN} 行書かなかった ($(line_count) 行)"
+  else
+    expect_now_and_output "missing-reset-no-now [$label]" "(none)" "$ref" "rate-now の扱いが違う"
+  fi
+}
+
+# --- corrupt-now: 読めない rate-now でも描画を崩さず、入力で置き換える ---
+# 算術式に渡すと評価される値 (配列の添字のコマンド置換) も含め、検査の前に評価しないことを確かめる。
+case_corrupt_now() {
+  local bash_bin=$1 script=$2 label=$3 r content name
+  setup_case ""
+  trap 'cleanup_case; trap - RETURN' RETURN
+  r=$(future_reset)
+  local pwned="$case_dir/pwned"
+  local -a contents=(
+    "$LOW 17000.5"
+    "a b"
+    "$LOW $r"$'\r'
+    "$LOW"
+    "$LOW $r extra"
+    "x[\$(touch $pwned)] $r"
+    "$LOW x[\$(touch $pwned)]"
+    ""
+  )
+  render_ref "$bash_bin" "$script" "$HIGH" "$r" none
+  local i=0
+  for content in "${contents[@]}"; do
+    i=$((i + 1))
+    name="corrupt-now:$i [$label]"
+    rm -- "$rate_file" "$(now_file)" 2>/dev/null || true
+    printf '%s\n' "$content" > "$(now_file)"
+    render "$bash_bin" "$script" "$HIGH" "$r"
+    if [ -e "$pwned" ]; then
+      fail_case "$name" "rate-now の値 '$content' を算術式で評価した"
+      rm -- "$pwned"
+    else
+      expect_now_and_output "$name" "$HIGH $r" "$ref" "rate-now '$content' を読めないものとして扱わなかった"
+    fi
+  done
+}
+
+# --- history-records-adopted: 履歴に追記するのは採用値 (入力ではない) ---
+case_history_records_adopted() {
+  local bash_bin=$1 script=$2 label=$3 r
+  setup_case ""
+  trap 'cleanup_case; trap - RETURN' RETURN
+  r=$(future_reset)
+
+  printf '%s %s\n' "$LOW" "$r" > "$(now_file)"
+  seed_history "$STORAGE_LEN" 500
+  render "$bash_bin" "$script" "$HIGH" "$r"
+  if [ "$(line_count)" = "$STORAGE_LEN" ] && [ "$(last_line)" = "$LOW" ] && [ "$(now_content)" = "$LOW $r" ]; then
+    pass_case "history-records-adopted [$label]"
+  else
+    fail_case "history-records-adopted [$label]" \
+      "履歴の末尾が $(last_line) (期待 ${LOW})、rate-now が '$(now_content)'"
+  fi
+}
+
+# --- no-extra-commands: rate-now を書き換えない描画では、外部コマンドの起動が増えない ---
+# 主な外部コマンドを、呼ばれた名前を記録してから本物を exec するラッパーで隠して数える。基準は、
+# 残量が整数でない (使用率が 100 を超えた) ために rate-now を読まずに追記の判定へ進む描画。
+# ロックを取るコマンド (macOS 版は mkdir、Linux 版は flock) も数えるので、ロックを 2 回取ると増える。
+case_no_extra_commands() {
+  local bash_bin=$1 script=$2 label=$3 r cmd real
+  setup_case ""
+  trap 'cleanup_case; trap - RETURN' RETURN
+  r=$(future_reset)
+  local bin="$case_dir/count-bin" log="$case_dir/commands.log"
+  mkdir "$bin"
+  for cmd in date stat mkdir rmdir mv mktemp rm cat touch sleep id uname awk tail chmod jq flock; do
+    real=$(command -v "$cmd" 2>/dev/null) || continue
+    printf '#!/bin/sh\nprintf "%%s\\n" %s >> "%s"\nexec "%s" "$@"\n' "$cmd" "$log" "$real" > "$bin/$cmd"
+    chmod +x "$bin/$cmd"
+  done
+  # $1 残量 → 描画した外部コマンドの起動回数を count に入れる
+  count_render() {
+    : > "$log"
+    render "$bash_bin" "$script" "$1" "$r" "$hist" "$bin"
+    count=$(wc -l < "$log" | tr -d ' ')
+  }
+
+  seed_history "$STORAGE_LEN" 10
+  local count base same lower_kept
+  # 初回の描画はカラースキームの判定のキャッシュを書く (jq と mv が増える) ので、数えずに済ませる。
+  count_render -1
+  count_render -1
+  base=$count
+  printf '%s %s\n' "$LOW" "$r" > "$(now_file)"
+  count_render "$HIGH"
+  same=$count
+  count_render "$LOW"
+  lower_kept=$count
+  if [ "$(now_content)" != "$LOW $r" ]; then
+    fail_case "no-extra-commands [$label]" "前提が崩れている: rate-now が '$(now_content)'"
+  elif [ "$same" = "$base" ] && [ "$lower_kept" = "$base" ]; then
+    pass_case "no-extra-commands [$label] (${base} commands)"
+  else
+    fail_case "no-extra-commands [$label]" \
+      "外部コマンドの起動が増えた: 基準 ${base} 回、残量の多い入力 ${same} 回、同じ残量の入力 ${lower_kept} 回"
+  fi
+}
+
 run_all_cases() {
   local bash_bin=$1 script=$2 label=$3
   case_init_fill                  "$bash_bin" "$script" "$label"
@@ -238,6 +586,19 @@ run_all_cases() {
   case_poll_max_default           "$bash_bin" "$script" "$label"
   case_poll_clamp_zero            "$bash_bin" "$script" "$label"
   case_poll_invalid_default       "$bash_bin" "$script" "$label"
+  case_stale_higher_ignored       "$bash_bin" "$script" "$label"
+  case_lower_updates_now          "$bash_bin" "$script" "$label"
+  case_jitter_same_window         "$bash_bin" "$script" "$label"
+  case_jitter_lower_keeps_reset   "$bash_bin" "$script" "$label"
+  case_new_window_accepts_higher  "$bash_bin" "$script" "$label"
+  case_older_window_input         "$bash_bin" "$script" "$label"
+  case_future_reset_recovers      "$bash_bin" "$script" "$label"
+  case_missing_reset              "$bash_bin" "$script" "$label"
+  case_missing_reset_expired_now  "$bash_bin" "$script" "$label"
+  case_missing_reset_no_now       "$bash_bin" "$script" "$label"
+  case_corrupt_now                "$bash_bin" "$script" "$label"
+  case_history_records_adopted    "$bash_bin" "$script" "$label"
+  case_no_extra_commands          "$bash_bin" "$script" "$label"
 }
 
 require_command() {

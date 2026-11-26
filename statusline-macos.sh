@@ -520,9 +520,77 @@ set_remaining() {
   printf -v "$1" '%s' "$((100 - _sr_used))"
 }
 
+# rate_now_resolve <rate-now のパス> <入力の残量> <入力の resets_at>
+# 全セッション共通の rate-now (1 行 `<残量> <resets_at>`。その窓で全セッションが観測した最小の残量と、
+# その窓の resets_at) と入力を比べ、表示と履歴に使う残量 (採用値) を rate_adopted に、履歴に追記するか
+# (1 / 0) を rate_record に入れる。必要なら rate-now を書き換える。
+# stdin の rate_limits はセッションごとの最後の API 応答の値で、待機中のセッションは古い (残量が多い)
+# 値を持ち続ける。同じ窓 (resets_at の差が RATE_WINDOW_SEC / 2 未満) の中では残量は増えないとみなし、
+# 観測した最小値を採る。そのまま使うと、待機中のセッションの値でチャートと NN% が戻る。
+# history_push のロックの中から呼ぶ。ロックを分けると取り合いの待ちが 2 回分になり、ロックの外で
+# 決めた採用値を後から書くと、その間にほかのセッションが書いた低い値を古い値で上書きしうる。
+# 値は ^[0-9]+$ に合うときだけ使い、合わない rate-now は読めないものとして扱う。検査の前に算術式に
+# 渡さない (値によっては算術式の中で評価されるため)。先頭の 0 は 10# で 10 進数に直す。
+# 読むのは組み込みの read だけで、fork するのは rate-now を書き換えるとき (mktemp と mv) と、resets_at の欠落した
+# 入力または保存値より古い窓の入力が来たとき (date) だけ。
+rate_now_resolve() {
+  local _rn_file=$1 _rn_v=$2 _rn_r=$3
+  local _rn_fv='' _rn_fr='' _rn_extra='' _rn_write='' _rn_now _rn_tmp
+  local _rn_tol=$((RATE_WINDOW_SEC / 2))
+  rate_adopted=$_rn_v
+  rate_record=1
+  # 残量が 0 以上の整数でない (使用率が 100 を超えたなど) ときは比べず、追記だけする。
+  [[ $_rn_v =~ ^[0-9]+$ ]] || return 0
+  [[ $_rn_r =~ ^[0-9]+$ ]] || _rn_r=0
+  _rn_r=$((10#$_rn_r))
+  IFS=' ' read -r _rn_fv _rn_fr _rn_extra 2>/dev/null <"$_rn_file"
+  if [ -n "$_rn_extra" ] || ! [[ $_rn_fv =~ ^[0-9]+$ && $_rn_fr =~ ^[0-9]+$ ]]; then
+    # rate-now がない、読めない: 入力をそのまま使う。resets_at が欠落していれば窓が分からないので書かない。
+    [ "$_rn_r" -gt 0 ] && _rn_write="$_rn_v $_rn_r"
+  elif [ "$_rn_r" -eq 0 ]; then
+    # resets_at が欠落: 比べようがないので自分の表示にだけ使い、共通の履歴にも rate-now にも書かない。
+    # ただし rate-now の窓が既に終わっていれば、rate-now が無いときと同じく履歴には書く (rate-now は書かない)。
+    # 欠落した入力だけが続くと、終わった窓の rate-now が履歴の追記を止め続けるため。現在時刻はこの分岐でだけ取る。
+    _rn_now=$(date +%s)
+    if ! [[ $_rn_now =~ ^[0-9]+$ ]] || [ $((10#$_rn_fr)) -gt "$_rn_now" ]; then
+      rate_record=0
+    fi
+  else
+    _rn_fv=$((10#$_rn_fv))
+    _rn_fr=$((10#$_rn_fr))
+    if [ $((_rn_r - _rn_fr)) -lt "$_rn_tol" ] && [ $((_rn_fr - _rn_r)) -lt "$_rn_tol" ]; then
+      # 同じ窓: 最小値を採る。resets_at は fr のまま残し、許容幅の基点を動かさない。
+      if [ "$_rn_v" -lt "$_rn_fv" ]; then
+        _rn_write="$_rn_v $_rn_fr"
+      else
+        rate_adopted=$_rn_fv
+      fi
+    elif [ "$_rn_r" -gt "$_rn_fr" ]; then
+      # 新しい窓: 回復をすぐ反映する。
+      _rn_write="$_rn_v $_rn_r"
+    else
+      # 保存値より古い窓の入力。保存値が現在時刻から窓の長さより先を指していれば壊れた値とみなして
+      # 置き換える (置き換えないと、以降のすべての入力がここに当たり続ける)。そうでなければ書かない。
+      _rn_now=$(date +%s)
+      if [[ $_rn_now =~ ^[0-9]+$ ]] && [ "$_rn_fr" -gt $((_rn_now + RATE_WINDOW_SEC)) ]; then
+        _rn_write="$_rn_v $_rn_r"
+      else
+        rate_record=0
+      fi
+    fi
+  fi
+  [ -n "$_rn_write" ] || return 0
+  # 一時ファイルに書いて mv で置き換え、読む側が途中まで書かれた行を見ないようにする。
+  _rn_tmp=$(mktemp "${_rn_file}.XXXXXX" 2>/dev/null) || return 0
+  if ! { printf '%s\n' "$_rn_write" >"$_rn_tmp" && mv "$_rn_tmp" "$_rn_file" 2>/dev/null; }; then
+    rm -- "$_rn_tmp" 2>/dev/null
+  fi
+  return 0
+}
+
 # 履歴ファイルに値を append し、末尾 RATE_CHART_LEN_MAX 件だけ残す (表示長ではなく上限の件数で保存する)。
 # 値が空なら何もしない (起動直後に履歴を汚さない)。
-# 履歴がまだ無いファイルへの初回 push は現在値で RATE_CHART_LEN_MAX 件埋める。
+# 履歴がまだ無いファイルへの初回 push は採用値 (rate_now_resolve) で RATE_CHART_LEN_MAX 件埋める。
 # 「ずっとその値だった」という見た目になり、初回表示でドットが並ぶのを避ける。
 # 保存件数を表示長 (RATE_CHART_LEN) と分けるのは、チャートを伸ばしたときに保存済みの履歴をすぐ表示に
 # 使うためと、別の conf を読むセッションが共通の履歴ファイルを自分の表示長で切り詰めないため。
@@ -568,6 +636,10 @@ release_lock() {
   rmdir "$1" 2>/dev/null
 }
 
+# history_push <履歴ファイル> <残量> <rate-now のパス> <resets_at>
+# ロックの中で rate_now_resolve を呼び、採用値 (rate_adopted) を決めてから追記する。追記するのは採用値で、
+# rate_record が 1 でないとき (比べられない入力) は追記しない。ロックを取れなければ何も書かず、
+# rate_adopted は呼び出し側が入れた値 (入力の残量) のまま残る。
 history_push() {
   local file=$1
   local value=$2
@@ -575,6 +647,13 @@ history_push() {
 
   local lockdir="${file}.lockd"
   acquire_lock "$lockdir" || return
+
+  rate_now_resolve "$3" "$value" "$4"
+  if [ "$rate_record" != 1 ]; then
+    release_lock "$lockdir"
+    return
+  fi
+  value=$rate_adopted
 
   if [ ! -s "$file" ]; then
     local i
@@ -1723,12 +1802,17 @@ set_remaining rate_remaining "$rate_pct"
 # 右端 = 現在値の不変条件を HISTORY_DIR の状態と独立に保つため、まず履歴なしの
 # パディング (RATE_CHART_LEN 個の ·) を土台に置く。HISTORY_DIR が安全性チェックで無効化された
 # ケースでもこの土台が残り、右端 1 文字を現在値に差し替えられる。
+# 待機中のセッションが持つ古い残量でチャートと NN% が戻らないよう、history_push は全セッション共通の
+# rate-now と比べて採用値 (rate_adopted) を決める。HISTORY_DIR が無効なときと、ロックを取れなかった
+# ときは入力の残量をそのまま使う。以降 (右端、NN%、色) は採用値で描く。
 rate_chart=$(history_chart /dev/null)
+rate_adopted=$rate_remaining
 if [ -n "$HISTORY_DIR" ]; then
   rate_hist_file="${HISTORY_DIR}/rate"
-  history_push "$rate_hist_file" "$rate_remaining"
+  history_push "$rate_hist_file" "$rate_remaining" "${HISTORY_DIR}/rate-now" "$rate_reset"
   rate_chart=$(history_chart "$rate_hist_file")
 fi
+rate_remaining=$rate_adopted
 
 # チャート右端 1 文字は履歴サンプリング間隔 (POLL_INTERVAL_SEC) と独立に常に現在値を描く。
 # history_push は POLL_INTERVAL_SEC 秒で間引くため、リセットで残量が戻った直後はチャートが古い値の

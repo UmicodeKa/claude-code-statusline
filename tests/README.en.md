@@ -14,7 +14,7 @@ For the mapping between each defensive piece of code and the test that guards it
 | `regression.sh` | `npm run test:regression` | Feeds fixtures to both scripts and compares the output against assertions |
 | `git-fetch-behavior.sh` | `npm run test:fetch` | Verifies the behavior of the background fetch with `GIT_FETCH=1` |
 | `pr-status-behavior.sh` | `npm run test:pr` | Verifies the behavior of the background retrieval of the PR status display, and the transformation done by `--jq` |
-| `rate-history-behavior.sh` | `npm run test:history` | Verifies writes to the rate history file (initial fill, throttling, number of saved entries) and the clamping of the throttling interval |
+| `rate-history-behavior.sh` | `npm run test:history` | Verifies writes to the rate history file (initial fill, throttling, number of saved entries), the clamping of the throttling interval, and deciding the adopted value with `rate-now` |
 | `color-scheme-behavior.sh` | `npm run test:color` | Verifies that `COLOR_SCHEME=auto` decides dark / light from the Claude Code `theme` and so on, and verifies the cache of that decision |
 | `harness-isolation.sh` | `npm run test:isolation` | Runs each harness in a hostile environment and checks that the statusline start environment is isolated (it never reaches the real `git` / `gh`, and the developer's environment variables do not leak in) |
 | `e2e-preview.sh` | `npm run preview` | Prints the actual ANSI-colored output to the terminal for visual inspection |
@@ -127,8 +127,27 @@ The mtime is shifted with `lib/age-file.sh`. The cases are as follows, each run 
 | `poll-max-default:*` | With `POLL_INTERVAL_SEC=99999` in the conf, nothing is appended at 1400 seconds ago, and a line is appended at 1600 seconds ago (upper bound 1500 for the default chart length of 12) |
 | `poll-clamp-zero` | With `POLL_INTERVAL_SEC=0` in the conf, nothing is appended to a history from 30 seconds ago (lower bound 60) |
 | `poll-invalid-default:*` | With `POLL_INTERVAL_SEC=abc` in the conf, nothing is appended at 250 seconds ago, and a line is appended at 350 seconds ago (default 300) |
+| `stale-higher-ignored` | When `rate-now` is `30 R`, an input of 77 in the same window is drawn as 30, and `rate-now` is not changed |
+| `lower-updates-now` | When `rate-now` is `77 R`, an input of 30 in the same window rewrites `rate-now` to `30 R` |
+| `jitter-same-window` | An input whose `resets_at` drifts by 60 seconds (R+60) is still treated as the same window and drawn as 30 |
+| `jitter-lower-keeps-reset` | When rewriting within the same window, the `resets_at` in `rate-now` stays R |
+| `new-window-accepts-higher` | An input of 95 with `resets_at` R+18000 is treated as a new window, drawn as 95, and replaces `rate-now` |
+| `older-window-input` | An input with `resets_at` R−18000 is drawn as-is, and neither `rate-now` nor the history is rewritten |
+| `future-reset-recovers` | If the `resets_at` in `rate-now` is further ahead than one window length (`9999999999`), it is replaced with the input |
+| `missing-reset` | An input with a missing `resets_at` is drawn as-is, and neither `rate-now` nor the history is rewritten |
+| `missing-reset-expired-now` | If the `resets_at` in `rate-now` is in the past (the window has ended), an input with a missing `resets_at` is still written to history. `rate-now` is not rewritten |
+| `missing-reset-no-now` | Without `rate-now`, an input with a missing `resets_at` is still written to history. `rate-now` is not created |
+| `corrupt-now:*` | An unreadable `rate-now` (a decimal, `a b`, CRLF, too few or too many values, empty, a value evaluated by arithmetic) is drawn without anything on stderr and replaced with the input |
+| `history-records-adopted` | A render after the interval appends the adopted value 30, not the input 77, to history |
+| `no-extra-commands` | Renders that do not rewrite `rate-now` start the same number of external commands as the baseline render |
 
 The conf is written to a temporary file and passed in. `RATE_CHART_LEN` and `POLL_INTERVAL_SEC` have no env override, so the developer's shell environment variables do not change the result.
+
+- R in the cases that use `rate-now` is the epoch one hour from now. The expected output is produced by rendering with the adopted value as input in a separate history directory, and the whole output (chart, `NN%`, color, time) is compared.
+  The higher value (77) and the lower value (30) can also be told apart by whether a color and `NN%` appear
+- The value evaluated by arithmetic in `corrupt-now:*` has the form `x[$(touch ...)]`, and the case also checks that no file is created
+- `no-extra-commands` counts external commands with the same wrapper as `early-no-extra-commands` in `pr-status-behavior.sh`. The baseline is a render whose usage exceeds 100, so the remaining amount is not an integer and it proceeds to the
+  append decision without reading `rate-now`. The commands that take the lock (`mkdir` in the macOS version, `flock` in the Linux version) are counted too
 
 ### color-scheme-behavior.sh
 
@@ -171,6 +190,7 @@ The cases below are run for each version.
 | `block:pr-constants` | The internal constants of the PR status display are identical in both versions |
 | `block:pr-common` | The common part of the PR status display (query, `--jq`, cache read and write, child process spawn and body, rendering) is identical in both versions |
 | `block:spark` | The spark and remaining-value calculation (`spark_of` / `round_int` / `set_remaining`) is identical in both versions |
+| `block:rate-now` | Deciding the adopted value against `rate-now` (`rate_now_resolve`) is identical in both versions. It is called from inside the `history_push` lock but does not depend on the lock |
 | `block:history-chart` | The history file reading (`history_chart`) is identical in both versions. `history_push`, which acquires the lock differently, is excluded |
 | `block:paint` | Coloring, highlighting, trimming, and git aggregation (`paint` / `highlight` / `*_color` / `truncate_label` / `truncate_branch` / `git_diff_stat` / `git_ahead_behind`) are identical in both versions |
 | `block:format-layout` | Formatting of rate / ctx and assembly of the layout (`format_limit` / `format_ctx` / `layout_token` / `split_tokens` / `build_layout` / `join_by`) are identical in both versions |
@@ -182,6 +202,7 @@ The cases below are run for each version.
 | `static:pr-gh-env:*` | `GH_PROMPT_DISABLED=1` / `GH_NO_UPDATE_NOTIFIER=1` / `GH_NO_EXTENSION_UPDATE_NOTIFIER=1` and `unset GH_REPO GH_FORCE_TTY CLICOLOR_FORCE` remain in `pr_spawn_refresh` |
 | `static:pr-fd-redirect` | `>/dev/null 2>&1 </dev/null` remains in `pr_spawn_refresh` |
 | `static:pr-early:*` | `maybe_pr_refresh` calls the early-fetch check (`pr_refresh_wanted`) and the re-check and writes inside the lock (`pr_refresh_claim`) |
+| `static:rate-now:in-lock` | `history_push` calls `rate_now_resolve` inside the lock |
 | `static:no-echo` | `echo` is not used on any non-comment line |
 
 - `block:*` extracts the text from the start-marker comment line (matched at the beginning of the line) up to just before the end-marker line, and compares it.
